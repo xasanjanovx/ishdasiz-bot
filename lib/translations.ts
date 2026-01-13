@@ -1,4 +1,4 @@
-export type Language = 'uz' | 'ru';
+export type Language = 'uz' | 'ru' | 'uzCyrillic';
 
 export const translations = {
   uz: {
