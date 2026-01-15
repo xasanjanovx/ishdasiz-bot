@@ -49,22 +49,36 @@ export const formatSalary = (min: number | null | undefined, max: number | null 
   const minVal = min ?? 0;
   const maxVal = max ?? 0;
 
-  if (minVal === 0 && maxVal === 0) {
+  // Both 0/null → show "Kelishiladi"
+  if (minVal <= 0 && maxVal <= 0) {
     return lang === 'uz' || lang === 'uzCyrillic' ? 'Kelishiladi' : 'Договорная';
   }
 
   const formatNum = (n: number) => {
-    if (n >= 1000000) {
-      return `${(n / 1000000).toFixed(1)} mln`;
-    }
-    return n.toLocaleString();
+    // User requested full numbers with spaces, e.g. 1 500 000
+    return n.toLocaleString('ru-RU').replace(/,/g, ' ');
   };
 
-  if (minVal === maxVal) {
-    return formatNum(minVal);
+  const currency = lang === 'uz' || lang === 'uzCyrillic' ? "so'm" : 'сум';
+
+  // Only min present (max = 0)
+  if (minVal > 0 && maxVal <= 0) {
+    return `${formatNum(minVal)} ${currency}`;
   }
 
-  return `${formatNum(minVal)} - ${formatNum(maxVal)}`;
+  // Only max present (min = 0) → "...gacha"
+  if (minVal <= 0 && maxVal > 0) {
+    const suffix = lang === 'uz' || lang === 'uzCyrillic' ? 'gacha' : 'до';
+    return `${formatNum(maxVal)} ${currency} ${suffix}`;
+  }
+
+  // Both present and equal
+  if (minVal === maxVal) {
+    return `${formatNum(minVal)} ${currency}`;
+  }
+
+  // Both present, different
+  return `${formatNum(minVal)} – ${formatNum(maxVal)} ${currency}`;
 };
 
 export const formatDate = (date: string, lang: Language): string => {
