@@ -46,8 +46,13 @@ export const EMPLOYMENT_TYPES = ['full_time', 'part_time', 'contract', 'internsh
 export type EmploymentType = (typeof EMPLOYMENT_TYPES)[number];
 
 export const formatSalary = (min: number | null | undefined, max: number | null | undefined, lang: Language): string => {
-  const minVal = min ?? 0;
-  const maxVal = max ?? 0;
+  let minVal = min ?? 0;
+  let maxVal = max ?? 0;
+
+  // Defensive: swap if min > max (data quality issue)
+  if (minVal > 0 && maxVal > 0 && minVal > maxVal) {
+    [minVal, maxVal] = [maxVal, minVal];
+  }
 
   // Both 0/null → show "Kelishiladi"
   if (minVal <= 0 && maxVal <= 0) {
