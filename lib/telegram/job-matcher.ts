@@ -1,17 +1,21 @@
 /**
- * Job Matcher - Weighted Scoring Algorithm
- * Includes strict filtering and explanation generation.
+ * Job Matcher - Strict criteria with weighted score.
+ * Filters out vacancies that don't match ключевые требования.
  */
 
 export interface UserProfile {
     region_id?: number | string;
     district_id?: number | string;
-    category_id?: string;
-    expected_salary_min?: number;
-    expected_salary_max?: number;
-    experience_level?: string;
-    employment_type?: string;
-    skills?: string[]; // Added skills
+    category_id?: string | null;
+    category_ids?: string[];
+    expected_salary_min?: number | null;
+    expected_salary_max?: number | null;
+    experience_level?: string | null;
+    employment_type?: string | null;
+    gender?: string | number | null;
+    birth_date?: string | null;
+    education_level?: string | number | null;
+    skills?: string[];
 }
 
 export interface JobVacancy {
@@ -20,11 +24,17 @@ export interface JobVacancy {
     title_ru?: string;
     region_id?: number | string;
     district_id?: number | string;
-    category_id?: string;
-    salary_min?: number;
-    salary_max?: number;
-    experience_years?: number;
-    employment_type?: string;
+    category_id?: string | null;
+    salary_min?: number | null;
+    salary_max?: number | null;
+    experience_years?: number | null;
+    experience?: string | number | null;
+    employment_type?: string | null;
+    work_mode?: string | null;
+    gender?: string | number | null;
+    age_min?: number | null;
+    age_max?: number | null;
+    education_level?: string | number | null;
     [key: string]: any;
 }
 
@@ -33,137 +43,279 @@ export interface MatchExplanation {
     ru: string;
 }
 
+export interface MatchCriteria {
+    location: boolean;
+    category: boolean;
+    gender: boolean;
+    age: boolean;
+    education: boolean;
+    salary: boolean;
+    experience: boolean;
+}
+
 export interface MatchedJob extends JobVacancy {
     matchScore: number;
     explanation: MatchExplanation;
+    matchCriteria: MatchCriteria;
 }
 
-// Neighbor regions map (IDs aligned with current regions table)
-const NEIGHBOR_REGIONS: Record<number, number[]> = {
-    1: [2],        // Toshkent shahri -> Toshkent viloyati
-    2: [1, 6, 12], // Toshkent viloyati -> Toshkent shahri, Jizzax, Sirdaryo
-    3: [5, 8],     // Andijon -> Farg'ona, Namangan
-    4: [9, 10],    // Buxoro -> Navoiy, Qashqadaryo
-    5: [3, 8],     // Farg'ona -> Andijon, Namangan
-    6: [11, 12, 2],// Jizzax -> Samarqand, Sirdaryo, Toshkent viloyati
-    7: [9, 14],    // Xorazm -> Navoiy, Qoraqalpog'iston
-    8: [3, 5],     // Namangan -> Andijon, Farg'ona
-    9: [4, 7],     // Navoiy -> Buxoro, Xorazm
-    10: [4, 13, 11], // Qashqadaryo -> Buxoro, Surxondaryo, Samarqand
-    11: [6, 10],   // Samarqand -> Jizzax, Qashqadaryo
-    12: [6, 2],    // Sirdaryo -> Jizzax, Toshkent viloyati
-    13: [10],      // Surxondaryo -> Qashqadaryo
-    14: [7, 9]     // Qoraqalpog'iston -> Xorazm, Navoiy
+const EXPERIENCE_YEARS: Record<string, number> = {
+    no_experience: 0,
+    '1_year': 1,
+    '3_years': 3,
+    '5_years': 5,
+    '10_years': 10
 };
 
-function toNumber(value: number | string | undefined): number | null {
+const EDUCATION_ORDER: Record<string, number> = {
+    any: 0,
+    secondary: 1,
+    vocational: 2,
+    higher: 3,
+    master: 4,
+    phd: 5
+};
+
+const WEIGHTS: Record<keyof MatchCriteria, number> = {
+    location: 25,
+    category: 20,
+    gender: 15,
+    age: 10,
+    education: 10,
+    salary: 10,
+    experience: 10
+};
+
+function toNumber(value: number | string | undefined | null): number | null {
     if (value === undefined || value === null) return null;
     const num = typeof value === 'number' ? value : Number(value);
     return Number.isFinite(num) ? num : null;
 }
 
-const EXPERIENCE_YEARS: Record<string, number> = {
-    'no_experience': 0, '1_year': 1, '3_years': 3, '5_years': 5, '10_years': 10
-};
+function normalizeGender(value?: string | number | null): 'male' | 'female' | 'any' | null {
+    if (value === null || value === undefined) return null;
+    if (value === '1' || value === 1 || value === 'male') return 'male';
+    if (value === '2' || value === 2 || value === 'female') return 'female';
+    if (value === '3' || value === 3 || value === 'any') return 'any';
+    return null;
+}
 
-export function calculateMatchScore(profile: UserProfile, job: JobVacancy): MatchedJob {
-    let score = 0;
-    const reasonsUz: string[] = [];
-    const reasonsRu: string[] = [];
+function normalizeEducation(value?: string | number | null): number {
+    if (value === null || value === undefined) return 0;
+    if (typeof value === 'number') return Math.max(0, value);
+    const key = String(value).toLowerCase();
+    return EDUCATION_ORDER[key] ?? 0;
+}
 
-    // 1. Category (Strict-ish) - 30 points
-    if (profile.category_id && job.category_id) {
-        if (profile.category_id === job.category_id) {
-            score += 30;
-            reasonsUz.push("✅ Soha mos");
-            reasonsRu.push("✅ Сфера подходит");
-        } else {
-            // Mismatching category is bad
-            score -= 10;
+function parseBirthDate(value?: string | null): Date | null {
+    if (!value) return null;
+    const trimmed = String(value).trim();
+    if (!trimmed) return null;
+    if (trimmed.includes('.')) {
+        const parts = trimmed.split('.').map(p => p.trim());
+        if (parts.length === 3) {
+            const [dd, mm, yyyy] = parts;
+            const date = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
+            return Number.isNaN(date.getTime()) ? null : date;
         }
     }
+    const date = new Date(trimmed);
+    return Number.isNaN(date.getTime()) ? null : date;
+}
 
-    // 2. Location - 30 points
+function getAgeFromBirthDate(value?: string | null): number | null {
+    const date = parseBirthDate(value);
+    if (!date) return null;
+    const now = new Date();
+    let age = now.getFullYear() - date.getFullYear();
+    const m = now.getMonth() - date.getMonth();
+    if (m < 0 || (m === 0 && now.getDate() < date.getDate())) {
+        age -= 1;
+    }
+    return age;
+}
+
+function getJobExperienceYears(job: JobVacancy): number | null {
+    if (typeof job.experience_years === 'number') return job.experience_years;
+    const exp = job.experience;
+    if (typeof exp === 'number') {
+        if (exp === 1) return 0;
+        if (exp === 2) return 1;
+        if (exp === 3) return 3;
+        if (exp === 4) return 5;
+        if (exp === 5) return 5;
+    }
+    if (typeof exp === 'string') {
+        const num = Number(exp);
+        if (Number.isFinite(num)) {
+            if (num === 1) return 0;
+            if (num === 2) return 1;
+            if (num === 3) return 3;
+            if (num === 4) return 5;
+            if (num === 5) return 5;
+        }
+    }
+    return null;
+}
+
+function getResumeExperienceYears(profile: UserProfile): number {
+    const key = profile.experience_level || 'no_experience';
+    return EXPERIENCE_YEARS[key] ?? 0;
+}
+
+export function calculateMatchScore(profile: UserProfile, job: JobVacancy): MatchedJob {
+    const criteria: MatchCriteria = {
+        location: false,
+        category: false,
+        gender: false,
+        age: false,
+        education: false,
+        salary: false,
+        experience: false
+    };
+
+    let totalWeight = 0;
+    let matchedWeight = 0;
+
+    const add = (key: keyof MatchCriteria, matched: boolean, ratio: number = 1): void => {
+        totalWeight += WEIGHTS[key];
+        if (matched) {
+            matchedWeight += WEIGHTS[key] * ratio;
+        }
+        criteria[key] = matched;
+    };
+
+    // Location
     const pRegion = toNumber(profile.region_id);
     const jRegion = toNumber(job.region_id);
     const pDist = profile.district_id ? String(profile.district_id) : null;
     const jDist = job.district_id ? String(job.district_id) : null;
+    const isRemote = job.work_mode === 'remote' || job.employment_type === 'remote';
 
-    if (pRegion && jRegion) {
+    if (isRemote) {
+        add('location', true, 0.7);
+    } else if (pRegion && jRegion) {
         if (pDist && jDist && pDist === jDist) {
-            score += 30;
-            reasonsUz.push("📍 Tuman mos");
-            reasonsRu.push("📍 Район совпадает");
+            add('location', true, 1);
         } else if (pRegion === jRegion) {
-            score += 20;
-            reasonsUz.push("📍 Viloyat mos");
-            reasonsRu.push("📍 Регион совпадает");
+            add('location', true, 0.8);
         } else {
-            const neighbors = NEIGHBOR_REGIONS[pRegion] || [];
-            if (neighbors.includes(jRegion)) {
-                score += 10;
-                reasonsUz.push("🚗 Qo'shni viloyat");
-                reasonsRu.push("🚗 Соседний регион");
-            } else if (job.employment_type !== 'remote') {
-                // Far region and NOT remote -> Penalty
-                score -= 20;
-            }
+            add('location', false);
         }
+    } else {
+        add('location', false);
     }
 
-    // 3. Salary - 20 points
-    if (profile.expected_salary_min && job.salary_min) {
-        if (job.salary_max && job.salary_max >= profile.expected_salary_min) {
-            score += 20;
-            reasonsUz.push("💰 Maosh to'g'ri");
-            reasonsRu.push("💰 Зарплата подходит");
-        } else if (job.salary_min >= profile.expected_salary_min * 0.8) {
-            score += 10;
+    // Category (Soha)
+    const categoryIds = Array.isArray(profile.category_ids) && profile.category_ids.length > 0
+        ? profile.category_ids
+        : profile.category_id ? [profile.category_id] : [];
+    if (categoryIds.length > 0 && job.category_id) {
+        add('category', categoryIds.includes(job.category_id));
+    } else {
+        add('category', false);
+    }
+
+    // Gender (Jins)
+    const userGender = normalizeGender(profile.gender);
+    const jobGender = normalizeGender(job.gender);
+    if (!jobGender || jobGender === 'any') {
+        add('gender', true);
+    } else if (userGender) {
+        add('gender', userGender === jobGender);
+    } else {
+        add('gender', false);
+    }
+
+    // Age (Yosh)
+    const ageMin = job.age_min ?? null;
+    const ageMax = job.age_max ?? null;
+    const userAge = getAgeFromBirthDate(profile.birth_date || null);
+    if (ageMin || ageMax) {
+        if (userAge == null) {
+            add('age', false);
+        } else {
+            const minOk = ageMin ? userAge >= ageMin : true;
+            const maxOk = ageMax ? userAge <= ageMax : true;
+            add('age', minOk && maxOk);
         }
+    } else {
+        add('age', true);
     }
 
-    // 4. Experience - 10 points
-    if (job.experience_years !== undefined) {
-        const userYears = EXPERIENCE_YEARS[profile.experience_level || 'no_experience'] || 0;
-        if (userYears >= job.experience_years) {
-            score += 10;
+    // Education (Ma'lumot)
+    const jobEdu = normalizeEducation(job.education_level);
+    const userEdu = normalizeEducation(profile.education_level);
+    if (jobEdu > 0) {
+        add('education', userEdu >= jobEdu);
+    } else {
+        add('education', true);
+    }
+
+    // Salary (Maosh)
+    const expectedMin = profile.expected_salary_min ?? 0;
+    if (expectedMin && expectedMin > 0) {
+        if (job.salary_max && job.salary_max >= expectedMin) {
+            add('salary', true);
+        } else if (job.salary_min && job.salary_min >= expectedMin) {
+            add('salary', true, 0.9);
+        } else if (!job.salary_min && !job.salary_max) {
+            add('salary', true, 0.6);
+        } else {
+            add('salary', false);
         }
+    } else {
+        add('salary', true);
     }
 
-    // 5. Employment Type - 10 points
-    if (profile.employment_type === job.employment_type) {
-        score += 10;
-        reasonsUz.push("⏰ Grafik mos");
-        reasonsRu.push("⏰ График подходит");
+    // Experience (Tajriba)
+    const jobExp = getJobExperienceYears(job);
+    const userExp = getResumeExperienceYears(profile);
+    if (jobExp !== null) {
+        add('experience', userExp >= jobExp);
+    } else {
+        add('experience', true);
     }
 
-    // Filter Logic:
-    // If strict mismatch (Category mismatch AND Location mismatch), score will be low.
+    const score = totalWeight > 0 ? Math.round((matchedWeight / totalWeight) * 100) : 0;
 
-    // Normalize Score 0-100
-    score = Math.min(100, Math.max(0, score));
+    const reasonsUz: string[] = [];
+    const reasonsRu: string[] = [];
+    if (criteria.location) { reasonsUz.push('Joylashuv mos'); reasonsRu.push('Локация подходит'); }
+    if (criteria.category) { reasonsUz.push('Soha mos'); reasonsRu.push('Сфера подходит'); }
+    if (criteria.gender) { reasonsUz.push('Jins mos'); reasonsRu.push('Пол подходит'); }
+    if (criteria.age) { reasonsUz.push('Yosh mos'); reasonsRu.push('Возраст подходит'); }
+    if (criteria.education) { reasonsUz.push("Ma'lumot mos"); reasonsRu.push('Образование подходит'); }
+    if (criteria.salary) { reasonsUz.push('Maosh mos'); reasonsRu.push('Зарплата подходит'); }
+    if (criteria.experience) { reasonsUz.push('Tajriba mos'); reasonsRu.push('Опыт подходит'); }
 
     return {
         ...job,
         matchScore: score,
         explanation: {
-            uz: reasonsUz.length > 0 ? reasonsUz.join(", ") : "Umumiy moslik",
-            ru: reasonsRu.length > 0 ? reasonsRu.join(", ") : "Общее совпадение"
-        }
+            uz: reasonsUz.join(', '),
+            ru: reasonsRu.join(', ')
+        },
+        matchCriteria: criteria
     };
 }
 
 export function matchAndSortJobs(profile: UserProfile, jobs: JobVacancy[]): MatchedJob[] {
     const matched = jobs.map(job => calculateMatchScore(profile, job));
 
-    // Strict Filter: 
-    // Remove if score < 30 (Arbitrary threshold for "Relevance")
-    // Unless it's a very small pool, but user asked for "Strict".
-    const filtered = matched.filter(j => j.matchScore >= 30);
+    const filtered = matched.filter(item => (
+        item.matchCriteria.location &&
+        item.matchCriteria.category &&
+        item.matchCriteria.gender &&
+        item.matchCriteria.age &&
+        item.matchCriteria.education &&
+        item.matchCriteria.salary &&
+        item.matchCriteria.experience
+    ));
 
     return filtered.sort((a, b) => b.matchScore - a.matchScore);
 }
 
 export function getMatchPercentage(score: number): number {
-    return score;
+    return Math.max(0, Math.min(100, Math.round(score)));
 }

@@ -106,6 +106,27 @@ export async function sendMessage(
 }
 
 /**
+ * Send location
+ */
+export async function sendLocation(
+    chatId: number | string,
+    latitude: number,
+    longitude: number,
+    options: {
+        replyMarkup?: any;
+        livePeriod?: number;
+    } = {}
+): Promise<any> {
+    return callTelegramAPI('sendLocation', {
+        chat_id: chatId,
+        latitude,
+        longitude,
+        ...(options.livePeriod ? { live_period: options.livePeriod } : {}),
+        reply_markup: options.replyMarkup
+    });
+}
+
+/**
  * Edit existing message
  */
 export async function editMessage(

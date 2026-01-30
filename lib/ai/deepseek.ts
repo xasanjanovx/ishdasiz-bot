@@ -125,6 +125,15 @@ export interface VacancyExtraction {
 }
 
 /**
+ * Extracted resume metadata
+ */
+export interface ResumeExtraction {
+    title?: string;
+    about?: string;
+    skills: string[];
+}
+
+/**
  * Clean HTML text from garbage before AI processing
  */
 export function cleanHtmlForAI(text: string): string {
@@ -258,6 +267,62 @@ Return JSON (EXACT enum values):
 
     } catch (err: any) {
         console.error('[DeepSeek] Extraction failed:', err.message);
+        return emptyResult;
+    }
+}
+
+/**
+ * Extract resume summary and skills using DeepSeek
+ */
+export async function extractResumeData(
+    rawText: string,
+    titleHint?: string
+): Promise<ResumeExtraction> {
+    const emptyResult: ResumeExtraction = {
+        title: undefined,
+        about: undefined,
+        skills: []
+    };
+
+    const cleanedText = cleanHtmlForAI(rawText);
+    if (!cleanedText || cleanedText.length < 40) {
+        return emptyResult;
+    }
+
+    const systemPrompt = `You are a resume assistant for Uzbekistan. Extract a short professional \"about\" and key skills.
+Return ONLY valid JSON, no markdown. Keep it concise.`;
+
+    const userPrompt = `Parse this resume text and return JSON:
+${titleHint ? `Title hint: ${titleHint}` : ''}
+---
+${cleanedText.slice(0, 2000)}
+---
+
+Return JSON:
+{
+  "title": "short position title or null",
+  "about": "3-4 sentence professional summary in Uzbek (latin) or Russian depending on input",
+  "skills": ["skill 1", "skill 2", "skill 3"]
+}`;
+
+    try {
+        const response = await callDeepSeek([
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+        ], 500);
+
+        const parsed = parseDeepSeekJson(response) as any;
+        const skills = Array.isArray(parsed.skills)
+            ? parsed.skills.filter((s: any) => typeof s === 'string' && s.trim().length > 0)
+            : [];
+
+        return {
+            title: typeof parsed.title === 'string' ? parsed.title.trim() : undefined,
+            about: typeof parsed.about === 'string' ? parsed.about.trim() : undefined,
+            skills
+        };
+    } catch (err: any) {
+        console.error('[DeepSeek] Resume extraction failed:', err?.message || err);
         return emptyResult;
     }
 }

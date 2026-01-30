@@ -101,6 +101,109 @@ const CATEGORY_RULES: Array<{ category: CategoryKey; keywords: string[] }> = [
     },
 ];
 
+// Strict mapping for OsonIsh MMK categories (cat2)
+const STRICT_CATEGORY_MAP: Record<string, CategoryKey> = {
+    // ----------------------------------------------------
+    // USER PROVIDED ID MAPPINGS (Reconciled with Text)
+    // ----------------------------------------------------
+
+    // 42 - Ta'lim, madaniyat, sport
+    "TAʼLIM SOHASIDAGI PROFESSIONAL-MUTAXASSISLAR": 'EDUCATION',
+    "HUQUQSHUNOSLIK, IJTIMOIY ISHLAR, MADANIYAT VA OʻXSHASH FAOLIYAT SOHASIDAGI YORDAMCHI XODIMLAR": 'EDUCATION', // Madaniyat
+    "SANʼAT, MADANIYAT VA PAZANDALIK BOʻYICHA MUTAXASSIS-TEXNIKLAR": 'EDUCATION', // Madaniyat
+    "MADANIYAT, GUMANITAR VA HUQUQ SOHASIDAGI PROFESSIONAL-MUTAXASSISLAR": 'EDUCATION',
+
+    // 47 - Sog'liqni saqlash
+    "SOGʻLIQNI SAQLASH SOHASIDA PROFESSIONAL-MUTAXASSISLAR": 'HEALTHCARE',
+    "Sogʻliqni saqlashda oʻrta maʼlumotli tibbiyot xodimlari": 'HEALTHCARE',
+
+    // 12 - Axborot texnologiyalari
+    "AXBOROT-KOMMUNIKATSIYA TEXNOLOGIYALARI BOʻYICHA PROFESSIONAL-MUTAXASSISLAR": 'IT',
+    "AXBOROT-KOMMUNIKATSIYA TEXNOLOGIYALARI SOHASIDAGI MUTAXASSIS-TEXNIKLAR": 'IT',
+
+    // 21 - Sanoat va ishlab chiqarish
+    "SANOAT USKUNALARI VA STATSIONAR QURILMALARI OPERATORLARI": 'PRODUCTION',
+    "OZIQ-OVQAT, YOGʻOCHNI QAYTA ISHLASH, TOʻQIMACHILIK VA TIKUVCHILIK SANOATI VA TURDOSH KASBLAR ISHCHILARI": 'PRODUCTION',
+    "METALGA ISHLOV BERISH SANOATI, MASHINASOZLIK VA SHUNGA OʻXSHASH SOHALAR ISHCHILARI": 'PRODUCTION',
+    "POLIGRAFIYA ISHLAB CHIQARISH VA QOʻL MEHNATINING YUQORI MALAKALI ISHCHILARI": 'PRODUCTION',
+    "FAN VA TEXNIKA SOHASIDA PROFESSIONAL-MUTAXASSISLAR": 'PRODUCTION',
+    "FAN VA TEXNIKA SOHASIDA MUTAXASSIS-TEXNIKLAR": 'PRODUCTION',
+    "ELEKTROTEXNIKA VA ELEKTRONIKA SOHASIDAGI ISHCHILAR": 'PRODUCTION',
+    "TOGʻ-KON SANOATI, QURILISH, QAYTA ISHLASH SANOATI VA TRANSPORT SOHASIDAGI MALAKASIZ ISHCHILAR": 'PRODUCTION',
+    "YIGʻUVCHILAR": 'PRODUCTION',
+    "SANOAT, QURILISH VA SHU KABI SOHA MALAKALI ISHCHILARI": 'PRODUCTION',
+
+    // 48 - Xizmatlar
+    "UY XIZMATCHILARI VA FARROSHLAR": 'SERVICES',
+    "XUSUSIY MULK VA FUQAROLARNI MUHOFAZA QILISH XIZMATI XODIMLARI": 'SERVICES', // Security -> Services
+    "TAOM TAYYORLASHDA YORDAMCHILAR": 'SERVICES',
+    "AHOLIGA XIZMAT KOʻRSATISH SOHASI XIZMATCHILARI": 'SERVICES',
+    "INDIVIDUAL XIZMATLAR SOHASIDAGI XODIMLAR": 'SERVICES',
+    "YAKKA TARTIBDA XIZMAT KOʻRSATUVCHI XODIMLAR": 'SERVICES',
+    "MEHMONXONA BIZNESINING RAHBARLARI, DOʻKONLAR VA TEGISHLI FAOLIYAT SOHALARI RAHBARLARI (BOSHQARUVCHILARI)": 'SERVICES',
+    "CHIQINDILARNI YIGʻUVCHI VA BOSHQA MALAKASIZ XODIMLAR": 'SERVICES',
+
+    // 64 - Savdo va marketing
+    "SOTUVCHILAR": 'SALES',
+
+    // 41 - Qurilish
+    "QURILISH VA MONTAJ ISHLARI EXTRUKTORLARI VA TURDOSH KASBLAR ISHCHILARI": 'CONSTRUCTION',
+    "BINOLARNI QURUVCHILAR VA TAMIRLOVCHILAR, QURILISH-MONTAJ ISHLARI ISHCHILARI": 'CONSTRUCTION',
+    "QURILISH SOHASI VA SHUNGA OʻXSHASH SOHA ISHCHILARI (ELEKTRIKLARDAN TASHQARI)": 'CONSTRUCTION',
+
+    // 36 - Transport
+    "HAYDOVCHILAR VA KOʻCHMA USKUNALAR OPERATORLARI": 'TRANSPORT',
+    "KOʻCHMA QURILMALAR OPERATORLARI VA HAYDOVCHILARI": 'TRANSPORT',
+
+    // 1 - Moliya, iqtisod, boshqaruv
+    "QONUN CHIQARUVCHILAR, YUQORI MANSABDOR SHAXSLAR VA BOSHQARUVCHILAR": 'FINANCE',
+    "ISHLAB CHIQARISH VA IXTISOSLASHTIRILGAN XIZMATLAR SOHASIDAGI BOʻLINMALAR RAHBARLARI": 'FINANCE',
+    "MATERIAL QIYMATLILIKLAR HISOBI VA RAQAMLI AXBOROTLARGA ISHLOV BERISH SOHASIDAGI XIZMATCHILAR": 'FINANCE',
+    "OFIS TEXNIKALARIGA XIZMAT KOʻRSATISH VA UMUMIY PROFIL XIZMATCHILARI": 'FINANCE',
+    "MAʼMURIYAT VA BIZNES SOHASIDAGI PROFESSIOANAL-MUTAXASSISLAR": 'FINANCE',
+    "MAʼMURIY VA IQTISODIY FAOLIYAT BOʻYICHA MUTAXASSISLAR": 'FINANCE',
+    "KORPORATIV BOSHQARUVCHILAR": 'FINANCE',
+    "BOSHQA OFIS XIZMATCHILARI": 'FINANCE',
+
+    // 7 - Qishloq xo'jaligi
+    "QISHLOQ VA OʻRMON XOʻJALIGI, BALIQCHILIK VA BALIQSHUNOSLIKDAGI MALAKASIZ ISHCHILAR": 'AGRICULTURE',
+    "OVCHILAR VA OʻRMON HAMDA BALIQ MAHSULOTLARIDAN TOVAR ISHLAB CHIQARUVCHILAR": 'AGRICULTURE',
+    "QISHLOQ XOʻJALIGI MAHSULOTLARINI ISHLAB CHIQARUVCHILAR": 'AGRICULTURE',
+    "BOGʻDORCHILIK, TOMORQA VA DALA EKINLARI TOVARLARINI ISHLAB CHIQARUVCHILAR": 'AGRICULTURE',
+
+    // LIVE DATA ADDITIONS (Exact Casing)
+    "SAVDO VA XIZMAT KOʻRSATISH SOHASI XODIMLARI": 'SERVICES',
+};
+
+// ==================== CRITERIA MAPPING ====================
+
+export const OSONISH_GENDER_MAP = {
+    1: 'male',
+    2: 'female',
+    3: 'any' // Any
+};
+
+export const OSONISH_EDUCATION_MAP = {
+    1: 'secondary',   // O'rta
+    2: 'vocational', // O'rta-maxsus
+    3: 'higher',     // Oliy
+    4: 'master',     // Magistr
+    5: 'higher'      // PhD
+};
+
+export const OSONISH_WORK_MODE_MAP = {
+    1: 'onsite',
+    2: 'remote',
+    3: 'hybrid' // Assumed
+};
+
+export const OSONISH_EMPLOYMENT_TYPE_MAP = {
+    1: 'full_time',
+    2: 'part_time', // Or contract? Audit showed 2 often.
+    3: 'contract',
+    4: 'internship'
+};
+
 function normalizeText(text: string): string {
     return text
         .toLowerCase()
@@ -129,7 +232,7 @@ export interface CategoryMappingResult {
     categoryName: string;
     sourceCategory: string;
     sourceSubcategory: string | null;
-    matchedBy: 'title_keyword' | 'default';
+    matchedBy: 'title_keyword' | 'category_keyword' | 'strict_match' | 'default';
     matchedKeyword?: string;
 }
 
@@ -139,7 +242,65 @@ export function mapOsonishCategory(
     jobTitle: string
 ): CategoryMappingResult {
     const safeTitle = jobTitle || '';
+    const safeCategory = sourceCategory || '';
 
+    // Helper to normalize apostrophes for comparison
+    const normalizeApostrophes = (s: string) => s.replace(/[\u2018\u2019\u00B4\u02BB\u02BC\u0027\u2032]/gi, "'");
+
+    // 0. STRICT MATCH by `cat2` or `cat1` string directly (normalized apostrophes & spacing)
+    const normalizedInput = normalizeText(safeCategory);
+
+    // Try direct match with normalized input
+    for (const [mapKey, catKey] of Object.entries(STRICT_CATEGORY_MAP)) {
+        if (normalizeText(mapKey) === normalizedInput) {
+            return {
+                categoryId: ISHDASIZ_CATEGORIES[catKey],
+                categoryKey: catKey,
+                categoryName: getCategoryName(catKey),
+                sourceCategory,
+                sourceSubcategory,
+                matchedBy: 'strict_match'
+            };
+        }
+    }
+
+    // Try fuzzy matching (partial string match) with normalized strings
+    const strictKeys = Object.keys(STRICT_CATEGORY_MAP);
+    const fuzzyStrictMatch = strictKeys.find(key => {
+        const normKey = normalizeText(key);
+        return normalizedInput.includes(normKey) || normKey.includes(normalizedInput);
+    });
+    if (fuzzyStrictMatch) {
+        const key = STRICT_CATEGORY_MAP[fuzzyStrictMatch];
+        return {
+            categoryId: ISHDASIZ_CATEGORIES[key],
+            categoryKey: key,
+            categoryName: getCategoryName(key),
+            sourceCategory,
+            sourceSubcategory,
+            matchedBy: 'strict_match'
+        };
+    }
+
+    // 1. Try to match by Source Category (mmk_group) KEYWORDS first
+    if (safeCategory) {
+        for (const rule of CATEGORY_RULES) {
+            const matchedKeyword = findKeywordMatch(safeCategory, rule.keywords);
+            if (matchedKeyword) {
+                return {
+                    categoryId: ISHDASIZ_CATEGORIES[rule.category],
+                    categoryKey: rule.category,
+                    categoryName: getCategoryName(rule.category),
+                    sourceCategory,
+                    sourceSubcategory,
+                    matchedBy: 'category_keyword', // New match type
+                    matchedKeyword
+                };
+            }
+        }
+    }
+
+    // 2. Fallback to Title match
     for (const rule of CATEGORY_RULES) {
         const matchedKeyword = findKeywordMatch(safeTitle, rule.keywords);
         if (matchedKeyword) {

@@ -117,12 +117,13 @@ export const formatDate = (date: string, lang: Language): string => {
   return `${day}.${month}.${year}`;
 };
 
-// Experience options - same as vacancy creation form
+// Experience options - matches OsonIsh API work_experiance field IDs exactly
 export const EXPERIENCE_OPTIONS = [
-  { value: 'no_experience', label_uz: 'Tajriba talab qilinmaydi', label_ru: 'Без опыта' },
-  { value: '1_3', label_uz: '1-3 yil', label_ru: '1-3 года' },
-  { value: '3_6', label_uz: '3-6 yil', label_ru: '3-6 лет' },
-  { value: '6_plus', label_uz: "6 yildan ko'p", label_ru: 'Более 6 лет' },
+  { value: '1', label_uz: 'Talab etilmaydi', label_ru: 'Не требуется' },
+  { value: '2', label_uz: '1 yilgacha', label_ru: 'До 1 года' },
+  { value: '3', label_uz: '1-3 yil', label_ru: '1-3 года' },
+  { value: '4', label_uz: '3-5 yil', label_ru: '3-5 лет' },
+  { value: '5', label_uz: '5 yildan ortiq', label_ru: 'Более 5 лет' },
 ] as const;
 
 // Education options - same as vacancy creation form
@@ -153,4 +154,24 @@ export const LANGUAGES_LIST = [
   { value: 'korean', label_uz: "Koreys tili", label_ru: 'Корейский язык' },
   { value: 'chinese', label_uz: "Xitoy tili", label_ru: 'Китайский язык' },
   { value: 'german', label_uz: "Nemis tili", label_ru: 'Немецкий язык' },
+] as const;
+
+// Payment type options - matches OsonIsh API
+export const PAYMENT_TYPE_OPTIONS = [
+  { value: '1', label_uz: "Kelishilgan holda", label_ru: 'По договоренности' },
+  { value: '2', label_uz: "Ishbay", label_ru: 'Сдельная' },
+  { value: '3', label_uz: "Stavka (oklad)", label_ru: 'Фиксированный оклад' },
+] as const;
+
+// Work mode options - matches OsonIsh API
+export const WORK_MODE_OPTIONS = [
+  { value: 'onsite', label_uz: "Ish joyida", label_ru: 'В офисе' },
+  { value: 'remote', label_uz: "Masofaviy", label_ru: 'Удаленная' },
+  { value: 'hybrid', label_uz: "Gibrid", label_ru: 'Гибрид' },
+] as const;
+
+// Working days options - matches OsonIsh API
+export const WORKING_DAYS_OPTIONS = [
+  { value: '1', label_uz: "6 kunlik ish haftasi", label_ru: '6-дневная неделя' },
+  { value: '2', label_uz: "5 kunlik ish haftasi", label_ru: '5-дневная неделя' },
 ] as const;

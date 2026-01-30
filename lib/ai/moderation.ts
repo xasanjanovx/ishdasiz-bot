@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Content Moderation for AI Chat
  * Detects abuse, spam, and inappropriate content
  */
@@ -8,17 +8,34 @@ const BANNED_PATTERNS_RU = [
     // Profanity (Russian) - basic patterns
     /\bбля[дть]?\b/i,
     /\bхуй/i,
+    /\bхуе/i,
+    /\bхуесос/i,
     /\bпизд/i,
+    /\bпид(ар|ор|р)\b/i,
+    /\bгандон\b/i,
+    /\bшлюх/i,
+    /\bсукин\b/i,
     /\bсука\b/i,
     /\bмудак/i,
+    /\bдолбо(ё|е)б/i,
+    /\bеб(а|у|н|л|ть)\b/i,
+    /\bёб\b/i,
+    /\bебан/i,
     /\bдебил/i,
     /\bидиот/i,
     /\bдурак\b/i,
+    /\bмраз/i,
+    /\bтвар/i,
+    /\bурод/i,
+    /\bсволоч/i,
+    /\bпаскуд/i,
     /\bзаткнись/i,
     /\bубью\b/i,
     /\bубить\b/i,
     /\bсдохни/i,
-    /\bнах[у|е]й/i,
+    /\bнах[уе]й\b/i,
+    /\bнахер\b/i,
+    /\bжоп(а|у|ы|ой)?\b/i,
     // Threats
     /\bугроз/i,
     /\bвзорв/i,
@@ -27,12 +44,16 @@ const BANNED_PATTERNS_RU = [
 
 const BANNED_PATTERNS_UZ = [
     // Profanity (Uzbek) - basic patterns
-    /\bsho['']pang/i,
-    /\baxmoq/i,
-    /\btentak/i,
-    /\bjinni/i,
-    /\bo['']ldiraman/i,
-    /\bqotil/i,
+    /\bsho['’]?pang\b/i,
+    /\baxmoq\b/i,
+    /\btentak\b/i,
+    /\bjinni\b/i,
+    /\bqo['’]?toq\b/i,
+    /\bsik\w*\b/i,
+    /\bjalab\b/i,
+    /\bharom\b/i,
+    /\bo['’]?ldiraman\b/i,
+    /\bqotil\b/i,
 ];
 
 // Prompt injection patterns
@@ -48,7 +69,7 @@ const INJECTION_PATTERNS = [
     /act\s+as\s+if/i,
     /\bAPI\s*key\b/i,
     /\bpassword\b/i,
-    /\bSUPABASE/i,
+    /\bSUPABASE\b/i,
     /\benv\s*\./i,
     /\bprocess\.env/i,
     /\bSQL\b.*\b(inject|injection)/i,
@@ -122,24 +143,24 @@ export function checkForAbuse(message: string): ModerationResult {
 // Warning messages in both languages
 export const WARNING_MESSAGES = {
     profanity: {
-        uz: "⚠️ Hurmatli foydalanuvchi, iltimos, odob doirasida muloqot qiling. Qoidalarni buzish akkauntingiz bloklanishiga olib kelishi mumkin.",
-        ru: "⚠️ Уважаемый пользователь, пожалуйста, соблюдайте правила общения. Нарушение правил может привести к блокировке аккаунта.",
+        uz: "Hurmatli foydalanuvchi, iltimos, odob doirasida muloqot qiling. Qoidalarni buzish akkauntingiz bloklanishiga olib kelishi mumkin.",
+        ru: "Уважаемый пользователь, пожалуйста, соблюдайте правила общения. Нарушение правил может привести к блокировке аккаунта."
     },
     threat: {
-        uz: "⚠️ Tahdid yoki zo'ravonlikka oid so'zlar taqiqlangan. Bunday xatti-harakatlar akkauntingiz bloklanishiga olib keladi.",
-        ru: "⚠️ Угрозы и призывы к насилию запрещены. Подобное поведение приведёт к блокировке аккаунта.",
+        uz: "Tahdid yoki zo'ravonlikka oid so'zlar taqiqlangan. Bunday xatti-harakatlar akkauntingiz bloklanishiga olib keladi.",
+        ru: "Угрозы и призывы к насилию запрещены. Подобное поведение приведёт к блокировке аккаунта."
     },
     injection: {
-        uz: "⚠️ Noto'g'ri so'rov aniqlandi. Iltimos, oddiy tilda ish qidiring.",
-        ru: "⚠️ Обнаружен некорректный запрос. Пожалуйста, используйте обычный язык для поиска работы.",
+        uz: "Noto'g'ri so'rov aniqlandi. Iltimos, oddiy tilda ish qidiring.",
+        ru: "Обнаружен некорректный запрос. Пожалуйста, используйте обычный язык для поиска работы."
     },
     spam: {
-        uz: "⚠️ Spam aniqlandi. Iltimos, oddiy so'rovlarni yuboring.",
-        ru: "⚠️ Обнаружен спам. Пожалуйста, отправляйте обычные запросы.",
+        uz: "Spam aniqlandi. Iltimos, oddiy so'rovlarni yuboring.",
+        ru: "Обнаружен спам. Пожалуйста, отправляйте обычные запросы."
     },
     rate_limit: {
-        uz: "⚠️ Siz juda ko'p so'rov yubordingiz. Iltimos, 1 daqiqa kuting.",
-        ru: "⚠️ Слишком много запросов. Пожалуйста, подождите 1 минуту.",
+        uz: "Siz juda ko'p so'rov yubordingiz. Iltimos, 1 daqiqa kuting.",
+        ru: "Слишком много запросов. Пожалуйста, подождите 1 минуту."
     },
 };
 
