@@ -593,7 +593,7 @@ export class TelegramBot {
                 .eq('user_id', session.user_id);
             if (error) console.error('Location update error:', error);
         }
-        if (locationIntent === 'resume_final') {
+        if (locationIntent === 'resume_final' || (session.state === BotState.REQUESTING_LOCATION && !locationIntent)) {
             await this.updateSession(session.telegram_user_id, {
                 data: { ...session.data, location_intent: null }
             });
@@ -1739,7 +1739,7 @@ export class TelegramBot {
                 state: BotState.ENTERING_ABOUT,
                 data: { ...session.data, resume: { ...session.data?.resume, full_name: text } }
             });
-            const options = { replyMarkup: keyboards.skipKeyboard(lang, 'name') };
+            const options = { replyMarkup: keyboards.skipKeyboard(lang) };
             await this.sendPrompt(chatId, session, botTexts.askAbout[lang], options);
             return;
         }
@@ -1828,28 +1828,25 @@ export class TelegramBot {
         const lang = session.lang;
         const state = session.state;
 
-        // Skip logic based on state
-        if (state === BotState.ENTERING_NAME) {
-            // Skip name? Maybe use telegram name?
-            // For now just empty or placeholder
-            await this.handleTextByState(chatId, session.data?.temp_phone || "User", session);
-        } else if (state === BotState.ENTERING_ABOUT) {
+        // Skip logic based on state (only optional steps)
+        if (state === BotState.ENTERING_ABOUT) {
             await this.handleTextByState(chatId, "", session);
-        } else if (state === BotState.ADDING_SKILLS) {
+            return;
+        }
+        if (state === BotState.ADDING_SKILLS) {
             await this.finishSkills(chatId, session);
-        } else if (state === BotState.REQUESTING_LOCATION && session.data?.location_intent === 'resume_final') {
-            await this.updateSession(session.telegram_user_id, {
-                data: { ...session.data, location_intent: null }
-            });
-            await this.sendPrompt(chatId, session, botTexts.locationSkipped[lang]);
-            await this.finalizeResume(chatId, session);
-        } else if (state === BotState.SELECTING_SALARY_MAX) { // e.g. 'all'
+            return;
+        }
+        if (state === BotState.SELECTING_SALARY_MAX) {
             await this.handleSalaryMaxSelect(chatId, 'all', session);
-        } else if (state === BotState.REQUESTING_LOCATION && session.data?.location_intent === 'job_search_geo') {
-            await this.updateSession(session.telegram_user_id, {
-                data: { ...session.data, location_intent: null }
+            return;
+        }
+
+        // For required steps, ignore skip and re-ask
+        if (state === BotState.REQUESTING_LOCATION) {
+            await this.sendPrompt(chatId, session, botTexts.locationRequest[lang], {
+                replyMarkup: keyboards.locationRequestKeyboard(lang)
             });
-            await this.showMainMenu(chatId, session);
         }
     }
 
@@ -1928,19 +1925,19 @@ export class TelegramBot {
 
         if (target === 'title') {
             await this.updateSession(session.telegram_user_id, { state: BotState.ENTERING_TITLE });
-            await this.sendPrompt(chatId, session, botTexts.askTitle[lang], { replyMarkup: keyboards.skipKeyboard(lang, 'title') });
+            await this.sendPrompt(chatId, session, botTexts.askTitle[lang], { replyMarkup: keyboards.cancelReplyKeyboard(lang) });
             return;
         }
 
         if (target === 'name') {
             await this.updateSession(session.telegram_user_id, { state: BotState.ENTERING_NAME });
-            await this.sendPrompt(chatId, session, botTexts.askName[lang], { replyMarkup: keyboards.skipKeyboard(lang, 'name') });
+            await this.sendPrompt(chatId, session, botTexts.askName[lang], { replyMarkup: keyboards.cancelReplyKeyboard(lang) });
             return;
         }
 
         if (target === 'about') {
             await this.updateSession(session.telegram_user_id, { state: BotState.ENTERING_ABOUT });
-            await this.sendPrompt(chatId, session, botTexts.askAbout[lang], { replyMarkup: keyboards.skipKeyboard(lang, 'about') });
+            await this.sendPrompt(chatId, session, botTexts.askAbout[lang], { replyMarkup: keyboards.skipKeyboard(lang) });
             return;
         }
 
@@ -1980,6 +1977,10 @@ export class TelegramBot {
             .order('created_at', { ascending: false });
 
         if (!resumes || resumes.length === 0) {
+            if (session.data?.active_resume_id) {
+                await this.showResumeById(chatId, session.data.active_resume_id, session);
+                return;
+            }
             await this.startResumeFlow(chatId, session);
             return;
         }
@@ -2110,7 +2111,7 @@ export class TelegramBot {
 
         if (field === 'about') {
             await this.updateSession(session.telegram_user_id, { state: BotState.ENTERING_ABOUT });
-            await this.sendPrompt(chatId, session, botTexts.askAbout[lang], { replyMarkup: keyboards.skipKeyboard(lang, 'about') });
+            await this.sendPrompt(chatId, session, botTexts.askAbout[lang], { replyMarkup: keyboards.skipKeyboard(lang) });
             return;
         }
 
@@ -2504,7 +2505,7 @@ export class TelegramBot {
             data: { ...session.data, role_switch_pending: true }
         });
         await this.sendPrompt(chatId, session, botTexts.enterPassword[lang], {
-            replyMarkup: keyboards.cancelInlineKeyboard(lang)
+            replyMarkup: keyboards.cancelReplyKeyboard(lang)
         });
     }
 
