@@ -7,7 +7,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { sendMessage, editMessage, answerCallbackQuery, isUserSubscribed, sendLocation, deleteMessage } from './telegram-api';
 import * as keyboards from './keyboards';
 import { botTexts, BotLang, formatJobCard, formatFullJobCard, EXPERIENCE_LABELS } from './texts';
-import { matchAndSortJobs, getMatchPercentage, MatchedJob } from './job-matcher';
+import { matchAndSortJobs, calculateMatchScore, getMatchPercentage, MatchedJob } from './job-matcher';
 import { checkForAbuse } from '../ai/moderation';
 
 // ============================================
@@ -412,10 +412,24 @@ export class TelegramBot {
             }
             if (msg.contact) {
                 await this.handlePhone(chatId, msg.contact.phone_number, session);
+                if (msg.message_id && session.data?.clean_inputs) {
+                    try {
+                        await deleteMessage(chatId, msg.message_id);
+                    } catch {
+                        // ignore
+                    }
+                }
                 return;
             }
             if (msg.location) {
                 await this.handleLocation(chatId, msg.location, session);
+                if (msg.message_id && session.data?.clean_inputs) {
+                    try {
+                        await deleteMessage(chatId, msg.message_id);
+                    } catch {
+                        // ignore
+                    }
+                }
                 return;
             }
             await this.handleTextByState(chatId, trimmedText, session);
@@ -584,13 +598,37 @@ export class TelegramBot {
     private async setFlowCancelKeyboard(chatId: number, session: TelegramSession): Promise<void> {
         try {
             const lang = session.lang || 'uz';
-            const msg = await sendMessage(chatId, '⏳', { replyMarkup: keyboards.cancelReplyKeyboard(lang) });
+            const prevId = session.data?.cancel_keyboard_message_id;
+            if (prevId) {
+                try {
+                    await deleteMessage(chatId, prevId);
+                } catch {
+                    // ignore
+                }
+            }
+            const label = lang === 'uz' ? '❌ Bekor qilish' : '❌ Отмена';
+            const msg = await sendMessage(chatId, label, { replyMarkup: keyboards.cancelReplyKeyboard(lang) });
             if (msg?.message_id) {
-                await deleteMessage(chatId, msg.message_id);
+                await this.updateSession(session.telegram_user_id, {
+                    data: { ...session.data, cancel_keyboard_message_id: msg.message_id }
+                });
             }
         } catch {
             // ignore
         }
+    }
+
+    private async clearFlowCancelKeyboard(chatId: number, session: TelegramSession): Promise<void> {
+        const msgId = session.data?.cancel_keyboard_message_id;
+        if (!msgId) return;
+        try {
+            await deleteMessage(chatId, msgId);
+        } catch {
+            // ignore
+        }
+        await this.updateSession(session.telegram_user_id, {
+            data: { ...session.data, cancel_keyboard_message_id: null }
+        });
     }
 
     private async showExistingResumeMenu(chatId: number, session: TelegramSession): Promise<void> {
@@ -1896,6 +1934,7 @@ export class TelegramBot {
 
     private async handleCancel(chatId: number, session: TelegramSession): Promise<void> {
         const lang = session.lang;
+        await this.clearFlowCancelKeyboard(chatId, session);
         const updatedData = {
             ...session.data,
             edit_mode: false,
@@ -2257,6 +2296,8 @@ export class TelegramBot {
             return;
         }
 
+        await this.clearFlowCancelKeyboard(chatId, session);
+
         await this.supabase.from('job_seeker_profiles').upsert({
             user_id: session.user_id,
             full_name: resumeData?.full_name || null,
@@ -2348,10 +2389,25 @@ export class TelegramBot {
             education_level: resume.education_level
         };
 
-        const matched = matchAndSortJobs(profile, normalized);
+        let matched = matchAndSortJobs(profile, normalized);
         if (!matched.length) {
-            await this.sendPrompt(chatId, session, botTexts.noJobsFound[lang], { replyMarkup: keyboards.mainMenuKeyboard(lang, 'seeker') });
-            return;
+            const categoryIds = Array.isArray(profile.category_ids) && profile.category_ids.length > 0
+                ? profile.category_ids
+                : profile.category_id ? [profile.category_id] : [];
+            const scored = normalized.map(job => calculateMatchScore(profile, job));
+            const fallback = scored.filter(item => {
+                if (!item.matchCriteria.gender) return false;
+                if (categoryIds.length > 0 && item.category_id && !item.matchCriteria.category) return false;
+                const hasLocation = Boolean(item.region_id || item.district_id);
+                if (hasLocation && profile.region_id && !item.matchCriteria.location) return false;
+                return true;
+            }).sort((a, b) => b.matchScore - a.matchScore);
+            if (fallback.length) {
+                matched = fallback;
+            } else {
+                await this.sendPrompt(chatId, session, botTexts.noJobsFound[lang], { replyMarkup: keyboards.mainMenuKeyboard(lang, 'seeker') });
+                return;
+            }
         }
 
         await this.updateSession(session.telegram_user_id, {
@@ -2474,6 +2530,7 @@ export class TelegramBot {
     }
 
     private async showMainMenu(chatId: number, session: TelegramSession): Promise<void> {
+        await this.clearFlowCancelKeyboard(chatId, session);
         await this.updateSession(session.telegram_user_id, { state: BotState.MAIN_MENU, data: { ...session.data, clean_inputs: false } });
         const lang = session.lang;
         const role = session.data?.active_role === 'employer' ? 'employer' : 'seeker';
@@ -2558,6 +2615,7 @@ export class TelegramBot {
 
     private async handleLogout(chatId: number, session: TelegramSession): Promise<void> {
         const lang = session.lang;
+        await this.clearFlowCancelKeyboard(chatId, session);
         await this.updateSession(session.telegram_user_id, {
             user_id: null,
             phone: null,
@@ -2600,6 +2658,7 @@ export class TelegramBot {
         });
 
         await sendMessage(chatId, botTexts.jobPublished[lang], { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
+        await this.clearFlowCancelKeyboard(chatId, session);
         await this.updateSession(session.telegram_user_id, { state: BotState.EMPLOYER_MAIN_MENU, data: { ...session.data, temp_job: null, clean_inputs: false } });
     }
 
