@@ -222,7 +222,6 @@ export function regionKeyboard(lang: BotLang, regions: RegionItem[] = REGIONS): 
         buttons.push(row);
     }
 
-    buttons.push([{ text: lang === 'uz' ? 'Bekor qilish' : 'Отмена', callback_data: 'cancel' }]);
     return createInlineKeyboard(buttons);
 }
 
@@ -261,8 +260,6 @@ export function districtKeyboard(districts: Array<{ id: string; name_uz: string;
         navRow.push({ text: lang === 'uz' ? 'Keyingi sahifa' : 'Следующая страница', callback_data: `distpage:${page + 1}` });
     }
     buttons.push(navRow);
-    buttons.push([{ text: lang === 'uz' ? 'Bekor qilish' : 'Отмена', callback_data: 'cancel' }]);
-
     return createInlineKeyboard(buttons);
 }
 
@@ -289,7 +286,6 @@ export function categoryKeyboard(lang: BotLang, categories: CategoryItem[] = CAT
 
     // Back button
     buttons.push([{ text: lang === 'uz' ? 'Orqaga' : 'Назад', callback_data: 'back:district' }]);
-    buttons.push([{ text: lang === 'uz' ? 'Bekor qilish' : 'Отмена', callback_data: 'cancel' }]);
 
     return createInlineKeyboard(buttons);
 }
@@ -304,7 +300,6 @@ export function experienceKeyboard(lang: BotLang): object {
     }]);
 
     buttons.push([{ text: lang === 'uz' ? 'Orqaga' : 'Назад', callback_data: 'back:category' }]);
-    buttons.push([{ text: lang === 'uz' ? 'Bekor qilish' : 'Отмена', callback_data: 'cancel' }]);
 
     return createInlineKeyboard(buttons);
 }
@@ -319,7 +314,6 @@ export function educationKeyboard(lang: BotLang): object {
     }]);
 
     buttons.push([{ text: lang === 'uz' ? 'Orqaga' : 'Назад', callback_data: 'back:experience' }]);
-    buttons.push([{ text: lang === 'uz' ? 'Bekor qilish' : 'Отмена', callback_data: 'cancel' }]);
 
     return createInlineKeyboard(buttons);
 }
@@ -340,7 +334,6 @@ export function genderKeyboard(lang: BotLang, includeAny: boolean = true): objec
     }
 
     rows.push([{ text: lang === 'uz' ? 'Orqaga' : 'Назад', callback_data: 'back:education' }]);
-    rows.push([{ text: lang === 'uz' ? 'Bekor qilish' : 'Отмена', callback_data: 'cancel' }]);
 
     return createInlineKeyboard(rows);
 }
@@ -368,7 +361,6 @@ export function salaryKeyboard(lang: BotLang): object {
     }
 
     buttons.push([{ text: lang === 'uz' ? 'Orqaga' : 'Назад', callback_data: 'back:gender' }]);
-    buttons.push([{ text: lang === 'uz' ? 'Bekor qilish' : 'Отмена', callback_data: 'cancel' }]);
 
     return createInlineKeyboard(buttons);
 }
@@ -378,14 +370,14 @@ export function salaryKeyboard(lang: BotLang): object {
 // ============================================
 export function skipKeyboard(lang: BotLang): object {
     return createReplyKeyboard([
-        [{ text: lang === 'uz' ? "O'tkazib yuborish" : 'Пропустить' }],
-        [{ text: lang === 'uz' ? 'Bekor qilish' : 'Отмена' }]
+        [{ text: lang === 'uz' ? "⏭️ O'tkazib yuborish" : '⏭️ Пропустить' }],
+        [{ text: lang === 'uz' ? '❌ Bekor qilish' : '❌ Отмена' }]
     ], { one_time: false, resize: true });
 }
 
 export function cancelReplyKeyboard(lang: BotLang): object {
     return createReplyKeyboard([
-        [{ text: lang === 'uz' ? 'Bekor qilish' : 'Отмена' }]
+        [{ text: lang === 'uz' ? '❌ Bekor qilish' : '❌ Отмена' }]
     ], { one_time: false, resize: true });
 }
 
@@ -397,8 +389,8 @@ export function skillsKeyboard(lang: BotLang, skills: string[]): object {
     if (skills.length > 0) {
         rows.push([{ text: lang === 'uz' ? 'Tayyor' : 'Готово' }]);
     }
-    rows.push([{ text: lang === 'uz' ? "O'tkazib yuborish" : 'Пропустить' }]);
-    rows.push([{ text: lang === 'uz' ? 'Bekor qilish' : 'Отмена' }]);
+    rows.push([{ text: lang === 'uz' ? "⏭️ O'tkazib yuborish" : '⏭️ Пропустить' }]);
+    rows.push([{ text: lang === 'uz' ? '❌ Bekor qilish' : '❌ Отмена' }]);
     return createReplyKeyboard(rows, { one_time: false, resize: true });
 }
 
@@ -786,7 +778,6 @@ export function multiCategoryKeyboard(lang: BotLang, selectedIds: string[] = [],
     if (selectedIds.length > 0) {
         rows.push([{ text: lang === 'uz' ? 'Davom etish' : 'Продолжить', callback_data: 'mcat:done' }]);
     }
-    rows.push([{ text: lang === 'uz' ? 'Bekor qilish' : 'Отмена', callback_data: 'cancel' }]);
 
     return createInlineKeyboard(rows);
 }
@@ -804,7 +795,7 @@ export function removeKeyboard(): object {
 export function locationRequestKeyboard(lang: BotLang): object {
     return createReplyKeyboard([
         [{ text: lang === 'uz' ? '📍 Joylashuvni yuborish' : '📍 Отправить локацию', request_location: true }],
-        [{ text: lang === 'uz' ? 'Bekor qilish' : 'Отмена' }]
+        [{ text: lang === 'uz' ? '❌ Bekor qilish' : '❌ Отмена' }]
     ], { one_time: true, resize: true });
 }
 

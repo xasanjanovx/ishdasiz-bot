@@ -420,6 +420,19 @@ export class TelegramBot {
             }
             await this.handleTextByState(chatId, trimmedText, session);
 
+            if (
+                msg.message_id &&
+                session.data?.clean_inputs &&
+                msg.text &&
+                !trimmedText.startsWith('/')
+            ) {
+                try {
+                    await deleteMessage(chatId, msg.message_id);
+                } catch {
+                    // ignore
+                }
+            }
+
         } catch (err) {
             console.error('Bot message error:', err);
             const lang = sessionOverride?.lang || 'uz';
@@ -565,6 +578,18 @@ export class TelegramBot {
             } else {
                 await this.startResumeFlow(chatId, session);
             }
+        }
+    }
+
+    private async setFlowCancelKeyboard(chatId: number, session: TelegramSession): Promise<void> {
+        try {
+            const lang = session.lang || 'uz';
+            const msg = await sendMessage(chatId, ' ', { replyMarkup: keyboards.cancelReplyKeyboard(lang) });
+            if (msg?.message_id) {
+                await deleteMessage(chatId, msg.message_id);
+            }
+        } catch {
+            // ignore
         }
     }
 
@@ -1184,7 +1209,7 @@ export class TelegramBot {
                     }
                 }
             });
-            await sendMessage(chatId, botTexts.postJobSalary[lang], { replyMarkup: keyboards.removeKeyboard() });
+            await sendMessage(chatId, botTexts.postJobSalary[lang], { replyMarkup: keyboards.cancelReplyKeyboard(lang) });
             return;
         }
 
@@ -1475,7 +1500,7 @@ export class TelegramBot {
                 }
             }
         });
-        const options = { replyMarkup: keyboards.backCancelKeyboard(lang, 'salary') };
+        const options = { replyMarkup: keyboards.cancelReplyKeyboard(lang) };
         if (messageId) {
             await editMessage(chatId, messageId, botTexts.askTitle[lang], options);
         } else {
@@ -1578,13 +1603,17 @@ export class TelegramBot {
         const normalizedGender = gender === 'any' ? null : gender;
         const salaryMin = parseNumber(expected_salary_min ?? salary);
 
+        const safeTitle = String(
+            title || desired_position || resumeData?.category_name || resumeData?.category_name_uz || resumeData?.category_name_ru || 'Mutaxassis'
+        ).trim();
+
         const payload = {
             user_id: session.user_id,
             region_id: region_id ?? null,
             district_id: district_id ?? null,
             category_id: finalCategoryId,
             category_ids: finalCategoryIds,
-            title: title || desired_position || null,
+            title: safeTitle,
             full_name: full_name || name || null,
             about: about || null,
             skills: Array.isArray(skills) ? skills : [],
@@ -1629,8 +1658,8 @@ export class TelegramBot {
         const lang = session.lang;
         const state = session.state;
 
-        const skipTexts = ["O'tkazib yuborish", "O‘tkazib yuborish", 'Пропустить'];
-        const cancelTexts = ['Bekor qilish', 'Отмена'];
+        const skipTexts = ["O'tkazib yuborish", "O‘tkazib yuborish", 'Пропустить', "⏭️ O'tkazib yuborish", '⏭️ Пропустить'];
+        const cancelTexts = ['Bekor qilish', 'Отмена', '❌ Bekor qilish', '❌ Отмена'];
         if (skipTexts.includes(text)) {
             await this.handleSkip(chatId, session);
             return;
@@ -1723,7 +1752,7 @@ export class TelegramBot {
                 state: BotState.ENTERING_NAME,
                 data: { ...session.data, resume: { ...session.data?.resume, title: text } }
             });
-            const options = { replyMarkup: keyboards.backCancelKeyboard(lang, 'title') };
+            const options = { replyMarkup: keyboards.cancelReplyKeyboard(lang) };
             await this.sendPrompt(chatId, session, botTexts.askName[lang], options);
             return;
         }
@@ -1829,6 +1858,18 @@ export class TelegramBot {
         const state = session.state;
 
         // Skip logic based on state (only optional steps)
+        if (state === BotState.ENTERING_TITLE) {
+            await this.sendPrompt(chatId, session, botTexts.askTitle[lang], {
+                replyMarkup: keyboards.cancelReplyKeyboard(lang)
+            });
+            return;
+        }
+        if (state === BotState.ENTERING_NAME) {
+            await this.sendPrompt(chatId, session, botTexts.askName[lang], {
+                replyMarkup: keyboards.cancelReplyKeyboard(lang)
+            });
+            return;
+        }
         if (state === BotState.ENTERING_ABOUT) {
             await this.handleTextByState(chatId, "", session);
             return;
@@ -1857,7 +1898,8 @@ export class TelegramBot {
             edit_mode: false,
             edit_field: null,
             location_intent: null,
-            role_switch_pending: false
+            role_switch_pending: false,
+            clean_inputs: false
         };
         await this.updateSession(session.telegram_user_id, {
             state: BotState.MAIN_MENU,
@@ -1957,10 +1999,11 @@ export class TelegramBot {
 
     private async startResumeFlow(chatId: number, session: TelegramSession): Promise<void> {
         const lang = session.lang;
+        await this.setFlowCancelKeyboard(chatId, session);
         const regions = await this.getRegions();
         await this.updateSession(session.telegram_user_id, {
             state: BotState.SELECTING_REGION,
-            data: { ...session.data, active_role: 'job_seeker', resume: {}, selected_categories: [] }
+            data: { ...session.data, active_role: 'job_seeker', resume: {}, selected_categories: [], clean_inputs: true }
         });
         await this.sendPrompt(chatId, session, botTexts.askRegion[lang], {
             replyMarkup: keyboards.regionKeyboard(lang, regions)
@@ -2099,13 +2142,13 @@ export class TelegramBot {
 
         if (field === 'title') {
             await this.updateSession(session.telegram_user_id, { state: BotState.ENTERING_TITLE });
-            await this.sendPrompt(chatId, session, botTexts.askTitle[lang], { replyMarkup: keyboards.backCancelKeyboard(lang, 'salary') });
+            await this.sendPrompt(chatId, session, botTexts.askTitle[lang], { replyMarkup: keyboards.cancelReplyKeyboard(lang) });
             return;
         }
 
         if (field === 'name') {
             await this.updateSession(session.telegram_user_id, { state: BotState.ENTERING_NAME });
-            await this.sendPrompt(chatId, session, botTexts.askName[lang], { replyMarkup: keyboards.backCancelKeyboard(lang, 'title') });
+            await this.sendPrompt(chatId, session, botTexts.askName[lang], { replyMarkup: keyboards.cancelReplyKeyboard(lang) });
             return;
         }
 
@@ -2222,7 +2265,7 @@ export class TelegramBot {
 
         await this.updateSession(session.telegram_user_id, {
             state: BotState.VIEWING_RESUME,
-            data: { ...session.data, resume: {}, active_resume_id: resumeId }
+            data: { ...session.data, resume: {}, active_resume_id: resumeId, clean_inputs: false }
         });
 
         const { data: resume } = await this.supabase.from('resumes').select('*').eq('id', resumeId).maybeSingle();
@@ -2428,7 +2471,7 @@ export class TelegramBot {
     }
 
     private async showMainMenu(chatId: number, session: TelegramSession): Promise<void> {
-        await this.updateSession(session.telegram_user_id, { state: BotState.MAIN_MENU });
+        await this.updateSession(session.telegram_user_id, { state: BotState.MAIN_MENU, data: { ...session.data, clean_inputs: false } });
         const lang = session.lang;
         const role = session.data?.active_role === 'employer' ? 'employer' : 'seeker';
         const lastJobMessageId = session.data?.last_job_message_id;
@@ -2480,11 +2523,12 @@ export class TelegramBot {
         // Since the primary focus is seeker resume flow restoration, I will keep this minimal but functional
         const lang = session.lang;
         if (action === 'post_job') {
+            await this.setFlowCancelKeyboard(chatId, session);
             await this.updateSession(session.telegram_user_id, {
                 state: BotState.POSTING_JOB_TITLE,
-                data: { ...session.data, temp_job: {} }
+                data: { ...session.data, temp_job: {}, clean_inputs: true }
             });
-            await sendMessage(chatId, botTexts.postJobTitle[lang], { replyMarkup: keyboards.removeKeyboard() });
+            await sendMessage(chatId, botTexts.postJobTitle[lang], { replyMarkup: keyboards.cancelReplyKeyboard(lang) });
         } else if (action === 'my_vacancies') {
             // Show vacancies logic
             await sendMessage(chatId, "📋 Bo'lim ishlab chiqilmoqda.", { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
@@ -2553,7 +2597,7 @@ export class TelegramBot {
         });
 
         await sendMessage(chatId, botTexts.jobPublished[lang], { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
-        await this.updateSession(session.telegram_user_id, { state: BotState.EMPLOYER_MAIN_MENU, data: { ...session.data, temp_job: null } });
+        await this.updateSession(session.telegram_user_id, { state: BotState.EMPLOYER_MAIN_MENU, data: { ...session.data, temp_job: null, clean_inputs: false } });
     }
 
     // JOB SEARCH
