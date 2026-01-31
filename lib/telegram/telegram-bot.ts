@@ -584,7 +584,7 @@ export class TelegramBot {
     private async setFlowCancelKeyboard(chatId: number, session: TelegramSession): Promise<void> {
         try {
             const lang = session.lang || 'uz';
-            const msg = await sendMessage(chatId, ' ', { replyMarkup: keyboards.cancelReplyKeyboard(lang) });
+            const msg = await sendMessage(chatId, '⏳', { replyMarkup: keyboards.cancelReplyKeyboard(lang) });
             if (msg?.message_id) {
                 await deleteMessage(chatId, msg.message_id);
             }
@@ -1502,10 +1502,13 @@ export class TelegramBot {
         });
         const options = { replyMarkup: keyboards.cancelReplyKeyboard(lang) };
         if (messageId) {
-            await editMessage(chatId, messageId, botTexts.askTitle[lang], options);
-        } else {
-            await this.sendPrompt(chatId, session, botTexts.askTitle[lang], options);
+            try {
+                await deleteMessage(chatId, messageId);
+            } catch {
+                // ignore
+            }
         }
+        await this.sendPrompt(chatId, session, botTexts.askTitle[lang], options);
     }
 
     private async handleSalaryMaxSelect(chatId: number, value: string, session: TelegramSession, messageId?: number): Promise<void> {
