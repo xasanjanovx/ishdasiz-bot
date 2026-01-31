@@ -808,6 +808,10 @@ export class TelegramBot {
     private async finalizeLogin(chatId: number, phone: string, session: TelegramSession): Promise<void> {
         const lang = session.lang;
         const userId = await this.findOrCreateUser(phone, session.telegram_user_id);
+        if (!userId) {
+            await sendMessage(chatId, botTexts.error[lang]);
+            return;
+        }
 
         const { data: seekerProfile } = await this.supabase.from('job_seeker_profiles').select('id').eq('user_id', userId).single();
         const { data: employerProfile } = await this.supabase.from('employer_profiles').select('id').eq('user_id', userId).single();
@@ -851,31 +855,75 @@ export class TelegramBot {
         }
     }
 
-    private async findOrCreateUser(phone: string, telegramId: number): Promise<string> {
-        // Try getting by phone
-        const { data: user } = await this.supabase.from('users').select('id').eq('phone', phone).single();
-        if (user) return user.id;
+    private async findOrCreateUser(phone: string, telegramId: number): Promise<string | null> {
+        const now = new Date().toISOString();
+        const { data: existing } = await this.supabase
+            .from('users')
+            .select('id')
+            .eq('phone', phone)
+            .maybeSingle();
+        if (existing?.id) return existing.id;
 
-        // Try getting by telegram ID via auth logic (usually we use phone to sync)
-        // For new users, we might need to create a record in 'users' table or Supabase Auth.
-        // Assuming 'users' is the public profile table sync'ed with Auth.
-        // If strict validation requires Supabase Auth user, we would use Admin API to create user.
-        // For simplicity here, assuming we treat 'users' table as source of truth or create placeholder.
-        // But standard flow: Create Supabase Auth user if not exists?
-        // Let's assume for now we use a simpler approach or existing logic:
-        // We'll return a random UUID if we can't create real auth, OR we create a public user record.
+        const { data: upserted, error: upsertError } = await this.supabase
+            .from('users')
+            .upsert({
+                phone,
+                telegram_user_id: telegramId,
+                role: 'job_seeker',
+                created_at: now
+            }, { onConflict: 'phone' })
+            .select('id')
+            .single();
 
-        // Simulating creation of public user record if using custom auth table
-        const { data: newUser, error } = await this.supabase.from('users').insert({
-            phone,
-            role: 'user',
-            telegram_user_id: telegramId
-        }).select('id').single();
+        if (upserted?.id) return upserted.id;
+        if (upsertError) {
+            console.error('User upsert error:', upsertError);
+        }
 
-        if (newUser) return newUser.id;
+        const { data: retry } = await this.supabase
+            .from('users')
+            .select('id')
+            .eq('phone', phone)
+            .maybeSingle();
+        if (retry?.id) return retry.id;
 
-        // Fallback or error
-        throw new Error('Could not create user');
+        const { data: byTelegram } = await this.supabase
+            .from('users')
+            .select('id')
+            .eq('telegram_user_id', telegramId)
+            .maybeSingle();
+        if (byTelegram?.id) return byTelegram.id;
+
+        try {
+            const admin = this.supabase.auth?.admin;
+            if (admin) {
+                const { data: authData, error: authError } = await admin.createUser({
+                    phone,
+                    phone_confirm: true
+                });
+                if (authError) {
+                    console.error('Auth create user error:', authError);
+                }
+                if (authData?.user?.id) {
+                    const { data: created } = await this.supabase
+                        .from('users')
+                        .upsert({
+                            id: authData.user.id,
+                            phone,
+                            telegram_user_id: telegramId,
+                            role: 'job_seeker',
+                            created_at: now
+                        })
+                        .select('id')
+                        .single();
+                    return created?.id || authData.user.id;
+                }
+            }
+        } catch (err) {
+            console.error('Auth admin create failed:', err);
+        }
+
+        return null;
     }
 
     private async updateSession(telegramUserId: number, updates: Partial<TelegramSession>): Promise<void> {
