@@ -117,6 +117,13 @@ export function backKeyboard(lang: BotLang, backAction: string): object {
     ]);
 }
 
+export function backCancelKeyboard(lang: BotLang, backAction: string): object {
+    return createInlineKeyboard([
+        [{ text: lang === 'uz' ? 'Orqaga' : 'Назад', callback_data: `back:${backAction}` }],
+        [{ text: lang === 'uz' ? 'Bekor qilish' : 'Отмена', callback_data: 'cancel' }]
+    ]);
+}
+
 export function cancelInlineKeyboard(lang: BotLang): object {
     return createInlineKeyboard([
         [{ text: lang === 'uz' ? 'Bekor qilish' : 'Отмена', callback_data: 'cancel' }]
@@ -400,7 +407,7 @@ export function skillsKeyboard(lang: BotLang, skills: string[]): object {
 // ============================================
 // Main Menu Keyboard (Reply)
 // ============================================
-export function mainMenuKeyboard(lang: BotLang): object {
+export function mainMenuKeyboard(lang: BotLang, role?: 'seeker' | 'employer'): object {
     return createReplyKeyboard([
         [
             { text: lang === 'uz' ? '🔎 Ish topish' : '🔎 Найти работу' },
@@ -432,12 +439,9 @@ export function jobNavigationKeyboard(lang: BotLang, current: number, total: num
     }
     buttons.push(navRow);
 
-    const showApply = !source || source === 'manual' || source === 'bot';
-    if (showApply) {
-        buttons.push([
-            { text: lang === 'uz' ? 'Ariza berish' : 'Откликнуться', callback_data: `apply:${jobId}` }
-        ]);
-    }
+    buttons.push([
+        { text: lang === 'uz' ? 'Ariza berish' : 'Откликнуться', callback_data: `apply:${jobId}` }
+    ]);
 
     buttons.push([
         {
@@ -666,12 +670,11 @@ export function resumeEditKeyboard(lang: BotLang): object {
             { text: lang === 'uz' ? '💼 Lavozim' : '💼 Должность', callback_data: 'resumeedit:title' }
         ],
         [
-            { text: lang === 'uz' ? '🆔 Ism' : '🆔 Имя', callback_data: 'resumeedit:name' },
-            { text: lang === 'uz' ? "🎂 Tug'ilgan sana" : '🎂 Дата рождения', callback_data: 'resumeedit:birth_date' }
+            { text: lang === 'uz' ? '🆔 Ism' : '🆔 Имя', callback_data: 'resumeedit:name' }
         ],
         [
             { text: lang === 'uz' ? "📝 O'zi haqida" : '📝 О себе', callback_data: 'resumeedit:about' },
-            { text: lang === 'uz' ? '🧩 Ko‘nikmalar' : '🧩 Навыки', callback_data: 'resumeedit:skills' }
+            { text: lang === 'uz' ? "🧩 Ko'nikmalar" : '🧩 Навыки', callback_data: 'resumeedit:skills' }
         ],
         [{ text: lang === 'uz' ? '🏠 Bosh menyu' : '🏠 Главное меню', callback_data: 'menu:main' }],
         [{ text: lang === 'uz' ? 'Bekor qilish' : 'Отмена', callback_data: 'cancel' }]
@@ -803,6 +806,7 @@ export function removeKeyboard(): object {
 export function locationRequestKeyboard(lang: BotLang): object {
     return createReplyKeyboard([
         [{ text: lang === 'uz' ? '📍 Joylashuvni yuborish' : '📍 Отправить локацию', request_location: true }],
+        [{ text: lang === 'uz' ? "O'tkazib yuborish" : 'Пропустить' }],
         [{ text: lang === 'uz' ? 'Bekor qilish' : 'Отмена' }]
     ], { one_time: true, resize: true });
 }
@@ -828,6 +832,7 @@ export function resumeListKeyboard(
 
 export function resumeOptionsKeyboard(lang: BotLang): object {
     return createInlineKeyboard([
+        [{ text: lang === 'uz' ? '🔎 Ish qidirish' : '🔎 Найти работу', callback_data: 'action:search' }],
         [{ text: lang === 'uz' ? "✏️ Ma'lumotlarni yangilash" : '✏️ Обновить данные', callback_data: 'resume:update' }],
         [{ text: lang === 'uz' ? "🗑️ O'chirish" : '🗑️ Удалить', callback_data: 'resume:delete' }],
         [{ text: lang === 'uz' ? '🏠 Bosh menyu' : '🏠 Главное меню', callback_data: 'menu:main' }]

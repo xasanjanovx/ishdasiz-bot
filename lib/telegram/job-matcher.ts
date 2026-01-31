@@ -1,6 +1,6 @@
-/**
+﻿/**
  * Job Matcher - Strict criteria with weighted score.
- * Filters out vacancies that don't match ключевые требования.
+ * Filters out vacancies that don't match key requirements.
  */
 
 export interface UserProfile {
@@ -57,6 +57,7 @@ export interface MatchedJob extends JobVacancy {
     matchScore: number;
     explanation: MatchExplanation;
     matchCriteria: MatchCriteria;
+    ageKnown?: boolean;
 }
 
 const EXPERIENCE_YEARS: Record<string, number> = {
@@ -77,13 +78,13 @@ const EDUCATION_ORDER: Record<string, number> = {
 };
 
 const WEIGHTS: Record<keyof MatchCriteria, number> = {
-    location: 25,
+    location: 30,
     category: 20,
     gender: 15,
     age: 10,
     education: 10,
-    salary: 10,
-    experience: 10
+    salary: 8,
+    experience: 7
 };
 
 function toNumber(value: number | string | undefined | null): number | null {
@@ -92,12 +93,13 @@ function toNumber(value: number | string | undefined | null): number | null {
     return Number.isFinite(num) ? num : null;
 }
 
-function normalizeGender(value?: string | number | null): 'male' | 'female' | 'any' | null {
+function normalizeGender(value?: string | number | null): 'male' | 'female' | 'any' | 'other' | null {
     if (value === null || value === undefined) return null;
-    if (value === '1' || value === 1 || value === 'male') return 'male';
-    if (value === '2' || value === 2 || value === 'female') return 'female';
-    if (value === '3' || value === 3 || value === 'any') return 'any';
-    return null;
+    const raw = typeof value === 'string' ? value.toLowerCase().trim() : value;
+    if (raw === '1' || raw === 1 || raw === 'male' || raw === 'erkak' || raw === 'мужской') return 'male';
+    if (raw === '2' || raw === 2 || raw === 'female' || raw === 'ayol' || raw === 'женский') return 'female';
+    if (raw === '3' || raw === 3 || raw === 'any' || raw === 'ahamiyatsiz' || raw === 'любое' || raw === 'любой' || raw === 'не важно') return 'any';
+    return 'other';
 }
 
 function normalizeEducation(value?: string | number | null): number {
@@ -206,7 +208,7 @@ export function calculateMatchScore(profile: UserProfile, job: JobVacancy): Matc
         add('location', false);
     }
 
-    // Category (Soha)
+    // Category
     const categoryIds = Array.isArray(profile.category_ids) && profile.category_ids.length > 0
         ? profile.category_ids
         : profile.category_id ? [profile.category_id] : [];
@@ -216,24 +218,28 @@ export function calculateMatchScore(profile: UserProfile, job: JobVacancy): Matc
         add('category', false);
     }
 
-    // Gender (Jins)
-    const userGender = normalizeGender(profile.gender);
+    // Gender
+    const userGender = normalizeGender(profile.gender) || 'any';
     const jobGender = normalizeGender(job.gender);
-    if (!jobGender || jobGender === 'any') {
+    if (jobGender === null) {
         add('gender', true);
-    } else if (userGender) {
+    } else if (jobGender === 'any') {
+        add('gender', true);
+    } else if (jobGender === 'male' || jobGender === 'female') {
         add('gender', userGender === jobGender);
     } else {
         add('gender', false);
     }
 
-    // Age (Yosh)
+    // Age
     const ageMin = job.age_min ?? null;
     const ageMax = job.age_max ?? null;
     const userAge = getAgeFromBirthDate(profile.birth_date || null);
+    let ageKnown = true;
     if (ageMin || ageMax) {
         if (userAge == null) {
-            add('age', false);
+            ageKnown = false;
+            add('age', true, 0.4);
         } else {
             const minOk = ageMin ? userAge >= ageMin : true;
             const maxOk = ageMax ? userAge <= ageMax : true;
@@ -243,7 +249,7 @@ export function calculateMatchScore(profile: UserProfile, job: JobVacancy): Matc
         add('age', true);
     }
 
-    // Education (Ma'lumot)
+    // Education
     const jobEdu = normalizeEducation(job.education_level);
     const userEdu = normalizeEducation(profile.education_level);
     if (jobEdu > 0) {
@@ -252,7 +258,7 @@ export function calculateMatchScore(profile: UserProfile, job: JobVacancy): Matc
         add('education', true);
     }
 
-    // Salary (Maosh)
+    // Salary
     const expectedMin = profile.expected_salary_min ?? 0;
     if (expectedMin && expectedMin > 0) {
         if (job.salary_max && job.salary_max >= expectedMin) {
@@ -268,7 +274,7 @@ export function calculateMatchScore(profile: UserProfile, job: JobVacancy): Matc
         add('salary', true);
     }
 
-    // Experience (Tajriba)
+    // Experience
     const jobExp = getJobExperienceYears(job);
     const userExp = getResumeExperienceYears(profile);
     if (jobExp !== null) {
@@ -296,7 +302,8 @@ export function calculateMatchScore(profile: UserProfile, job: JobVacancy): Matc
             uz: reasonsUz.join(', '),
             ru: reasonsRu.join(', ')
         },
-        matchCriteria: criteria
+        matchCriteria: criteria,
+        ageKnown
     };
 }
 
