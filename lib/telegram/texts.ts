@@ -143,16 +143,16 @@ export const botTexts = {
         ru: '🧠 | Введите основные навыки:\n| Например: Excel, 1C, CRM, Продажи, Photoshop, Teamwork\n| Можно отправлять по одному или через запятую.\n\n<i>Кнопка “Готово” появится после первого навыка.</i>\n<i>Если навыков нет — нажмите “Пропустить”.</i>'
     },
     skillAdded: {
-        uz: '✅ Qo‘shildi',
-        ru: '✅ Добавлено'
+        uz: '<b>Qo‘shildi:</b>',
+        ru: '<b>Добавлено:</b>'
     },
     skillDeleted: {
         uz: '🗑️ O‘chirildi',
         ru: '🗑️ Удалено'
     },
     resumeSaved: {
-        uz: '✅ Ma’lumotlar saqlandi.',
-        ru: '✅ Данные сохранены.'
+        uz: "Ma'lumotlar saqlandi.",
+        ru: 'Данные сохранены.'
     },
     locationRequest: {
         uz: '📍 | Iltimos, joylashuvni yuboring.\n| Agar kompyuterdan foydalansangiz, skrepka orqali “Joylashuv” yuborishingiz mumkin.',

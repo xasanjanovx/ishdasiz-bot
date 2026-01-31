@@ -509,7 +509,10 @@ export class TelegramBot {
                 case 'searchmode': await this.handleSearchMode(chatId, value, session); break;
                 case 'resume_view': await this.showResumeById(chatId, value, session); break;
                 case 'resume_search': await this.handleResumeSearchSelect(chatId, value, session); break;
-                case 'resume_new': await this.startResumeFlow(chatId, session); break;
+                case 'resume_new':
+                    await this.updateSession(session.telegram_user_id, { data: { ...session.data, active_resume_id: null, resume: {} } });
+                    await this.startResumeFlow(chatId, session);
+                    break;
                 case 'resumeedit': await this.handleResumeEdit(chatId, value, session); break;
                 case 'cancel': await this.handleCancel(chatId, session); break;
                 case 'resume':
@@ -1809,7 +1812,7 @@ export class TelegramBot {
                 state: BotState.ENTERING_ABOUT,
                 data: { ...session.data, resume: { ...session.data?.resume, full_name: text } }
             });
-            const options = { replyMarkup: keyboards.skipKeyboard(lang) };
+            const options = { replyMarkup: keyboards.aboutSkipInlineKeyboard(lang) };
             await this.sendPrompt(chatId, session, botTexts.askAbout[lang], options);
             return;
         }
@@ -1826,7 +1829,7 @@ export class TelegramBot {
                 state: BotState.ADDING_SKILLS,
                 data: { ...session.data, resume: { ...session.data?.resume, about: aboutText } }
             });
-            const options = { replyMarkup: keyboards.skillsKeyboard(lang, []) };
+            const options = { replyMarkup: keyboards.skillsInlineKeyboard(lang, false) };
             await this.sendPrompt(chatId, session, botTexts.askSkills[lang], options);
             return;
         }
@@ -1848,7 +1851,8 @@ export class TelegramBot {
             const addedItems = items.length > 0 ? items : [text];
             const addedText = addedItems.map(item => `✅ ${item}`).join('\n');
             await sendMessage(chatId, `${botTexts.skillAdded[lang]}\n${addedText}`, {
-                replyMarkup: keyboards.skillsKeyboard(lang, currentSkills)
+                parseMode: 'HTML',
+                replyMarkup: keyboards.skillsInlineKeyboard(lang, currentSkills.length > 0)
             });
             return;
         }
@@ -2021,7 +2025,7 @@ export class TelegramBot {
 
         if (target === 'about') {
             await this.updateSession(session.telegram_user_id, { state: BotState.ENTERING_ABOUT });
-            await this.sendPrompt(chatId, session, botTexts.askAbout[lang], { replyMarkup: keyboards.skipKeyboard(lang) });
+            await this.sendPrompt(chatId, session, botTexts.askAbout[lang], { replyMarkup: keyboards.aboutSkipInlineKeyboard(lang) });
             return;
         }
 
@@ -2045,7 +2049,7 @@ export class TelegramBot {
         const regions = await this.getRegions();
         await this.updateSession(session.telegram_user_id, {
             state: BotState.SELECTING_REGION,
-            data: { ...session.data, active_role: 'job_seeker', resume: {}, selected_categories: [], clean_inputs: true }
+            data: { ...session.data, active_role: 'job_seeker', resume: {}, selected_categories: [], active_resume_id: null, clean_inputs: true }
         });
         await this.sendPrompt(chatId, session, botTexts.askRegion[lang], {
             replyMarkup: keyboards.regionKeyboard(lang, regions)
@@ -2196,13 +2200,13 @@ export class TelegramBot {
 
         if (field === 'about') {
             await this.updateSession(session.telegram_user_id, { state: BotState.ENTERING_ABOUT });
-            await this.sendPrompt(chatId, session, botTexts.askAbout[lang], { replyMarkup: keyboards.skipKeyboard(lang) });
+            await this.sendPrompt(chatId, session, botTexts.askAbout[lang], { replyMarkup: keyboards.aboutSkipInlineKeyboard(lang) });
             return;
         }
 
         if (field === 'skills') {
             await this.updateSession(session.telegram_user_id, { state: BotState.ADDING_SKILLS });
-            await this.sendPrompt(chatId, session, botTexts.askSkills[lang], { replyMarkup: keyboards.skillsKeyboard(lang, resume.skills || []) });
+            await this.sendPrompt(chatId, session, botTexts.askSkills[lang], { replyMarkup: keyboards.skillsInlineKeyboard(lang, Array.isArray(resume.skills) && resume.skills.length > 0) });
             return;
         }
 
@@ -2524,7 +2528,7 @@ export class TelegramBot {
                 data: { ...session.data, resume: { ...session.data?.resume, skills: currentSkills } }
             });
             await sendMessage(chatId, botTexts.skillDeleted[lang], {
-                replyMarkup: keyboards.skillsKeyboard(lang, currentSkills)
+                replyMarkup: keyboards.skillsInlineKeyboard(lang, currentSkills.length > 0)
             });
         }
     }
@@ -2557,6 +2561,17 @@ export class TelegramBot {
         const lang = session.lang;
 
         if (action === 'jobs' || action === 'search') {
+            if (action === 'search' && session.data?.active_resume_id) {
+                const { data: resume } = await this.supabase
+                    .from('resumes')
+                    .select('*')
+                    .eq('id', session.data.active_resume_id)
+                    .maybeSingle();
+                if (resume) {
+                    await this.startJobSearchByResume(chatId, session, resume);
+                    return;
+                }
+            }
             await this.updateSession(session.telegram_user_id, { state: BotState.BROWSING_JOBS });
             await this.sendPrompt(chatId, session, botTexts.searchModePrompt[lang], {
                 replyMarkup: keyboards.searchModeKeyboard(lang)

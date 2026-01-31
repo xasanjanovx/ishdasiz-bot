@@ -384,14 +384,19 @@ export function cancelReplyKeyboard(lang: BotLang): object {
 // ============================================
 // Skills Keyboard
 // ============================================
-export function skillsKeyboard(lang: BotLang, skills: string[]): object {
-    const rows: ReplyButton[][] = [];
-    if (skills.length > 0) {
-        rows.push([{ text: lang === 'uz' ? 'Tayyor' : 'Готово' }]);
+export function aboutSkipInlineKeyboard(lang: BotLang): object {
+    return createInlineKeyboard([
+        [{ text: lang === 'uz' ? "O'tkazib yuborish" : 'Пропустить', callback_data: 'skip' }]
+    ]);
+}
+
+export function skillsInlineKeyboard(lang: BotLang, hasSkills: boolean): object {
+    const rows: InlineButton[][] = [];
+    if (hasSkills) {
+        rows.push([{ text: lang === 'uz' ? 'Tayyor' : 'Готово', callback_data: 'skills:done' }]);
     }
-    rows.push([{ text: lang === 'uz' ? "⏭️ O'tkazib yuborish" : '⏭️ Пропустить' }]);
-    rows.push([{ text: lang === 'uz' ? '❌ Bekor qilish' : '❌ Отмена' }]);
-    return createReplyKeyboard(rows, { one_time: false, resize: true });
+    rows.push([{ text: lang === 'uz' ? "O'tkazib yuborish" : 'Пропустить', callback_data: 'skip' }]);
+    return createInlineKeyboard(rows);
 }
 
 // ============================================
