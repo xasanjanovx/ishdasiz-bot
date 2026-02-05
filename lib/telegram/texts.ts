@@ -31,8 +31,8 @@ export const botTexts = {
         ru: "Здравствуйте | Добро пожаловать в <b>ISHDASIZ</b>!\n\nЗдесь вы можете:\n| 🎯 Быстро найти работу или сотрудника\n| 🧾 Управлять резюме и вакансиями в одном месте\n| ⚡ Упростить процесс подбора\n| 🤖 Использовать помощь ИИ\n\nПолезные команды:\n| ▶️ /start — начать\n| 🔄 /role — сменить роль (соискатель / работодатель)\n| 🚪 /logout — выйти из аккаунта\n| ❓ /help — помощь по использованию"
     },
     helpText: {
-        uz: "❓ <b>Yordam</b>\n\nBot imkoniyatlari:\n| 🔎 Vakansiyalarni qidirish (rezyume yoki joylashuv bo‘yicha)\n| ⭐ Saqlab qo‘yish va keyin ko‘rish\n| 🧾 Rezyume yaratish va tahrirlash\n| 📢 Vakansiya joylash va arizalarni boshqarish\n\nBuyruqlar:\n| ▶️ /start — boshlash\n| 🔄 /role — rolni almashtirish\n| 🚪 /logout — chiqish\n| ❓ /help — yordam\n\nAdmin: @ishdasiz_admin",
-        ru: "❓ <b>Помощь</b>\n\nВозможности бота:\n| 🔎 Поиск вакансий (по резюме или по локации)\n| ⭐ Сохранение вакансий\n| 🧾 Создание и редактирование резюме\n| 📢 Размещение вакансий и управление откликами\n\nКоманды:\n| ▶️ /start — начать\n| 🔄 /role — сменить роль\n| 🚪 /logout — выйти\n| ❓ /help — помощь\n\nАдмин: @ishdasiz_admin"
+        uz: "❓ <b>Yordam</b>\n\nBot imkoniyatlari:\n| 🔎 Vakansiyalarni rezyume bo‘yicha qidirish\n| ⭐ Saqlab qo‘yish va keyin ko‘rish\n| 🧾 Rezyume yaratish va tahrirlash\n| 📢 Vakansiya joylash va arizalarni boshqarish\n\nBuyruqlar:\n| ▶️ /start — boshlash\n| 🔄 /role — rolni almashtirish\n| 🚪 /logout — chiqish\n| ❓ /help — yordam\n\nAdmin: @ishdasiz_admin",
+        ru: "❓ <b>Помощь</b>\n\nВозможности бота:\n| 🔎 Поиск вакансий по резюме\n| ⭐ Сохранение вакансий\n| 🧾 Создание и редактирование резюме\n| 📢 Размещение вакансий и управление откликами\n\nКоманды:\n| ▶️ /start — начать\n| 🔄 /role — сменить роль\n| 🚪 /logout — выйти\n| ❓ /help — помощь\n\nАдмин: @ishdasiz_admin"
     },
     logoutDone: {
         uz: '🚪 Siz akkauntdan chiqdingiz.',
@@ -68,9 +68,29 @@ export const botTexts = {
         uz: '🔐 Parolni kiriting:',
         ru: '🔐 Введите пароль:'
     },
+    createPasswordPrompt: {
+        uz: '🔐 Yangi parol yarating (kamida 6 ta belgi):',
+        ru: '🔐 Создайте новый пароль (минимум 6 символов):'
+    },
     passwordInvalid: {
         uz: '❌ Parol noto‘g‘ri.',
         ru: '❌ Неверный пароль.'
+    },
+    passwordTooShort: {
+        uz: "❌ Parol kamida 6 ta belgidan iborat bo'lishi kerak.",
+        ru: '❌ Пароль должен содержать минимум 6 символов.'
+    },
+    passwordCreated: {
+        uz: '✅ Parol saqlandi.',
+        ru: '✅ Пароль сохранён.'
+    },
+    passwordNotSet: {
+        uz: "Parol hali yaratilmagan. SMS orqali kiring va parol yarating.",
+        ru: 'Пароль ещё не создан. Войдите через SMS и создайте пароль.'
+    },
+    accountLocked: {
+        uz: '❌ Akkaunt vaqtincha bloklandi.',
+        ru: '❌ Аккаунт временно заблокирован.'
     },
     loginSuccess: {
         uz: '✅ Xush kelibsiz!',
@@ -87,8 +107,8 @@ export const botTexts = {
         ru: '🏙️ | Выберите район/город:'
     },
     askCategory: {
-        uz: '🧭 | Faoliyat sohangizni tanlang:\n| Bir nechta kategoriya tanlashingiz mumkin',
-        ru: '🧭 | Выберите сферу деятельности:\n| Можно выбрать несколько категорий'
+        uz: '🧭 | Faoliyat sohangizni tanlang:\n| Bir nechta kategoriya tanlashingiz mumkin.\n| Qavs ichidagi son — tanlangan joylashuv bo‘yicha vakansiyalar soni.',
+        ru: '🧭 | Выберите сферу деятельности:\n| Можно выбрать несколько категорий.\n| Число в скобках — количество вакансий по выбранной локации.'
     },
     askExperience: {
         uz: '🧠 | Ish tajribangizni tanlang:',
@@ -101,6 +121,18 @@ export const botTexts = {
     askGender: {
         uz: '🚻 | Jinsingizni tanlang:',
         ru: '🚻 | Выберите пол:'
+    },
+    askBirthDate: {
+        uz: '🎂 | Tug‘ilgan sanangizni kiriting (kk.oo.yyyy):',
+        ru: '🎂 | Введите дату рождения (дд.мм.гггг):'
+    },
+    birthDateInvalid: {
+        uz: '❌ Sana noto‘g‘ri. Iltimos, kk.oo.yyyy formatida kiriting.',
+        ru: '❌ Неверная дата. Введите в формате дд.мм.гггг.'
+    },
+    askSpecialCriteria: {
+        uz: '✨ | Alohida toifalarga kirasizmi? (ixtiyoriy)\n| Moslarini belgilang yoki “Davom etish”ni bosing.',
+        ru: '✨ | Относитесь к особым категориям? (необязательно)\n| Выберите подходящее или нажмите “Продолжить”.'
     },
     askSalary: {
         uz: '💰 | Kutilayotgan maosh (so‘m):',
@@ -135,12 +167,52 @@ export const botTexts = {
         ru: '🪪 | Введите полное имя (Ф.И.О):'
     },
     askAbout: {
-        uz: '📝 | O‘zingiz haqingizda qo‘shimcha ma’lumot (qisqacha) — ixtiyoriy.\nEslatma: Qancha ko‘p ma’lumot yozsangiz, ish beruvchilar sizni shuncha tez topadi.',
-        ru: '📝 | Дополнительная информация о себе (кратко) — необязательно.\nСовет: Чем больше информации, тем быстрее работодатель вас найдёт.'
+        uz: '<b>📝 | O‘zingiz haqingizda qo‘shimcha ma’lumot (qisqacha) — ixtiyoriy.</b>\n<i>Eslatma: Qancha ko‘p ma’lumot yozsangiz, ish beruvchilar sizni shuncha tez topadi.</i>',
+        ru: '<b>📝 | Дополнительная информация о себе (кратко) — необязательно.</b>\n<i>Совет: Чем больше информации, тем быстрее работодатель вас найдёт.</i>'
     },
     askSkills: {
         uz: '🧠 | Asosiy ko‘nikmalaringizni kiriting:\n| Masalan: Excel, 1C, CRM, Sotuv, Photoshop, Teamwork\n| Har birini alohida xabar yoki vergul orqali yozishingiz mumkin.\n\n<i>Ko‘nikma yuborgach “Tayyor” tugmasi paydo bo‘ladi.</i>\n<i>Agar ko‘nikma bo‘lmasa, “O‘tkazib yuborish”ni bosing.</i>',
         ru: '🧠 | Введите основные навыки:\n| Например: Excel, 1C, CRM, Продажи, Photoshop, Teamwork\n| Можно отправлять по одному или через запятую.\n\n<i>Кнопка “Готово” появится после первого навыка.</i>\n<i>Если навыков нет — нажмите “Пропустить”.</i>'
+    },
+    askWorkplace: {
+        uz: '<b>🏢 | Ishlagan joyingiz.</b>\n<i>Masalan: “ABC MChJ — SMM menejer”</i>',
+        ru: '<b>🏢 | Где вы работали.</b>\n<i>Например: “ABC ООО — SMM менеджер”</i>'
+    },
+    askWorkStartYear: {
+        uz: '<b>📅 | Ish boshlagan yilni kiriting.</b>\n<i>Masalan: 2019</i>',
+        ru: '<b>📅 | Укажите год начала работы.</b>\n<i>Например: 2019</i>'
+    },
+    askWorkEndYear: {
+        uz: '<b>📅 | Ish tugagan yilni kiriting.</b>\n<i>Agar hozir ishlayotgan bo‘lsangiz: “Hozir” deb yozing</i>',
+        ru: '<b>📅 | Укажите год окончания работы.</b>\n<i>Если работаете сейчас — напишите “Сейчас”</i>'
+    },
+    workStartYearInvalid: {
+        uz: '<b>📅 | Boshlanish yili noto‘g‘ri.</b>\n<i>Masalan: 2019</i>',
+        ru: '<b>📅 | Неверный год начала.</b>\n<i>Например: 2019</i>'
+    },
+    workEndYearInvalid: {
+        uz: '<b>📅 | Tugash yili noto‘g‘ri.</b>\n<i>Masalan: 2022 yoki “Hozir”</i>',
+        ru: '<b>📅 | Неверный год окончания.</b>\n<i>Например: 2022 или “Сейчас”</i>'
+    },
+    askEducationPlace: {
+        uz: '<b>🎓 | O‘qigan joyingiz.</b>\n<i>Masalan: “Andijon davlat universiteti — Axborot texnologiyalari”</i>',
+        ru: '<b>🎓 | Где вы учились.</b>\n<i>Например: “Андижанский госуниверситет — IT”</i>'
+    },
+    askEducationStartYear: {
+        uz: '<b>📅 | O‘qishni boshlagan yilni kiriting.</b>\n<i>Masalan: 2016</i>',
+        ru: '<b>📅 | Укажите год начала обучения.</b>\n<i>Например: 2016</i>'
+    },
+    askEducationEndYear: {
+        uz: '<b>📅 | O‘qishni tugatgan yilni kiriting.</b>\n<i>Agar hozir o‘qiyotgan bo‘lsangiz: “Hozir” deb yozing</i>',
+        ru: '<b>📅 | Укажите год окончания обучения.</b>\n<i>Если учитесь сейчас — напишите “Сейчас”</i>'
+    },
+    educationStartYearInvalid: {
+        uz: '<b>📅 | Boshlanish yili noto‘g‘ri.</b>\n<i>Masalan: 2016</i>',
+        ru: '<b>📅 | Неверный год начала.</b>\n<i>Например: 2016</i>'
+    },
+    educationEndYearInvalid: {
+        uz: '<b>📅 | Tugash yili noto‘g‘ri.</b>\n<i>Masalan: 2020 yoki “Hozir”</i>',
+        ru: '<b>📅 | Неверный год окончания.</b>\n<i>Например: 2020 или “Сейчас”</i>'
     },
     skillAdded: {
         uz: '<b>Qo‘shildi:</b>',
@@ -155,8 +227,8 @@ export const botTexts = {
         ru: 'Данные сохранены.'
     },
     locationRequest: {
-        uz: '📍 | Iltimos, joylashuvni yuboring.\n| Agar kompyuterdan foydalansangiz, skrepka orqali “Joylashuv” yuborishingiz mumkin.',
-        ru: '📍 | Пожалуйста, отправьте локацию.\n| Если вы за ПК, можно отправить через скрепку «Локация».'
+        uz: '<b>📍 | Iltimos, joylashuvni yuboring.</b>\n<i>Agar kompyuterdan foydalansangiz, skrepka orqali “Joylashuv” yuborishingiz mumkin.</i>',
+        ru: '<b>📍 | Пожалуйста, отправьте локацию.</b>\n<i>Если вы за ПК, можно отправить через скрепку «Локация».</i>'
     },
     locationAccepted: {
         uz: '✅ Joylashuv qabul qilindi.',
@@ -191,8 +263,8 @@ export const botTexts = {
         ru: (count: number) => `✅ Найдено ${count} вакансий`
     },
     searchModePrompt: {
-        uz: '🔎 | Qidirish usulini tanlang:',
-        ru: '🔎 | Выберите способ поиска:'
+        uz: '🔎 | Rezyume bo‘yicha qidiruv:',
+        ru: '🔎 | Поиск по резюме:'
     },
     savedEmpty: {
         uz: '⭐ Saqlanganlar bo‘limi hozircha bo‘sh.',
@@ -229,8 +301,8 @@ export const botTexts = {
         ru: 'Неверная команда. Используйте меню.'
     },
     matchScore: {
-        uz: (score: number) => `Mos kelish: ${score}%`,
-        ru: (score: number) => `Совпадение: ${score}%`
+        uz: (score: number) => `<b>Mos kelish: ${score}%</b>`,
+        ru: (score: number) => `<b>Совпадение: ${score}%</b>`
     },
     resumeMenu: {
         uz: '🧾 | Rezyume\n\nRezyumeni ko‘rish yoki tahrirlash:',
@@ -258,31 +330,131 @@ export const botTexts = {
         uz: 'Ish beruvchi menyusi:',
         ru: 'Меню работодателя:'
     },
+    employerProfileIntro: {
+        uz: "🏢 | Ish beruvchi profili\n| Faqat kompaniya nomini kiriting.",
+        ru: '🏢 | Профиль работодателя\n| Введите только название компании.'
+    },
     companyNamePrompt: {
         uz: '🏢 Kompaniya nomini kiriting:',
         ru: '🏢 Введите название компании:'
     },
+    employerDirectorPrompt: {
+        uz: '👤 Mas’ul shaxs:',
+        ru: '👤 Ответственное лицо:'
+    },
+    employerIndustryPrompt: {
+        uz: '🏭 Faoliyat sohasi:',
+        ru: '🏭 Сфера деятельности:'
+    },
+    employerSizePrompt: {
+        uz: '👥 Kompaniya hajmi:',
+        ru: '👥 Размер компании:'
+    },
+    employerRegionPrompt: {
+        uz: '📍 Kompaniya joylashuvi (viloyat):',
+        ru: '📍 Регион компании:'
+    },
+    employerDistrictPrompt: {
+        uz: '🏙️ Tuman/Shaharni tanlang:',
+        ru: '🏙️ Выберите район/город:'
+    },
+    employerAddressPrompt: {
+        uz: '📌 Ish joy manzili:',
+        ru: '📌 Адрес работы:'
+    },
+    employerDescriptionPrompt: {
+        uz: '📝 Kompaniya haqida qisqacha:',
+        ru: '📝 Коротко о компании:'
+    },
+    jobCreateMode: {
+        uz: '📢 Vakansiya yaratish usulini tanlang:',
+        ru: '📢 Выберите способ создания вакансии:'
+    },
+    aiJobPrompt: {
+        uz: '🤖 Vakansiya matnini yuboring. AI avtomatik to‘ldiradi.',
+        ru: '🤖 Отправьте текст вакансии. AI заполнит автоматически.'
+    },
+    jobAddressPrompt: {
+        uz: '📌 Ish joy manzilini yozing:\n<i>Masalan: Andijon sh., Bobur ko‘chasi 12</i>',
+        ru: '📌 Укажите адрес работы:\n<i>Например: г. Андижан, ул. Бобур 12</i>'
+    },
+    jobWorkModePrompt: {
+        uz: '🏷️ Ish usuli:',
+        ru: '🏷️ Формат работы:'
+    },
+    jobEmploymentPrompt: {
+        uz: '💼 Bandlik turi:',
+        ru: '💼 Тип занятости:'
+    },
+    jobWorkingDaysPrompt: {
+        uz: '📅 Ish kunlari:',
+        ru: '📅 График:'
+    },
+    jobWorkingHoursPrompt: {
+        uz: '⏰ Ish vaqti:\n<i>Masalan: 09:00-18:00</i>',
+        ru: '⏰ Время работы:\n<i>Например: 09:00-18:00</i>'
+    },
+    jobExperiencePrompt: {
+        uz: '🧠 Tajriba talabi:',
+        ru: '🧠 Требуемый опыт:'
+    },
+    jobEducationPrompt: {
+        uz: "🎓 Ma'lumot talabi:",
+        ru: '🎓 Требуемое образование:'
+    },
+    jobGenderPrompt: {
+        uz: '🚻 Jins talabi:',
+        ru: '🚻 Требование по полу:'
+    },
+    jobAgePrompt: {
+        uz: '🎂 Yosh oralig‘i:\n<i>Masalan: 18-35 yoki 18+</i>',
+        ru: '🎂 Возраст:\n<i>Например: 18-35 или 18+</i>'
+    },
+    jobAgeInvalid: {
+        uz: '❗ Yoshni to‘g‘ri kiriting. Masalan: 18-35 yoki 18+',
+        ru: '❗ Введите возраст корректно. Например: 18-35 или 18+'
+    },
+    jobLanguagesPrompt: {
+        uz: '🗣️ Tillar (ixtiyoriy):\n<i>Vergul bilan ajrating. Masalan: O‘zbek, Rus, Ingliz</i>',
+        ru: '🗣️ Языки (необязательно):\n<i>Разделите запятыми. Например: узбекский, русский, английский</i>'
+    },
+    jobBenefitsPrompt: {
+        uz: '🎁 Sharoitlar (ixtiyoriy):\n<i>Masalan: bepul tushlik, xizmat transporti, yo‘l kira, tibbiy sug‘urta, bonus va mukofotlar</i>',
+        ru: '🎁 Условия (необязательно):\n<i>Например: бесплатный обед, служебный транспорт, проезд, медстраховка, бонусы</i>'
+    },
+    jobHrPrompt: {
+        uz: '👤 HR menejer (F.I.O):\n<i>Masalan: Azizbek Mamadiyev</i>',
+        ru: '👤 HR менеджер (Ф.И.О.):\n<i>Например: Азизбек Мамадиев</i>'
+    },
+    jobContactPrompt: {
+        uz: '📞 Aloqa telefoni:\n<i>Masalan: +998901234567</i>',
+        ru: '📞 Контактный телефон:\n<i>Например: +998901234567</i>'
+    },
 
     // Employer posting
     postJobTitle: {
-        uz: '📝 Vakansiya nomi qanday?',
-        ru: '📝 Название вакансии?'
+        uz: "📝 Qanday ishchi qidiryapsiz? (lavozim)\n<i>Masalan: Boshqaruvchi, Bosh buxgalter, HR menejer, SMM menejer, Dasturchi</i>",
+        ru: '📝 Какого сотрудника вы ищете? (должность)\n<i>Например: Руководитель, Главный бухгалтер, HR-менеджер, SMM-менеджер, Разработчик</i>'
     },
     postJobCategory: {
         uz: '🧭 Vakansiya sohasini tanlang:',
         ru: '🧭 Выберите сферу вакансии:'
     },
     postJobSalary: {
-        uz: '💰 Maosh qancha taklif qilasiz?',
-        ru: '💰 Какую зарплату предлагаете?'
+        uz: '💰 Maosh qancha taklif qilasiz?\n<i>Masalan: 3 000 000 yoki “Kelishiladi”.</i>\n<i>“Kelishiladi” tugmasini ham bosishingiz mumkin.</i>',
+        ru: '💰 Какую зарплату предлагаете?\n<i>Например: 3 000 000 или “Договорная”.</i>\n<i>Можно нажать кнопку “Договорная”.</i>'
+    },
+    postJobSalaryMax: {
+        uz: '💰 Maksimal maosh (ixtiyoriy):\n<i>Masalan: 8 000 000. Maksimum bo‘lmasa, “Davom etish”ni bosing.</i>',
+        ru: '💰 Максимальная зарплата (необязательно):\n<i>Например: 8 000 000. Если максимума нет — нажмите “Продолжить”.</i>'
     },
     postJobRegion: {
         uz: '📍 Ish joyi qayerda?',
         ru: '📍 Где находится работа?'
     },
     postJobDescription: {
-        uz: '📌 Vakansiya haqida batafsil yozing:\nTalablar, vazifalar va sharoitlar.',
-        ru: '📌 Опишите вакансию подробно:\nТребования, обязанности, условия.'
+        uz: '📌 Vakansiya haqida batafsil yozing:\nTalablar va vazifalar:\n- ...\n- ...\n- ...',
+        ru: '📌 Подробно опишите вакансию:\nТребования и обязанности:\n- ...\n- ...\n- ...'
     },
     postJobConfirm: {
         uz: (title: string) => `Vakansiyani tekshiring va tasdiqlang:\n\n"${title}"`,
@@ -356,8 +528,9 @@ export function formatJobCard(job: any, lang: BotLang, matchScore?: number): str
         : salaryMin
             ? `${(salaryMin / 1e6).toFixed(1)} mln+`
             : (lang === 'uz' ? 'Kelishiladi' : 'Договорная');
-    const location = [job.region_name, job.district_name].filter(Boolean).join(', ') || na;
-    let card = `💼 | ${title || na}\n🏢 | ${job.company_name || (lang === 'uz' ? 'Kompaniya' : 'Компания')}\n💰 | ${salary}\n📍 | ${location}`;
+    const location = [job.region_name, job.district_name].filter(Boolean).join(', ');
+    let card = `💼 | ${title || na}\n🏢 | ${job.company_name || (lang === 'uz' ? 'Kompaniya' : 'Компания')}\n💰 | ${salary}`;
+    if (location) card += `\n📍 | ${location}`;
     if (matchScore !== undefined) card += `\n\n${botTexts.matchScore[lang](matchScore)}`;
     return card;
 }
@@ -365,11 +538,12 @@ export function formatJobCard(job: any, lang: BotLang, matchScore?: number): str
 export function formatFullJobCard(job: any, lang: BotLang): string {
     const raw = job.raw_source_json || {};
     const na = lang === 'uz' ? "Ko'rsatilmagan" : 'Не указано';
-    const title = lang === 'uz' ? (job.title_uz || job.title_ru) : (job.title_ru || job.title_uz);
+    const title = lang === 'uz' ? (job.title_uz || job.title_ru || job.title) : (job.title_ru || job.title_uz || job.title);
 
     let description = lang === 'uz'
         ? (job.description_uz || job.description_ru)
         : (job.description_ru || job.description_uz);
+    if (!description && job.description) description = job.description;
     if (!description && raw?.info) description = raw.info;
     if (description) {
         description = String(description)
@@ -390,6 +564,8 @@ export function formatFullJobCard(job: any, lang: BotLang): string {
 
     const location = [job.region_name, job.district_name].filter(Boolean).join(', ') || na;
     const address = job.address || raw?.address || raw?.work_address || null;
+    const lat = Number(job.latitude ?? raw?.latitude);
+    const lon = Number(job.longitude ?? raw?.longitude);
     const hrName = job.hr_name || raw?.hr?.name || raw?.hr?.fio || null;
 
     const empTypeLabels: Record<string, { uz: string; ru: string }> = {
@@ -403,11 +579,12 @@ export function formatFullJobCard(job: any, lang: BotLang): string {
     };
     const empType = job.employment_type ? (empTypeLabels[job.employment_type]?.[lang] || job.employment_type) : null;
 
-    const workMode = getWorkModeLabel(job, lang) || null;
-    const workingDays = getWorkingDaysLabel(job, lang) || null;
-    const experienceLabel = getExperienceLabel(job, lang) || null;
-    const educationLabel = getEducationLabel({ education_level: job.education_level, raw_source_json: job.raw_source_json }, lang) || null;
-    const genderLabel = getGenderLabel(job.gender ?? raw?.gender, lang) || null;
+    const workMode = typeof getWorkModeLabel === 'function' ? (getWorkModeLabel(job, lang) || null) : null;
+    const workingDays = typeof getWorkingDaysLabel === 'function' ? (getWorkingDaysLabel(job, lang) || null) : null;
+    const experienceLabel = typeof getExperienceLabel === 'function' ? (getExperienceLabel(job, lang) || null) : null;
+    const educationLabel = typeof getEducationLabel === 'function'
+        ? (getEducationLabel({ education_level: job.education_level, raw_source_json: job.raw_source_json }, lang) || null)
+        : null;
 
     const ageMin = job.age_min ?? raw?.age_min ?? raw?.age_from ?? null;
     const ageMax = job.age_max ?? raw?.age_max ?? raw?.age_to ?? null;
@@ -418,12 +595,27 @@ export function formatFullJobCard(job: any, lang: BotLang): string {
         else if (ageMax) ageLabel = lang === 'uz' ? `${ageMax} yoshgacha` : `до ${ageMax} лет`;
     }
 
-    let languagesLabel = formatLanguages(job.languages ?? raw?.languages ?? raw?.language_ids, lang);
+    let languagesSource: any = job.languages ?? raw?.languages ?? raw?.language_ids ?? raw?.language;
+    if (typeof languagesSource === 'string') {
+        try { languagesSource = JSON.parse(languagesSource); } catch { /* ignore */ }
+    }
+    let languagesLabel = formatLanguages(languagesSource, lang);
     if (!languagesLabel && typeof job.languages === 'string') languagesLabel = job.languages.trim();
+    if (!languagesLabel) {
+        const rawLangText = raw?.language || raw?.languages_text || raw?.til_bilishi || raw?.languages_required || raw?.language_text;
+        if (typeof rawLangText === 'string') languagesLabel = rawLangText.trim();
+    }
 
-    let benefitsLabel = formatBenefits(raw?.benefit_ids || raw?.benefits || job.benefits, lang);
+    let benefitsSource: any = raw?.benefit_ids || raw?.benefits || job.benefits;
+    if (typeof benefitsSource === 'string') {
+        try { benefitsSource = JSON.parse(benefitsSource); } catch { /* ignore */ }
+    }
+    let benefitsLabel = formatBenefits(benefitsSource, lang);
+    if (!benefitsLabel && typeof job.benefits === 'string') {
+        benefitsLabel = job.benefits.trim();
+    }
     if (!benefitsLabel) {
-        const rawBenefits = raw?.ijtimoiy_paketlar || raw?.social_packages || raw?.benefits_text;
+        const rawBenefits = raw?.ijtimoiy_paketlar || raw?.ijtimoiy_paket || raw?.social_packages || raw?.benefits_text || raw?.qulayliklar || raw?.social_package;
         if (Array.isArray(rawBenefits)) benefitsLabel = rawBenefits.join(', ');
         if (!benefitsLabel && typeof rawBenefits === 'string') benefitsLabel = rawBenefits;
     }
@@ -444,10 +636,11 @@ export function formatFullJobCard(job: any, lang: BotLang): string {
     };
 
     const lines: string[] = [];
-    lines.push(`💼 | ${title || na}`);
+    lines.push(`💼 | ${lang === 'uz' ? 'Lavozim' : 'Должность'}: ${title || na}`);
     lines.push('— — — — — — — — — — — — — — — —');
     lines.push(`🏢 | ${lang === 'uz' ? 'Kompaniya' : 'Компания'}: ${job.company_name || (lang === 'uz' ? 'Kompaniya' : 'Компания')}`);
-    lines.push(`📍 | ${lang === 'uz' ? 'Joylashuv' : 'Локация'}: ${location}`);
+    const locationLabel = normalize(location || null);
+    if (locationLabel) lines.push(`📍 | ${lang === 'uz' ? 'Joylashuv' : 'Локация'}: ${locationLabel}`);
     if (address) lines.push(`📌 | ${lang === 'uz' ? 'Ish joy manzili' : 'Адрес'}: ${address}`);
     lines.push(`💰 | ${lang === 'uz' ? 'Maosh' : 'Зарплата'}: ${salary}`);
 
@@ -457,10 +650,6 @@ export function formatFullJobCard(job: any, lang: BotLang): string {
     const edu = normalize(educationLabel || null);
     if (edu) lines.push(`🎓 | ${lang === 'uz' ? "Ma'lumot" : 'Образование'}: ${edu}`);
 
-    const gender = normalize(genderLabel || null);
-    if (gender && !['Ahamiyatsiz', 'Любой'].includes(gender)) {
-        lines.push(`🚻 | ${lang === 'uz' ? 'Jins' : 'Пол'}: ${gender}`);
-    }
 
     if (ageLabel) lines.push(`🧓 | ${lang === 'uz' ? 'Yosh' : 'Возраст'}: ${ageLabel}`);
 
@@ -479,7 +668,7 @@ export function formatFullJobCard(job: any, lang: BotLang): string {
     if (langs) lines.push(`🌐 | ${lang === 'uz' ? 'Tillarni bilishi' : 'Языки'}: ${langs}`);
 
     const benefits = normalize(benefitsLabel || null);
-    if (benefits) lines.push(`🎁 | ${lang === 'uz' ? 'Qulayliklar' : 'Условия'}: ${benefits}`);
+    if (benefits) lines.push(`✨ | ${lang === 'uz' ? 'Sharoitlar' : 'Условия'}: ${benefits}`);
 
     // Description parsing
     const parseSections = (text?: string | null) => {
@@ -494,7 +683,17 @@ export function formatFullJobCard(job: any, lang: BotLang): string {
             if (!match || match.index == null) return null;
             return { key: m.key, index: match.index, length: match[0].length };
         }).filter(Boolean) as Array<{ key: string; index: number; length: number }>;
-        if (!found.length) return { tasks: [], reqs: [], perks: [] };
+        if (!found.length) {
+            const bulletItems = text
+                .replace(/\r/g, '')
+                .split('\n')
+                .map(line => line.trim())
+                .filter(line => line.startsWith('-') || line.startsWith('•'))
+                .map(line => line.replace(/^[-•]\s*/, '').trim())
+                .filter(Boolean);
+            if (bulletItems.length) return { tasks: bulletItems, reqs: [], perks: [] };
+            return { tasks: [], reqs: [], perks: [] };
+        }
         const sorted = found.sort((a, b) => a.index - b.index);
         const extract = (start: number, end: number) => {
             const chunk = text.slice(start, end).replace(/^[:\s-]+/, '').trim();
@@ -502,7 +701,7 @@ export function formatFullJobCard(job: any, lang: BotLang): string {
             const normalized = chunk
                 .replace(/\r/g, '')
                 .replace(/[•·]/g, '\n- ')
-                .replace(/\s*-\s*/g, ' - ')
+                .replace(/\s*-\s*/g, '\n- ')
                 .replace(/\n{2,}/g, '\n');
             return normalized
                 .split('\n')
@@ -539,7 +738,7 @@ export function formatFullJobCard(job: any, lang: BotLang): string {
 
     if (perks.length > 0) {
         lines.push('');
-        lines.push(`🎁 | ${lang === 'uz' ? 'Qulayliklar' : 'Условия'}`);
+        lines.push(`✨ | ${lang === 'uz' ? 'Sharoitlar' : 'Условия'}`);
         lines.push(...perks.map(item => `- ${item}`));
     }
 
@@ -559,7 +758,20 @@ export function formatFullJobCard(job: any, lang: BotLang): string {
 export const EXPERIENCE_LABELS: Record<string, { uz: string; ru: string }> = {
     no_experience: { uz: 'Tajribasiz', ru: 'Без опыта' },
     '1_year': { uz: '1 yil', ru: '1 год' },
+    '1_3_years': { uz: '1-3 yil', ru: '1-3 года' },
     '3_years': { uz: '1-3 yil', ru: '1-3 года' },
+    '3_5_years': { uz: '3-5 yil', ru: '3-5 лет' },
     '5_years': { uz: '3-5 yil', ru: '3-5 лет' },
+    '5_plus': { uz: '5+ yil', ru: '5+ лет' },
     '10_years': { uz: '5+ yil', ru: '5+ лет' }
+};
+
+export {
+    formatBenefits,
+    formatLanguages,
+    getWorkModeLabel,
+    getWorkingDaysLabel,
+    getExperienceLabel,
+    getEducationLabel,
+    getGenderLabel
 };

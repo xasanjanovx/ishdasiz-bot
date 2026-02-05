@@ -15,7 +15,6 @@ export const ISHDASIZ_CATEGORIES = {
     AGRICULTURE: 'a0000008-0008-4000-8000-000000000008',  // Qishloq xo'jaligi
     TRANSPORT: 'a0000009-0009-4000-8000-000000000009',    // Transport
     SALES: 'a0000010-0010-4000-8000-000000000010',        // Savdo va marketing
-    OTHER: 'a0000011-0011-4000-8000-000000000011',        // Boshqa
 };
 
 type CategoryKey = keyof typeof ISHDASIZ_CATEGORIES;
@@ -232,7 +231,7 @@ export interface CategoryMappingResult {
     categoryName: string;
     sourceCategory: string;
     sourceSubcategory: string | null;
-    matchedBy: 'title_keyword' | 'category_keyword' | 'strict_match' | 'default';
+    matchedBy: 'title_keyword' | 'category_keyword' | 'strict_match';
     matchedKeyword?: string;
 }
 
@@ -240,7 +239,7 @@ export function mapOsonishCategory(
     sourceCategory: string,
     sourceSubcategory: string | null,
     jobTitle: string
-): CategoryMappingResult {
+): CategoryMappingResult | null {
     const safeTitle = jobTitle || '';
     const safeCategory = sourceCategory || '';
 
@@ -316,14 +315,7 @@ export function mapOsonishCategory(
         }
     }
 
-    return {
-        categoryId: ISHDASIZ_CATEGORIES.OTHER,
-        categoryKey: 'OTHER',
-        categoryName: 'Boshqa',
-        sourceCategory,
-        sourceSubcategory,
-        matchedBy: 'default',
-    };
+    return null;
 }
 
 function getCategoryName(key: CategoryKey): string {
@@ -338,7 +330,6 @@ function getCategoryName(key: CategoryKey): string {
         AGRICULTURE: 'Qishloq xo\'jaligi',
         TRANSPORT: 'Transport',
         SALES: 'Savdo va marketing',
-        OTHER: 'Boshqa',
     };
     return names[key];
 }

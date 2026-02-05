@@ -28,7 +28,11 @@ interface DeepSeekResponse {
 /**
  * Call DeepSeek API
  */
-async function callDeepSeek(messages: DeepSeekMessage[], maxTokens: number = 1000): Promise<string> {
+async function callDeepSeek(
+    messages: DeepSeekMessage[],
+    maxTokens: number = 1000,
+    temperature: number = 0.1
+): Promise<string> {
     const apiKey = process.env.DEEPSEEK_API_KEY;
 
     if (!apiKey) {
@@ -45,7 +49,7 @@ async function callDeepSeek(messages: DeepSeekMessage[], maxTokens: number = 100
             model: DEEPSEEK_MODEL,
             messages,
             max_tokens: maxTokens,
-            temperature: 0.1, // Low temperature for consistent JSON output
+            temperature,
         }),
     });
 
@@ -61,6 +65,20 @@ async function callDeepSeek(messages: DeepSeekMessage[], maxTokens: number = 100
     }
 
     return data.choices[0]?.message?.content || '';
+}
+
+export async function callDeepSeekText(
+    prompt: string,
+    maxTokens: number = 500,
+    systemPrompt?: string,
+    temperature: number = 0.7
+): Promise<string> {
+    const messages: DeepSeekMessage[] = [];
+    if (systemPrompt) {
+        messages.push({ role: 'system', content: systemPrompt });
+    }
+    messages.push({ role: 'user', content: prompt });
+    return callDeepSeek(messages, maxTokens, temperature);
 }
 
 /**

@@ -56,7 +56,7 @@ export const formatSalary = (min: number | null | undefined, max: number | null 
 
   // Both 0/null → show "Kelishiladi"
   if (minVal <= 0 && maxVal <= 0) {
-    return lang === 'uz' || lang === 'uzCyrillic' ? 'Kelishiladi' : 'Договорная';
+    return lang === 'uz' ? 'Kelishiladi' : 'Договорная';
   }
 
   const formatNum = (n: number) => {
@@ -64,7 +64,7 @@ export const formatSalary = (min: number | null | undefined, max: number | null 
     return n.toLocaleString('ru-RU').replace(/,/g, ' ');
   };
 
-  const currency = lang === 'uz' || lang === 'uzCyrillic' ? "so'm" : 'сум';
+  const currency = lang === 'uz' ? "so'm" : 'сум';
 
   // Only min present (max = 0)
   if (minVal > 0 && maxVal <= 0) {
@@ -73,7 +73,7 @@ export const formatSalary = (min: number | null | undefined, max: number | null 
 
   // Only max present (min = 0) → "...gacha"
   if (minVal <= 0 && maxVal > 0) {
-    const suffix = lang === 'uz' || lang === 'uzCyrillic' ? 'gacha' : 'до';
+    const suffix = lang === 'uz' ? 'gacha' : 'до';
     return `${formatNum(maxVal)} ${currency} ${suffix}`;
   }
 
@@ -97,11 +97,11 @@ export const formatDate = (date: string, lang: Language): string => {
   const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
 
   if (diffDays === 0) {
-    return lang === 'uz' || lang === 'uzCyrillic' ? 'bugun' : 'сегодня';
+    return lang === 'uz' ? 'bugun' : 'сегодня';
   }
 
   if (diffDays > 0 && diffDays <= 7) {
-    if (lang === 'uz' || lang === 'uzCyrillic') {
+    if (lang === 'uz') {
       return `${diffDays} kun oldin`;
     } else {
       const dayWord = diffDays === 1 ? 'день' : diffDays <= 4 ? 'дня' : 'дней';
@@ -119,11 +119,11 @@ export const formatDate = (date: string, lang: Language): string => {
 
 // Experience options - matches OsonIsh API work_experiance field IDs exactly
 export const EXPERIENCE_OPTIONS = [
-  { value: '1', label_uz: 'Talab etilmaydi', label_ru: 'Не требуется' },
-  { value: '2', label_uz: '1 yilgacha', label_ru: 'До 1 года' },
+  { value: '1', label_uz: 'Tajribasiz', label_ru: 'Без опыта' },
+  { value: '2', label_uz: '1 yil', label_ru: '1 год' },
   { value: '3', label_uz: '1-3 yil', label_ru: '1-3 года' },
   { value: '4', label_uz: '3-5 yil', label_ru: '3-5 лет' },
-  { value: '5', label_uz: '5 yildan ortiq', label_ru: 'Более 5 лет' },
+  { value: '5', label_uz: '5+ yil', label_ru: '5+ лет' },
 ] as const;
 
 // Education options - same as vacancy creation form

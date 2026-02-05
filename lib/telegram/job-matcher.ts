@@ -4,18 +4,20 @@
  */
 
 export interface UserProfile {
-    region_id?: number | string;
-    district_id?: number | string;
+    region_id?: number | string | null;
+    district_id?: number | string | null;
     category_id?: string | null;
     category_ids?: string[];
     expected_salary_min?: number | null;
     expected_salary_max?: number | null;
     experience_level?: string | null;
+    experience?: string | number | null;
     employment_type?: string | null;
     gender?: string | number | null;
     birth_date?: string | null;
     education_level?: string | number | null;
     skills?: string[];
+    title?: string | null;
 }
 
 export interface JobVacancy {
@@ -63,28 +65,31 @@ export interface MatchedJob extends JobVacancy {
 const EXPERIENCE_YEARS: Record<string, number> = {
     no_experience: 0,
     '1_year': 1,
-    '3_years': 3,
-    '5_years': 5,
-    '10_years': 10
+    '1_3_years': 2,
+    '3_years': 2,
+    '3_5_years': 3,
+    '5_years': 3,
+    '5_plus': 4,
+    '10_years': 4
 };
 
 const EDUCATION_ORDER: Record<string, number> = {
     any: 0,
-    secondary: 1,
-    vocational: 2,
-    higher: 3,
-    master: 4,
-    phd: 5
+    orta: 1,
+    'orta_maxsus': 2,
+    oliy: 3,
+    master: 4
 };
 
+// Match weights (priority order: location → category → gender → age → education → salary → experience)
 const WEIGHTS: Record<keyof MatchCriteria, number> = {
-    location: 30,
-    category: 20,
-    gender: 15,
-    age: 10,
-    education: 10,
-    salary: 8,
-    experience: 7
+    location: 60,
+    category: 15,
+    gender: 10,
+    age: 5,
+    education: 5,
+    salary: 3,
+    experience: 2
 };
 
 function toNumber(value: number | string | undefined | null): number | null {
@@ -104,8 +109,30 @@ function normalizeGender(value?: string | number | null): 'male' | 'female' | 'a
 
 function normalizeEducation(value?: string | number | null): number {
     if (value === null || value === undefined) return 0;
-    if (typeof value === 'number') return Math.max(0, value);
-    const key = String(value).toLowerCase();
+    if (typeof value === 'number') {
+        if (value <= 0) return 0;
+        if (value >= 4) return 4;
+        if (value === 3) return 3;
+        if (value === 2) return 2;
+        return 1;
+    }
+
+    const key = String(value)
+        .toLowerCase()
+        .replace(/[\u2018\u2019\u02BC\u02BB`']/g, '')
+        .replace(/[-_]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    if (!key) return 0;
+    if (['any', 'ahamiyatsiz', 'не важно', 'любой', 'любой уровень'].includes(key)) return 0;
+    if (key.includes('magistr') || key.includes('master') || key.includes('магистр')) return 4;
+    if (key.includes('oliy') || key.includes('higher') || key.includes('высш')) return 3;
+    const hasOrta = key.includes('orta') || key.includes("o rta");
+    const hasMaxsus = key.includes('maxsus') || key.includes('spets') || key.includes('специаль');
+    if (hasOrta && hasMaxsus) return 2;
+    if (key.includes('vocational') || key.includes('средне специаль')) return 2;
+    if (hasOrta || key.includes('secondary') || key.includes('средн')) return 1;
     return EDUCATION_ORDER[key] ?? 0;
 }
 
@@ -125,6 +152,50 @@ function parseBirthDate(value?: string | null): Date | null {
     return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function normalizeExperience(value?: string | number | null): number | null {
+    if (value === null || value === undefined) return null;
+
+    if (typeof value === 'number') {
+        if (Number.isInteger(value) && value >= 1 && value <= 5) {
+            const map: Record<number, number> = { 1: 0, 2: 1, 3: 2, 4: 3, 5: 4 };
+            return map[value] ?? 0;
+        }
+        if (value <= 0) return 0;
+        if (value <= 1) return 1;
+        if (value <= 3) return 2;
+        if (value <= 5) return 3;
+        return 4;
+    }
+
+    const raw = String(value)
+        .toLowerCase()
+        .replace(/[\u2018\u2019\u02BC\u02BB`']/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    if (!raw) return null;
+    if (['any', 'ahamiyatsiz', 'не важно', 'любой'].includes(raw)) return null;
+    if (['1', '2', '3', '4', '5'].includes(raw)) {
+        const map: Record<string, number> = { '1': 0, '2': 1, '3': 2, '4': 3, '5': 4 };
+        return map[raw] ?? 0;
+    }
+    if (['no_experience', 'tajribasiz', 'без опыта', 'talab etilmaydi'].includes(raw)) return 0;
+    if (raw === '1_year' || /\b1\s*yil\b/.test(raw) || /\b1\s*год\b/.test(raw)) return 1;
+    if (raw === '1_3_years' || raw === '3_years' || raw.includes('1 3') || /(1\s*[-–]\s*3)/.test(raw)) return 2;
+    if (raw === '3_5_years' || raw === '5_years' || raw.includes('3 5') || /(3\s*[-–]\s*5)/.test(raw)) return 3;
+    if (
+        raw === '5_plus' ||
+        raw === '10_years' ||
+        /5\s*\+/.test(raw) ||
+        (/5\s*yil/.test(raw) && raw.includes('ortiq')) ||
+        raw.includes('5+')
+    ) return 4;
+
+    const numeric = Number(raw);
+    if (Number.isFinite(numeric)) return normalizeExperience(numeric);
+    return null;
+}
+
 function getAgeFromBirthDate(value?: string | null): number | null {
     const date = parseBirthDate(value);
     if (!date) return null;
@@ -138,31 +209,42 @@ function getAgeFromBirthDate(value?: string | null): number | null {
 }
 
 function getJobExperienceYears(job: JobVacancy): number | null {
-    if (typeof job.experience_years === 'number') return job.experience_years;
-    const exp = job.experience;
-    if (typeof exp === 'number') {
-        if (exp === 1) return 0;
-        if (exp === 2) return 1;
-        if (exp === 3) return 3;
-        if (exp === 4) return 5;
-        if (exp === 5) return 5;
-    }
-    if (typeof exp === 'string') {
-        const num = Number(exp);
-        if (Number.isFinite(num)) {
-            if (num === 1) return 0;
-            if (num === 2) return 1;
-            if (num === 3) return 3;
-            if (num === 4) return 5;
-            if (num === 5) return 5;
-        }
-    }
-    return null;
+    return normalizeExperience(
+        job.experience_years
+        ?? job.experience
+        ?? job.raw_source_json?.work_experiance
+        ?? job.raw_source_json?.experience
+    );
 }
 
 function getResumeExperienceYears(profile: UserProfile): number {
+    const parsed = normalizeExperience(profile.experience_level ?? profile.experience);
+    if (parsed !== null) return parsed;
     const key = profile.experience_level || 'no_experience';
     return EXPERIENCE_YEARS[key] ?? 0;
+}
+
+function hasGenderRequirement(job: JobVacancy): boolean {
+    const jobGender = normalizeGender(job.gender);
+    return jobGender !== null && jobGender !== 'any';
+}
+
+function tokenizeTitle(value?: string | null): string[] {
+    if (!value) return [];
+    return String(value)
+        .toLowerCase()
+        .replace(/[^a-z\u0400-\u04FF0-9\s]/g, ' ')
+        .split(/\s+/)
+        .filter(token => token.length >= 3);
+}
+
+function isGenericTitle(value?: string | null): boolean {
+    if (!value) return true;
+    const tokens = tokenizeTitle(value);
+    if (tokens.length === 0) return true;
+    const generic = new Set(['mutaxassis', 'ishchi', 'xodim', 'employee', 'specialist', 'worker', 'operator']);
+    if (tokens.length === 1 && generic.has(tokens[0])) return true;
+    return false;
 }
 
 export function calculateMatchScore(profile: UserProfile, job: JobVacancy): MatchedJob {
@@ -193,19 +275,26 @@ export function calculateMatchScore(profile: UserProfile, job: JobVacancy): Matc
     const pDist = profile.district_id ? String(profile.district_id) : null;
     const jDist = job.district_id ? String(job.district_id) : null;
     const isRemote = job.work_mode === 'remote' || job.employment_type === 'remote';
+    const hasJobLocation = Boolean(jRegion || jDist);
 
     if (isRemote) {
-        add('location', true, 0.7);
+        // Remote vacancies are location-agnostic but very low priority for "nearby" logic.
+        add('location', true, 0.08);
     } else if (pRegion && jRegion) {
         if (pDist && jDist && pDist === jDist) {
             add('location', true, 1);
         } else if (pRegion === jRegion) {
-            add('location', true, 0.8);
+            // Same region but different district should be much lower.
+            add('location', true, (pDist && jDist) ? 0.1 : 0.25);
         } else {
             add('location', false);
         }
+    } else if (!hasJobLocation) {
+        // Job didn't specify location – very weak match
+        add('location', true, 0.05);
     } else {
-        add('location', false);
+        // Job has location but profile doesn't – weak match
+        add('location', true, 0.1);
     }
 
     // Category
@@ -213,20 +302,28 @@ export function calculateMatchScore(profile: UserProfile, job: JobVacancy): Matc
         ? profile.category_ids
         : profile.category_id ? [profile.category_id] : [];
     if (categoryIds.length > 0 && job.category_id) {
-        add('category', categoryIds.includes(job.category_id));
+        const jobCategory = String(job.category_id);
+        const profileCategories = categoryIds.map(id => String(id));
+        add('category', profileCategories.includes(jobCategory));
+    } else if (!job.category_id) {
+        // Job without category – neutral match
+        add('category', true, 0.35);
     } else {
-        add('category', false);
+        // Profile without category – weak match
+        add('category', true, 0.25);
     }
 
     // Gender
     const userGender = normalizeGender(profile.gender) || 'any';
     const jobGender = normalizeGender(job.gender);
-    if (jobGender === null) {
-        add('gender', true);
-    } else if (jobGender === 'any') {
+    if (jobGender === null || jobGender === 'any') {
         add('gender', true);
     } else if (jobGender === 'male' || jobGender === 'female') {
-        add('gender', userGender === jobGender);
+        if (userGender === 'any') {
+            add('gender', true);
+        } else {
+            add('gender', userGender === jobGender);
+        }
     } else {
         add('gender', false);
     }
@@ -309,18 +406,47 @@ export function calculateMatchScore(profile: UserProfile, job: JobVacancy): Matc
 
 export function matchAndSortJobs(profile: UserProfile, jobs: JobVacancy[]): MatchedJob[] {
     const matched = jobs.map(job => calculateMatchScore(profile, job));
+    const profileCategories = Array.isArray(profile.category_ids) && profile.category_ids.length > 0
+        ? profile.category_ids
+        : profile.category_id ? [profile.category_id] : [];
+    const hasProfileCategory = profileCategories.length > 0;
+    const profileTitleTokens = tokenizeTitle(profile.title || '');
+    const requireTitleOverlap = profileTitleTokens.length > 0 && !isGenericTitle(profile.title || '');
 
-    const filtered = matched.filter(item => (
-        item.matchCriteria.location &&
-        item.matchCriteria.category &&
-        item.matchCriteria.gender &&
-        item.matchCriteria.age &&
-        item.matchCriteria.education &&
-        item.matchCriteria.salary &&
-        item.matchCriteria.experience
-    ));
+    const filtered = matched.filter(item => {
+        const job: JobVacancy = item;
+        const hasGender = hasGenderRequirement(job);
+        const hasAge = Boolean(job.age_min || job.age_max);
+        const hasEducation = Boolean(job.education_level || job.raw_source_json?.min_education);
+        const hasExperience = getJobExperienceYears(job) !== null;
+        const jobHasCategory = Boolean(job.category_id);
+        const jobTitleTokens = tokenizeTitle(job.title_uz || job.title_ru || job.title || '');
+        const titleOverlap = profileTitleTokens.length > 0 && jobTitleTokens.length > 0
+            ? profileTitleTokens.some(token => jobTitleTokens.includes(token))
+            : true;
 
-    return filtered.sort((a, b) => b.matchScore - a.matchScore);
+        if (hasGender && !item.matchCriteria.gender) return false;
+        if (hasAge && !item.matchCriteria.age) return false;
+        if (hasEducation && !item.matchCriteria.education) return false;
+        if (hasExperience && !item.matchCriteria.experience) return false;
+        if (requireTitleOverlap && !titleOverlap) return false;
+        if (!requireTitleOverlap && !titleOverlap && !item.matchCriteria.category) return false;
+        return true;
+    });
+
+    return filtered.sort((a, b) => {
+        const locationA = a.matchCriteria?.location ? 1 : 0;
+        const locationB = b.matchCriteria?.location ? 1 : 0;
+        if (locationB !== locationA) return locationB - locationA;
+
+        if (b.matchScore !== a.matchScore) return b.matchScore - a.matchScore;
+
+        const categoryA = a.matchCriteria?.category ? 1 : 0;
+        const categoryB = b.matchCriteria?.category ? 1 : 0;
+        if (categoryB !== categoryA) return categoryB - categoryA;
+
+        return 0;
+    });
 }
 
 export function getMatchPercentage(score: number): number {

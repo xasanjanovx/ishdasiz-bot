@@ -36,7 +36,7 @@ export function getBotToken(): string {
 export async function callTelegramAPI<T = any>(
     method: string,
     params: Record<string, any> = {},
-    options: { timeoutMs?: number } = {}
+    options: { timeoutMs?: number; suppressErrors?: boolean } = {}
 ): Promise<T> {
     const token = getBotToken();
     const url = `${TELEGRAM_API_URL}${token}/${method}`;
@@ -68,13 +68,20 @@ export async function callTelegramAPI<T = any>(
                     continue;
                 }
 
-                console.error(`Telegram API error (${method}):`, result || response.status);
+                if (!options.suppressErrors) {
+                    console.error(`Telegram API error (${method}):`, result || response.status);
+                }
                 throw new Error(result?.description || `Telegram API error (${response.status})`);
             }
 
             return result.result as T;
         } catch (error) {
             lastError = error;
+            const message = error instanceof Error ? error.message : String(error);
+            const nonRetriable = /bad request|query is too old|query id is invalid|message to delete not found|message is not modified|chat not found|inline keyboard expected|text must be non-empty/i.test(message);
+            if (nonRetriable) {
+                throw error instanceof Error ? error : new Error(message);
+            }
             if (attempt >= MAX_RETRIES) break;
             const backoff = BACKOFF_BASE_MS * Math.pow(2, attempt);
             await sleep(backoff);
@@ -96,9 +103,12 @@ export async function sendMessage(
         disableWebPagePreview?: boolean;
     } = {}
 ): Promise<any> {
+    const safeText = typeof text === 'string' && text.trim().length > 0
+        ? text
+        : 'Xabar yuborilmadi.';
     return callTelegramAPI('sendMessage', {
         chat_id: chatId,
-        text,
+        text: safeText,
         ...(options.parseMode ? { parse_mode: options.parseMode } : {}),
         reply_markup: options.replyMarkup,
         disable_web_page_preview: options.disableWebPagePreview
@@ -138,12 +148,18 @@ export async function editMessage(
         replyMarkup?: any;
     } = {}
 ): Promise<any> {
+    const safeText = typeof text === 'string' && text.trim().length > 0
+        ? text
+        : 'Xabar yangilanmadi.';
+    const inlineMarkup = options.replyMarkup && typeof options.replyMarkup === 'object' && 'inline_keyboard' in options.replyMarkup
+        ? options.replyMarkup
+        : undefined;
     return callTelegramAPI('editMessageText', {
         chat_id: chatId,
         message_id: messageId,
-        text,
+        text: safeText,
         ...(options.parseMode ? { parse_mode: options.parseMode } : {}),
-        reply_markup: options.replyMarkup
+        ...(inlineMarkup ? { reply_markup: inlineMarkup } : {})
     });
 }
 
@@ -154,11 +170,19 @@ export async function answerCallbackQuery(
     callbackQueryId: string,
     options: { text?: string; showAlert?: boolean } = {}
 ): Promise<boolean> {
-    return callTelegramAPI('answerCallbackQuery', {
-        callback_query_id: callbackQueryId,
-        text: options.text,
-        show_alert: options.showAlert
-    });
+    try {
+        return await callTelegramAPI('answerCallbackQuery', {
+            callback_query_id: callbackQueryId,
+            text: options.text,
+            show_alert: options.showAlert
+        }, { suppressErrors: true });
+    } catch (error) {
+        const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+        if (message.includes('query is too old') || message.includes('query id is invalid')) {
+            return false;
+        }
+        throw error;
+    }
 }
 
 /**
@@ -172,7 +196,7 @@ export async function deleteMessage(
         return await callTelegramAPI('deleteMessage', {
             chat_id: chatId,
             message_id: messageId
-        });
+        }, { suppressErrors: true });
     } catch {
         return false; // Ignore deletion errors
     }

@@ -114,6 +114,10 @@ export interface ModerationResult {
  */
 export function checkForAbuse(message: string): ModerationResult {
     const normalizedMessage = message.toLowerCase().trim();
+    // Allow numeric-only inputs (salary, dates, phone parts) without spam detection
+    if (/^[\d\s+.,:-]+$/.test(normalizedMessage)) {
+        return { allowed: true, shouldLog: false };
+    }
 
     // Check for profanity
     for (const pattern of [...BANNED_PATTERNS_RU, ...BANNED_PATTERNS_UZ]) {
