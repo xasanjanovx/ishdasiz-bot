@@ -165,7 +165,7 @@ export const getEducationLabel = (job: any, lang: Language) => {
             .replace(/[-_]/g, ' ')
             .replace(/\s+/g, ' ')
             .trim();
-        if (!normalized || ['ahamiyatsiz', 'any', 'любой', 'не важно'].includes(normalized)) {
+        if (!normalized || ['ahamiyatsiz', 'any', 'любой', 'не важно', 'done', 'undefined', 'null'].includes(normalized)) {
             return OSONISH_MAPPINGS.education[0][effectiveLang];
         }
         if (normalized.includes('magistr') || normalized.includes('master') || normalized.includes('магистр')) {
@@ -189,6 +189,56 @@ export const getEducationLabel = (job: any, lang: Language) => {
     }
 
     return OSONISH_MAPPINGS.education[0][effectiveLang];
+};
+
+export const getWorkModeLabel = (job: any, lang: Language) => {
+    const effectiveLang = lang === 'uz' ? 'uz' : 'ru';
+    const rawMode = job?.work_mode ?? job?.raw_source_json?.work_mode ?? job?.raw_source_json?.workplace_type ?? null;
+    if (rawMode === null || rawMode === undefined) return null;
+
+    if (typeof rawMode === 'number' && OSONISH_MAPPINGS.work_mode[rawMode as keyof typeof OSONISH_MAPPINGS.work_mode]) {
+        return OSONISH_MAPPINGS.work_mode[rawMode as keyof typeof OSONISH_MAPPINGS.work_mode][effectiveLang];
+    }
+
+    const normalized = String(rawMode)
+        .toLowerCase()
+        .replace(/[\u2018\u2019\u02BC\u02BB`']/g, '')
+        .replace(/[-_]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    if (!normalized || ['any', 'ahamiyatsiz', 'не важно'].includes(normalized)) return null;
+    if (normalized.includes('office') || normalized.includes('ish joy')) return OSONISH_MAPPINGS.work_mode[1][effectiveLang];
+    if (normalized.includes('remote') || normalized.includes('масоф') || normalized.includes('удален')) return OSONISH_MAPPINGS.work_mode[3][effectiveLang];
+    if (normalized.includes('hybrid') || normalized.includes('gibrid')) return OSONISH_MAPPINGS.work_mode[4][effectiveLang];
+    return null;
+};
+
+export const getWorkingDaysLabel = (job: any, lang: Language) => {
+    const effectiveLang = lang === 'uz' ? 'uz' : 'ru';
+    const rawDays = job?.working_days ?? job?.raw_source_json?.working_days ?? null;
+    if (rawDays === null || rawDays === undefined) return null;
+
+    if (typeof rawDays === 'number' && OSONISH_MAPPINGS.working_days[rawDays as keyof typeof OSONISH_MAPPINGS.working_days]) {
+        return OSONISH_MAPPINGS.working_days[rawDays as keyof typeof OSONISH_MAPPINGS.working_days][effectiveLang];
+    }
+
+    const normalized = String(rawDays)
+        .toLowerCase()
+        .replace(/[\u2018\u2019\u02BC\u02BB`']/g, '')
+        .replace(/[-_]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    if (!normalized || ['any', 'ahamiyatsiz', 'не важно'].includes(normalized)) return null;
+    if (normalized.includes('6') && normalized.includes('kun')) return OSONISH_MAPPINGS.working_days[1][effectiveLang];
+    if (normalized.includes('5') && normalized.includes('kun')) return OSONISH_MAPPINGS.working_days[2][effectiveLang];
+    if (normalized.includes('full week') || normalized.includes('to‘liq hafta') || normalized.includes("to'liq hafta")) {
+        return lang === 'uz' ? "To'liq hafta" : 'Полная неделя';
+    }
+    if (normalized.includes('2/2')) return lang === 'uz' ? 'Smenali 2/2' : 'Сменный 2/2';
+    if (normalized.includes('3/3')) return lang === 'uz' ? 'Smenali 3/3' : 'Сменный 3/3';
+    return null;
 };
 
 export const formatBenefits = (benefitIds: any, lang: Language): string | null => {
@@ -249,46 +299,6 @@ export const getPaymentTypeLabel = (job: any, lang: Language) => {
 
     if (typeof rawId === 'number' && OSONISH_MAPPINGS.payment_type[rawId as keyof typeof OSONISH_MAPPINGS.payment_type]) {
         return OSONISH_MAPPINGS.payment_type[rawId as keyof typeof OSONISH_MAPPINGS.payment_type][effectiveLang];
-    }
-
-    return null;
-};
-
-export const getWorkModeLabel = (job: any, lang: Language) => {
-    const effectiveLang = lang === 'uz' ? 'uz' : 'ru';
-
-    const mode = job.work_mode;
-    const rawMode = job.raw_source_json?.work_type;
-
-    if (mode === 'remote') return lang === 'ru' ? 'Удаленно' : 'Masofaviy ish';
-    if (mode === 'hybrid') return lang === 'ru' ? 'Гибрид' : 'Gibrid';
-    if (mode === 'onsite') return lang === 'ru' ? 'На месте' : 'Ish joyida';
-
-    if (typeof rawMode === 'number' && OSONISH_MAPPINGS.work_mode[rawMode as keyof typeof OSONISH_MAPPINGS.work_mode]) {
-        return OSONISH_MAPPINGS.work_mode[rawMode as keyof typeof OSONISH_MAPPINGS.work_mode][effectiveLang];
-    }
-
-    return null;
-};
-
-export const getWorkingDaysLabel = (job: any, lang: Language) => {
-    const effectiveLang = lang === 'uz' ? 'uz' : 'ru';
-
-    const daysId = job.working_days_id || (job.working_days ? parseInt(job.working_days) : null);
-    const rawId = daysId || job.raw_source_json?.working_days_id;
-
-    if (typeof rawId === 'number' && OSONISH_MAPPINGS.working_days[rawId as keyof typeof OSONISH_MAPPINGS.working_days]) {
-        return OSONISH_MAPPINGS.working_days[rawId as keyof typeof OSONISH_MAPPINGS.working_days][effectiveLang];
-    }
-
-    const rawDays = job.working_days || job.raw_source_json?.working_days;
-    if (typeof rawDays === 'string') {
-        const normalized = rawDays.toLowerCase();
-        if (normalized === 'full_week') return effectiveLang === 'uz' ? "To'liq hafta" : 'Полная неделя';
-        if (normalized === 'shift_2_2') return effectiveLang === 'uz' ? 'Smenali 2/2' : 'Сменный 2/2';
-        if (normalized === 'shift_3_3') return effectiveLang === 'uz' ? 'Smenali 3/3' : 'Сменный 3/3';
-        if (normalized === '2') return OSONISH_MAPPINGS.working_days[2][effectiveLang];
-        if (normalized === '1') return OSONISH_MAPPINGS.working_days[1][effectiveLang];
     }
 
     return null;

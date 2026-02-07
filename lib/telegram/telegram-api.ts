@@ -106,10 +106,11 @@ export async function sendMessage(
     const safeText = typeof text === 'string' && text.trim().length > 0
         ? text
         : 'Xabar yuborilmadi.';
+    const autoParse = options.parseMode ?? (/[<][biu]|<\/[biu]>/.test(safeText) ? 'HTML' : undefined);
     return callTelegramAPI('sendMessage', {
         chat_id: chatId,
         text: safeText,
-        ...(options.parseMode ? { parse_mode: options.parseMode } : {}),
+        ...(autoParse ? { parse_mode: autoParse } : {}),
         reply_markup: options.replyMarkup,
         disable_web_page_preview: options.disableWebPagePreview
     });
@@ -151,6 +152,7 @@ export async function editMessage(
     const safeText = typeof text === 'string' && text.trim().length > 0
         ? text
         : 'Xabar yangilanmadi.';
+    const parseMode = options.parseMode ?? 'HTML';
     const inlineMarkup = options.replyMarkup && typeof options.replyMarkup === 'object' && 'inline_keyboard' in options.replyMarkup
         ? options.replyMarkup
         : undefined;
@@ -158,7 +160,7 @@ export async function editMessage(
         chat_id: chatId,
         message_id: messageId,
         text: safeText,
-        ...(options.parseMode ? { parse_mode: options.parseMode } : {}),
+        ...(parseMode ? { parse_mode: parseMode } : {}),
         ...(inlineMarkup ? { reply_markup: inlineMarkup } : {})
     });
 }

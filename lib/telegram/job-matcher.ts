@@ -60,6 +60,7 @@ export interface MatchedJob extends JobVacancy {
     explanation: MatchExplanation;
     matchCriteria: MatchCriteria;
     ageKnown?: boolean;
+    titleRelevance?: number;
 }
 
 const EXPERIENCE_YEARS: Record<string, number> = {
@@ -247,6 +248,84 @@ function isGenericTitle(value?: string | null): boolean {
     return false;
 }
 
+const TITLE_STOPWORDS = new Set([
+    'uchun', 'boyicha', 'boyicha', 'bilan', 'va', 'ish', 'lavozim', 'xodim',
+    'mutaxassis', 'specialist', 'worker', 'employee', 'vakansiya', 'vacancy',
+    'bo', 'yicha'
+]);
+
+const TITLE_SYNONYMS: Record<string, string> = {
+    dasturchi: 'developer',
+    developer: 'developer',
+    programmist: 'developer',
+    frontend: 'frontend',
+    backend: 'backend',
+    buxgalter: 'accountant',
+    hisobchi: 'accountant',
+    accountant: 'accountant',
+    sotuvchi: 'sales',
+    sales: 'sales',
+    marketolog: 'marketing',
+    marketing: 'marketing',
+    smm: 'smm',
+    hr: 'hr',
+    recruiter: 'hr',
+    operator: 'operator',
+    callcenter: 'operator',
+    call: 'operator',
+    support: 'support',
+    menejer: 'manager',
+    manager: 'manager',
+    direktor: 'director',
+    director: 'director',
+    rahbar: 'manager',
+    boshqaruvchi: 'manager',
+    haydovchi: 'driver',
+    driver: 'driver',
+    oshpaz: 'cook',
+    cook: 'cook',
+    shifokor: 'doctor',
+    doctor: 'doctor',
+    hamshira: 'nurse',
+    nurse: 'nurse',
+    oqituvchi: 'teacher',
+    teacher: 'teacher',
+    yurist: 'lawyer',
+    lawyer: 'lawyer',
+    tozalovchi: 'cleaner',
+    uborshchik: 'cleaner',
+    cleaner: 'cleaner'
+};
+
+function normalizeTitleTokens(value?: string | null): string[] {
+    const tokens = tokenizeTitle(value)
+        .map(token => token.trim())
+        .filter(token => token.length >= 3)
+        .filter(token => !TITLE_STOPWORDS.has(token));
+
+    return tokens.map(token => TITLE_SYNONYMS[token] || token);
+}
+
+function titleSimilarity(profileTitle?: string | null, jobTitle?: string | null): number {
+    const a = normalizeTitleTokens(profileTitle);
+    const b = normalizeTitleTokens(jobTitle);
+    if (!a.length || !b.length) return 0;
+
+    const setA = new Set(a);
+    const setB = new Set(b);
+    let intersection = 0;
+    for (const token of Array.from(setA)) {
+        if (setB.has(token)) intersection += 1;
+    }
+
+    const overlap = intersection / Math.max(setA.size, setB.size);
+    const contains = String(jobTitle || '').toLowerCase().includes(String(profileTitle || '').toLowerCase())
+        || String(profileTitle || '').toLowerCase().includes(String(jobTitle || '').toLowerCase());
+    const containsBoost = contains ? 0.2 : 0;
+
+    return Math.max(0, Math.min(1, overlap + containsBoost));
+}
+
 export function calculateMatchScore(profile: UserProfile, job: JobVacancy): MatchedJob {
     const criteria: MatchCriteria = {
         location: false,
@@ -410,27 +489,45 @@ export function matchAndSortJobs(profile: UserProfile, jobs: JobVacancy[]): Matc
         ? profile.category_ids
         : profile.category_id ? [profile.category_id] : [];
     const hasProfileCategory = profileCategories.length > 0;
-    const profileTitleTokens = tokenizeTitle(profile.title || '');
-    const requireTitleOverlap = profileTitleTokens.length > 0 && !isGenericTitle(profile.title || '');
+    const profileTitle = profile.title || '';
+    const profileTitleTokens = tokenizeTitle(profileTitle);
+    const profileTitleGeneric = isGenericTitle(profileTitle);
 
-    const filtered = matched.filter(item => {
+    const enriched = matched.map(item => {
+        const job: JobVacancy = item;
+        const rawJobTitle = job.title_uz || job.title_ru || job.title || job.field_title || job.raw_source_json?.position_name || '';
+        const relevance = titleSimilarity(profileTitle, rawJobTitle);
+        return {
+            ...item,
+            titleRelevance: relevance,
+            matchScore: Math.max(0, Math.min(100, Math.round(item.matchScore + relevance * 12)))
+        };
+    });
+
+    const filtered = enriched.filter(item => {
         const job: JobVacancy = item;
         const hasGender = hasGenderRequirement(job);
         const hasAge = Boolean(job.age_min || job.age_max);
         const hasEducation = Boolean(job.education_level || job.raw_source_json?.min_education);
         const hasExperience = getJobExperienceYears(job) !== null;
-        const jobHasCategory = Boolean(job.category_id);
-        const jobTitleTokens = tokenizeTitle(job.title_uz || job.title_ru || job.title || '');
+        const jobTitle = job.title_uz || job.title_ru || job.title || job.field_title || job.raw_source_json?.position_name || '';
+        const jobTitleTokens = tokenizeTitle(jobTitle);
         const titleOverlap = profileTitleTokens.length > 0 && jobTitleTokens.length > 0
             ? profileTitleTokens.some(token => jobTitleTokens.includes(token))
             : true;
+        const jobTitleGeneric = isGenericTitle(jobTitle);
+        const shouldCheckTitle = (!profileTitleGeneric || !jobTitleGeneric) && profileTitleTokens.length > 0;
+        const strictTitleMode = profileTitleTokens.length > 0 && !profileTitleGeneric;
+        const titleRel = item.titleRelevance ?? 0;
 
         if (hasGender && !item.matchCriteria.gender) return false;
         if (hasAge && !item.matchCriteria.age) return false;
         if (hasEducation && !item.matchCriteria.education) return false;
         if (hasExperience && !item.matchCriteria.experience) return false;
-        if (requireTitleOverlap && !titleOverlap) return false;
-        if (!requireTitleOverlap && !titleOverlap && !item.matchCriteria.category) return false;
+        if (shouldCheckTitle && (!titleOverlap || titleRel < 0.3)) return false;
+        if (strictTitleMode && titleRel < 0.35) return false;
+        if (!shouldCheckTitle && !titleOverlap && !item.matchCriteria.category) return false;
+        if (hasProfileCategory && !item.matchCriteria.category && titleRel < 0.45) return false;
         return true;
     });
 
@@ -438,6 +535,10 @@ export function matchAndSortJobs(profile: UserProfile, jobs: JobVacancy[]): Matc
         const locationA = a.matchCriteria?.location ? 1 : 0;
         const locationB = b.matchCriteria?.location ? 1 : 0;
         if (locationB !== locationA) return locationB - locationA;
+
+        const titleA = a.titleRelevance ?? 0;
+        const titleB = b.titleRelevance ?? 0;
+        if (titleB !== titleA) return titleB - titleA;
 
         if (b.matchScore !== a.matchScore) return b.matchScore - a.matchScore;
 

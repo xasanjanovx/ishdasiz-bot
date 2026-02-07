@@ -20,8 +20,10 @@ import {
     getEducationLabel,
     getGenderLabel
 } from '../mappings';
+import { mapOsonishCategory } from '../mappers/osonish-mapper';
 import { matchAndSortJobs, MatchedJob, calculateMatchScore } from './job-matcher';
 import { extractVacancyData } from '../ai/deepseek';
+import { rerankJobsForResumeAI, rerankResumesForJobAI } from '../ai/job-recommender';
 import { checkForAbuse } from '../ai/moderation';
 import { REGION_COORDINATES } from '../constants';
 import bcrypt from 'bcryptjs';
@@ -79,6 +81,7 @@ export enum BotState {
     REQUESTING_LOCATION = 'requesting_location',
     SELECTING_REGION = 'selecting_region',
     SELECTING_DISTRICT = 'selecting_district',
+    SELECTING_FIELD = 'selecting_field',
     SELECTING_CATEGORY = 'selecting_category',
     SELECTING_EXPERIENCE = 'selecting_experience',
     SELECTING_EDUCATION = 'selecting_education',
@@ -161,6 +164,116 @@ interface CategoryRef {
     sort_order?: number | null;
 }
 
+interface OsonishField {
+    id: number | string;
+    title: string;
+    title_uz?: string | null;
+    title_ru?: string | null;
+    vacancies_count?: number | null;
+    category_id?: string | number | null;
+    category_title?: string | null;
+    type?: string | null;
+    mmk_code?: number | null;
+    group_id?: number | null;
+    category_code?: string | null;
+}
+
+const DEFAULT_CATEGORIES: CategoryRef[] = [
+    { id: 'a0000001-0001-4000-8000-000000000001', name_uz: 'IT', name_ru: 'IT', icon: '', sort_order: 1 },
+    { id: 'a0000002-0002-4000-8000-000000000002', name_uz: 'Sanoat va ishlab chiqarish', name_ru: 'Производство', icon: '', sort_order: 2 },
+    { id: 'a0000003-0003-4000-8000-000000000003', name_uz: 'Xizmatlar', name_ru: 'Услуги', icon: '', sort_order: 3 },
+    { id: 'a0000004-0004-4000-8000-000000000004', name_uz: "Ta'lim, madaniyat, sport", name_ru: 'Образование', icon: '', sort_order: 4 },
+    { id: 'a0000005-0005-4000-8000-000000000005', name_uz: "Sog'liqni saqlash", name_ru: 'Медицина', icon: '', sort_order: 5 },
+    { id: 'a0000006-0006-4000-8000-000000000006', name_uz: 'Moliya, iqtisod, boshqaruv', name_ru: 'Финансы, экономика, управление', icon: 'Wallet', sort_order: 6 },
+    { id: 'a0000007-0007-4000-8000-000000000007', name_uz: 'Qurilish', name_ru: 'Строительство', icon: '', sort_order: 7 },
+    { id: 'a0000008-0008-4000-8000-000000000008', name_uz: "Qishloq xo'jaligi", name_ru: 'Сельское хоз.', icon: '', sort_order: 8 },
+    { id: 'a0000009-0009-4000-8000-000000000009', name_uz: 'Transport', name_ru: 'Транспорт', icon: '', sort_order: 9 },
+    { id: 'a0000010-0010-4000-8000-000000000010', name_uz: 'Savdo va marketing', name_ru: 'Продажи', icon: '', sort_order: 10 }
+];
+
+const MODERN_PROFESSIONS: Array<{ id: string; title_uz: string; title_ru: string; category_id: string }> = [
+    { id: 'm-1001', title_uz: 'Frontend dasturchi', title_ru: 'Frontend разработчик', category_id: 'a0000001-0001-4000-8000-000000000001' },
+    { id: 'm-1002', title_uz: 'Backend dasturchi', title_ru: 'Backend разработчик', category_id: 'a0000001-0001-4000-8000-000000000001' },
+    { id: 'm-1003', title_uz: 'Fullstack dasturchi', title_ru: 'Fullstack разработчик', category_id: 'a0000001-0001-4000-8000-000000000001' },
+    { id: 'm-1004', title_uz: 'Mobile dasturchi', title_ru: 'Mobile разработчик', category_id: 'a0000001-0001-4000-8000-000000000001' },
+    { id: 'm-1005', title_uz: 'Flutter dasturchi', title_ru: 'Flutter разработчик', category_id: 'a0000001-0001-4000-8000-000000000001' },
+    { id: 'm-1006', title_uz: 'QA muhandis', title_ru: 'QA инженер', category_id: 'a0000001-0001-4000-8000-000000000001' },
+    { id: 'm-1007', title_uz: 'DevOps muhandis', title_ru: 'DevOps инженер', category_id: 'a0000001-0001-4000-8000-000000000001' },
+    { id: 'm-1008', title_uz: 'Data analyst', title_ru: 'Data analyst', category_id: 'a0000001-0001-4000-8000-000000000001' },
+    { id: 'm-1009', title_uz: 'Data engineer', title_ru: 'Data engineer', category_id: 'a0000001-0001-4000-8000-000000000001' },
+    { id: 'm-1010', title_uz: 'BI analyst', title_ru: 'BI аналитик', category_id: 'a0000001-0001-4000-8000-000000000001' },
+    { id: 'm-1011', title_uz: 'Sistem administrator', title_ru: 'Системный администратор', category_id: 'a0000001-0001-4000-8000-000000000001' },
+    { id: 'm-1012', title_uz: 'Kiberxavfsizlik mutaxassisi', title_ru: 'Специалист по кибербезопасности', category_id: 'a0000001-0001-4000-8000-000000000001' },
+
+    { id: 'm-1101', title_uz: 'Bosh hisobchi', title_ru: 'Главный бухгалтер', category_id: 'a0000006-0006-4000-8000-000000000006' },
+    { id: 'm-1102', title_uz: 'Hisobchi', title_ru: 'Бухгалтер', category_id: 'a0000006-0006-4000-8000-000000000006' },
+    { id: 'm-1103', title_uz: 'Moliyaviy menejer', title_ru: 'Финансовый менеджер', category_id: 'a0000006-0006-4000-8000-000000000006' },
+    { id: 'm-1104', title_uz: 'Iqtisodchi', title_ru: 'Экономист', category_id: 'a0000006-0006-4000-8000-000000000006' },
+    { id: 'm-1105', title_uz: 'Audit mutaxassisi', title_ru: 'Аудитор', category_id: 'a0000006-0006-4000-8000-000000000006' },
+    { id: 'm-1106', title_uz: 'Soliq mutaxassisi', title_ru: 'Налоговый специалист', category_id: 'a0000006-0006-4000-8000-000000000006' },
+    { id: 'm-1107', title_uz: 'HR menejer', title_ru: 'HR менеджер', category_id: 'a0000006-0006-4000-8000-000000000006' },
+    { id: 'm-1108', title_uz: 'Operatsion menejer', title_ru: 'Операционный менеджер', category_id: 'a0000006-0006-4000-8000-000000000006' },
+    { id: 'm-1109', title_uz: 'Loyiha menejeri', title_ru: 'Менеджер проектов', category_id: 'a0000006-0006-4000-8000-000000000006' },
+    { id: 'm-1110', title_uz: 'Ofis menejer', title_ru: 'Офис-менеджер', category_id: 'a0000006-0006-4000-8000-000000000006' },
+
+    { id: 'm-1201', title_uz: 'Sotuv menejeri', title_ru: 'Менеджер по продажам', category_id: 'a0000010-0010-4000-8000-000000000010' },
+    { id: 'm-1202', title_uz: 'Sotuvchi', title_ru: 'Продавец', category_id: 'a0000010-0010-4000-8000-000000000010' },
+    { id: 'm-1203', title_uz: 'Kassir', title_ru: 'Кассир', category_id: 'a0000010-0010-4000-8000-000000000010' },
+    { id: 'm-1204', title_uz: 'SMM menejer', title_ru: 'SMM менеджер', category_id: 'a0000010-0010-4000-8000-000000000010' },
+    { id: 'm-1205', title_uz: 'Digital marketolog', title_ru: 'Digital-маркетолог', category_id: 'a0000010-0010-4000-8000-000000000010' },
+    { id: 'm-1206', title_uz: 'Targetolog', title_ru: 'Таргетолог', category_id: 'a0000010-0010-4000-8000-000000000010' },
+    { id: 'm-1207', title_uz: 'Kontent menejer', title_ru: 'Контент-менеджер', category_id: 'a0000010-0010-4000-8000-000000000010' },
+    { id: 'm-1208', title_uz: 'Brend menejer', title_ru: 'Бренд-менеджер', category_id: 'a0000010-0010-4000-8000-000000000010' },
+    { id: 'm-1209', title_uz: 'Call-markaz operatori', title_ru: 'Оператор call-центра', category_id: 'a0000010-0010-4000-8000-000000000010' },
+    { id: 'm-1210', title_uz: 'Mijozlar bilan ishlash mutaxassisi', title_ru: 'Специалист по работе с клиентами', category_id: 'a0000010-0010-4000-8000-000000000010' },
+
+    { id: 'm-1301', title_uz: 'Shifokor', title_ru: 'Врач', category_id: 'a0000005-0005-4000-8000-000000000005' },
+    { id: 'm-1302', title_uz: 'Hamshira', title_ru: 'Медсестра', category_id: 'a0000005-0005-4000-8000-000000000005' },
+    { id: 'm-1303', title_uz: 'Farmatsevt', title_ru: 'Фармацевт', category_id: 'a0000005-0005-4000-8000-000000000005' },
+    { id: 'm-1304', title_uz: 'Laborant', title_ru: 'Лаборант', category_id: 'a0000005-0005-4000-8000-000000000005' },
+    { id: 'm-1305', title_uz: 'Stomatolog', title_ru: 'Стоматолог', category_id: 'a0000005-0005-4000-8000-000000000005' },
+    { id: 'm-1306', title_uz: 'Reabilitolog', title_ru: 'Реабилитолог', category_id: 'a0000005-0005-4000-8000-000000000005' },
+
+    { id: 'm-1401', title_uz: "Boshlang'ich sinf o'qituvchisi", title_ru: 'Учитель начальных классов', category_id: 'a0000004-0004-4000-8000-000000000004' },
+    { id: 'm-1402', title_uz: "Ingliz tili o'qituvchisi", title_ru: 'Учитель английского языка', category_id: 'a0000004-0004-4000-8000-000000000004' },
+    { id: 'm-1403', title_uz: 'Matematika o qituvchisi', title_ru: 'Учитель математики', category_id: 'a0000004-0004-4000-8000-000000000004' },
+    { id: 'm-1404', title_uz: 'Tarbiyachi', title_ru: 'Воспитатель', category_id: 'a0000004-0004-4000-8000-000000000004' },
+    { id: 'm-1405', title_uz: 'Pedagog-psixolog', title_ru: 'Педагог-психолог', category_id: 'a0000004-0004-4000-8000-000000000004' },
+    { id: 'm-1406', title_uz: 'O quv markaz treneri', title_ru: 'Тренер учебного центра', category_id: 'a0000004-0004-4000-8000-000000000004' },
+
+    { id: 'm-1501', title_uz: 'Haydovchi', title_ru: 'Водитель', category_id: 'a0000009-0009-4000-8000-000000000009' },
+    { id: 'm-1502', title_uz: 'Kuryer', title_ru: 'Курьер', category_id: 'a0000009-0009-4000-8000-000000000009' },
+    { id: 'm-1503', title_uz: 'Logist', title_ru: 'Логист', category_id: 'a0000009-0009-4000-8000-000000000009' },
+    { id: 'm-1504', title_uz: 'Ekspeditor', title_ru: 'Экспедитор', category_id: 'a0000009-0009-4000-8000-000000000009' },
+    { id: 'm-1505', title_uz: 'Avto mexanik', title_ru: 'Автомеханик', category_id: 'a0000009-0009-4000-8000-000000000009' },
+    { id: 'm-1506', title_uz: 'Ombor mudiri', title_ru: 'Заведующий складом', category_id: 'a0000009-0009-4000-8000-000000000009' },
+
+    { id: 'm-1601', title_uz: 'Operator', title_ru: 'Оператор', category_id: 'a0000002-0002-4000-8000-000000000002' },
+    { id: 'm-1602', title_uz: 'Texnolog', title_ru: 'Технолог', category_id: 'a0000002-0002-4000-8000-000000000002' },
+    { id: 'm-1603', title_uz: 'Payvandchi', title_ru: 'Сварщик', category_id: 'a0000002-0002-4000-8000-000000000002' },
+    { id: 'm-1604', title_uz: 'Elektrik', title_ru: 'Электрик', category_id: 'a0000002-0002-4000-8000-000000000002' },
+    { id: 'm-1605', title_uz: 'Mexanik', title_ru: 'Механик', category_id: 'a0000002-0002-4000-8000-000000000002' },
+    { id: 'm-1606', title_uz: 'Sifat nazoratchisi', title_ru: 'Контролер качества', category_id: 'a0000002-0002-4000-8000-000000000002' },
+
+    { id: 'm-1701', title_uz: 'Usta', title_ru: 'Мастер', category_id: 'a0000007-0007-4000-8000-000000000007' },
+    { id: 'm-1702', title_uz: 'Muhandis quruvchi', title_ru: 'Инженер-строитель', category_id: 'a0000007-0007-4000-8000-000000000007' },
+    { id: 'm-1703', title_uz: 'Arxitektor', title_ru: 'Архитектор', category_id: 'a0000007-0007-4000-8000-000000000007' },
+    { id: 'm-1704', title_uz: 'Smeta mutaxassisi', title_ru: 'Сметчик', category_id: 'a0000007-0007-4000-8000-000000000007' },
+    { id: 'm-1705', title_uz: 'Bo yoqchi', title_ru: 'Маляр', category_id: 'a0000007-0007-4000-8000-000000000007' },
+    { id: 'm-1706', title_uz: 'Plitkachi', title_ru: 'Плиточник', category_id: 'a0000007-0007-4000-8000-000000000007' },
+
+    { id: 'm-1801', title_uz: 'Oshpaz', title_ru: 'Повар', category_id: 'a0000003-0003-4000-8000-000000000003' },
+    { id: 'm-1802', title_uz: 'Ofitsiant', title_ru: 'Официант', category_id: 'a0000003-0003-4000-8000-000000000003' },
+    { id: 'm-1803', title_uz: 'Barista', title_ru: 'Бариста', category_id: 'a0000003-0003-4000-8000-000000000003' },
+    { id: 'm-1804', title_uz: 'Administrator', title_ru: 'Администратор', category_id: 'a0000003-0003-4000-8000-000000000003' },
+    { id: 'm-1805', title_uz: 'Farrosh', title_ru: 'Уборщик', category_id: 'a0000003-0003-4000-8000-000000000003' },
+    { id: 'm-1806', title_uz: 'Qo riqlovchi', title_ru: 'Охранник', category_id: 'a0000003-0003-4000-8000-000000000003' },
+
+    { id: 'm-1901', title_uz: 'Agronom', title_ru: 'Агроном', category_id: 'a0000008-0008-4000-8000-000000000008' },
+    { id: 'm-1902', title_uz: 'Veterinar', title_ru: 'Ветеринар', category_id: 'a0000008-0008-4000-8000-000000000008' },
+    { id: 'm-1903', title_uz: 'Fermer yordamchisi', title_ru: 'Помощник фермера', category_id: 'a0000008-0008-4000-8000-000000000008' }
+];
+
 // ============================================
 // Bot Class
 // ============================================
@@ -168,6 +281,11 @@ export class TelegramBot {
     private supabase: SupabaseClient;
     private regionsCache: { data: RegionRef[]; loadedAt: number } = { data: [], loadedAt: 0 };
     private categoriesCache: { data: CategoryRef[]; loadedAt: number } = { data: [], loadedAt: 0 };
+    private fieldsCache: { data: OsonishField[]; loadedAt: number } = { data: [], loadedAt: 0 };
+    private fieldsCatalogCache: { data: OsonishField[]; loadedAt: number } = { data: [], loadedAt: 0 };
+    private fieldsSearchCache: Map<string, { data: OsonishField[]; loadedAt: number }> = new Map();
+    private professionCategoryCache: { map: Record<string, string>; loadedAt: number } = { map: {}, loadedAt: 0 };
+    private jobsProfessionCache: { data: OsonishField[]; loadedAt: number } = { data: [], loadedAt: 0 };
     private readonly referenceTtlMs = 10 * 60 * 1000;
 
     constructor() {
@@ -223,6 +341,8 @@ export class TelegramBot {
 
             if (fallback.error) {
                 console.error('[BOT] Failed to load categories:', error);
+                const ensuredDefault = await this.ensureRequiredCategories(DEFAULT_CATEGORIES);
+                this.categoriesCache = { data: ensuredDefault, loadedAt: Date.now() };
                 return this.categoriesCache.data;
             }
 
@@ -237,7 +357,7 @@ export class TelegramBot {
                     && !nameUz.includes('boshqa')
                     && !nameRu.includes('другое');
             });
-            const ensuredFallback = await this.ensureRequiredCategories(filteredFallback);
+            const ensuredFallback = await this.ensureRequiredCategories(filteredFallback.length ? filteredFallback : DEFAULT_CATEGORIES);
             this.categoriesCache = { data: ensuredFallback, loadedAt: Date.now() };
             return this.categoriesCache.data;
         }
@@ -253,24 +373,666 @@ export class TelegramBot {
                 && !nameUz.includes('boshqa')
                 && !nameRu.includes('другое');
         });
-        const ensured = await this.ensureRequiredCategories(filtered);
+        const ensured = await this.ensureRequiredCategories(filtered.length ? filtered : DEFAULT_CATEGORIES);
         this.categoriesCache = { data: ensured, loadedAt: Date.now() };
         return this.categoriesCache.data;
     }
 
-    private async ensureRequiredCategories(categories: CategoryRef[]): Promise<CategoryRef[]> {
-        const required: CategoryRef[] = [
-            {
-                id: 'a0000006-0006-4000-8000-000000000006',
-                name_uz: 'Moliya, iqtisod, boshqaruv',
-                name_ru: 'Финансы, экономика, управление',
-                icon: 'Wallet',
-                sort_order: 6
-            }
-        ];
+    private mapProfessionRows(rows: any[]): OsonishField[] {
+        return (rows || [])
+            .map((row: any) => ({
+                id: row.id,
+                title: row.title_uz || row.title_ru || '',
+                title_uz: row.title_uz || row.title_ru || null,
+                title_ru: row.title_ru || row.title_uz || null,
+                vacancies_count: row.vacancies_count ?? null,
+                category_id: row.category_id ?? null,
+                category_title: row.category_title ?? null
+            }))
+            .filter((field: OsonishField) => field.id && String(field.title || '').trim().length > 0);
+    }
 
-        const missing = required.filter(req => !categories.some(cat => cat.id === req.id));
-        if (!missing.length) return categories;
+    private async getOsonishFieldsFromDb(query?: string | null): Promise<OsonishField[]> {
+        const cleanedQuery = String(query || '').replace(/[%_,]/g, ' ').trim();
+        try {
+            let request: any = this.supabase
+                .from('osonish_professions')
+                .select('id, title_uz, title_ru, vacancies_count, category_id, category_title');
+
+            if (cleanedQuery) {
+                request = request
+                    .or(`title_uz.ilike.%${cleanedQuery}%,title_ru.ilike.%${cleanedQuery}%`)
+                    .limit(150);
+            } else {
+                request = request
+                    .order('vacancies_count', { ascending: false })
+                    .limit(40);
+            }
+
+            const { data, error } = await request;
+            if (error) return [];
+            return this.mapProfessionRows(data || []);
+        } catch {
+            return [];
+        }
+    }
+
+    private async getOsonishFieldsCatalog(limit: number = 1800): Promise<OsonishField[]> {
+        if (this.fieldsCatalogCache.data.length > 0 && this.isCacheFresh(this.fieldsCatalogCache.loadedAt)) {
+            return this.fieldsCatalogCache.data.slice(0, limit);
+        }
+        try {
+            const { data, error } = await this.supabase
+                .from('osonish_professions')
+                .select('id, title_uz, title_ru, vacancies_count, category_id, category_title')
+                .order('vacancies_count', { ascending: false })
+                .limit(limit);
+            if (!error && Array.isArray(data) && data.length > 0) {
+                const mapped = this.mapProfessionRows(data);
+                this.fieldsCatalogCache = { data: mapped, loadedAt: Date.now() };
+                return mapped;
+            }
+        } catch {
+            // Fallback to jobs below.
+        }
+        const fallback = await this.buildOsonishFieldsFromJobs(null);
+        this.fieldsCatalogCache = { data: fallback, loadedAt: Date.now() };
+        return fallback.slice(0, limit);
+    }
+
+    private async buildOsonishFieldsFromJobs(query?: string | null): Promise<OsonishField[]> {
+        try {
+            const normalizedQuery = this.normalizeLoose(query || '');
+            if (this.jobsProfessionCache.data.length > 0 && this.isCacheFresh(this.jobsProfessionCache.loadedAt)) {
+                const cached = this.jobsProfessionCache.data;
+                if (!normalizedQuery) return cached.slice(0, 140);
+                return cached
+                    .filter(field =>
+                        this.normalizeLoose(`${field.title_uz || ''} ${field.title_ru || ''}`).includes(normalizedQuery)
+                    )
+                    .slice(0, 140);
+            }
+
+            const { data, error } = await this.supabase
+                .from('jobs')
+                .select('category_id, raw_source_json')
+                .eq('source', 'osonish')
+                .eq('is_active', true)
+                .order('last_seen_at', { ascending: false })
+                .limit(9000);
+
+            if (error || !data) return [];
+
+            const categories = await this.getCategories();
+            const acc = new Map<string, OsonishField>();
+
+            for (const row of data as any[]) {
+                const raw = row?.raw_source_json || {};
+                const mmkIdRaw = raw?.mmk_position?.id ?? raw?.mmk_position_id ?? null;
+                const mmkId = Number(mmkIdRaw);
+                const title = String(
+                    raw?.mmk_position?.position_name
+                    || raw?.mmk_position?.name
+                    || raw?.field_title
+                    || ''
+                ).trim();
+                if (!Number.isFinite(mmkId) || mmkId <= 0 || title.length < 2) continue;
+
+                const key = String(mmkId);
+                const existing = acc.get(key);
+                if (!existing) {
+                    const cat = row?.category_id
+                        ? categories.find(c => String(c.id) === String(row.category_id))
+                        : null;
+                    const field: OsonishField = {
+                        id: key,
+                        title,
+                        title_uz: title,
+                        title_ru: title,
+                        vacancies_count: 1,
+                        category_id: row?.category_id ? String(row.category_id) : null,
+                        category_title: cat?.name_uz || cat?.name_ru || null
+                    };
+                    acc.set(key, field);
+                    continue;
+                }
+                existing.vacancies_count = (existing.vacancies_count || 0) + 1;
+                if (!existing.category_id && row?.category_id) {
+                    const cat = categories.find(c => String(c.id) === String(row.category_id));
+                    existing.category_id = String(row.category_id);
+                    existing.category_title = cat?.name_uz || cat?.name_ru || existing.category_title || null;
+                }
+            }
+
+            let rows = Array.from(acc.values());
+            rows.sort((a, b) => (b.vacancies_count || 0) - (a.vacancies_count || 0));
+            this.jobsProfessionCache = {
+                data: rows,
+                loadedAt: Date.now()
+            };
+            if (!normalizedQuery) return rows.slice(0, 140);
+            return rows
+                .filter(field =>
+                    this.normalizeLoose(`${field.title_uz || ''} ${field.title_ru || ''}`).includes(normalizedQuery)
+                )
+                .slice(0, 140);
+        } catch {
+            return [];
+        }
+    }
+
+    private async getOsonishFieldsFromRemote(query: string): Promise<OsonishField[]> {
+        try {
+            const authToken = process.env.OSONISH_BEARER_TOKEN || process.env.OSONISH_API_TOKEN || '';
+            const cookie = process.env.OSONISH_COOKIE;
+            const userId = process.env.OSONISH_USER_ID || process.env.OSONISH_CURRENT_USER_ID;
+            const headers: Record<string, string> = {
+                Accept: 'application/json',
+                Referer: 'https://osonish.uz/10095/seeker/resumes/create',
+                Origin: 'https://osonish.uz',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+                'Accept-Language': 'uz,ru;q=0.9,en;q=0.8'
+            };
+            if (authToken) {
+                headers.Authorization = authToken.startsWith('Bearer ') ? authToken : `Bearer ${authToken}`;
+            }
+            if (cookie) headers.Cookie = cookie;
+            if (userId) headers['x-current-user-id'] = userId;
+
+            const apiBaseEnv = process.env.OSONISH_API_BASE?.trim();
+            const trimBase = (value: string) => value.replace(/\/+$/, '');
+            const toBaseCandidates = (value: string): string[] => {
+                const cleaned = trimBase(value);
+                if (!cleaned) return [];
+                if (cleaned.endsWith('/api/api/v1')) return [cleaned.replace('/api/api/v1', '/api/v1'), cleaned];
+                if (cleaned.endsWith('/api/v1')) return [cleaned, cleaned.replace('/api/v1', '/api/api/v1')];
+                return [`${cleaned}/api/v1`, `${cleaned}/api/api/v1`];
+            };
+            const bases = Array.from(new Set([
+                ...(apiBaseEnv ? toBaseCandidates(apiBaseEnv) : []),
+                'https://osonish.uz/api/v1',
+                'https://osonish.uz/api/api/v1'
+            ]));
+
+            let payload: any = null;
+            for (const base of bases) {
+                const url = `${base}/mmk-positions?search=${encodeURIComponent(query)}`;
+                const res = await fetch(url, { headers, cache: 'no-store' });
+                if (res.status === 404) continue;
+                if (!res.ok) continue;
+                payload = await res.json();
+                break;
+            }
+
+            const rawList = Array.isArray(payload?.data?.data)
+                ? payload.data.data
+                : Array.isArray(payload?.data)
+                    ? payload.data
+                    : Array.isArray(payload)
+                        ? payload
+                        : [];
+
+            return (rawList || [])
+                .map((field: any) => ({
+                    id: field.id ?? field.position_id ?? field.value ?? field.code,
+                    title: field.position_name ?? field.name ?? field.title ?? '',
+                    title_uz: field.position_name ?? field.name_uz ?? field.name ?? null,
+                    title_ru: field.position_name ?? field.name_ru ?? field.name ?? null,
+                    vacancies_count: field.vacancies_count ?? field.count ?? field.total ?? null,
+                    category_id: null,
+                    category_title: null,
+                    type: field.type ?? null,
+                    mmk_code: field.mmk_code ?? null,
+                    group_id: field.group_id ?? null,
+                    category_code: field.category ?? null
+                }))
+                .filter((field: OsonishField) => field.id && String(field.title || '').trim().length > 0);
+        } catch {
+            return [];
+        }
+    }
+
+    private async getOsonishFields(query?: string | null): Promise<OsonishField[]> {
+        const normalizedQuery = this.normalizeLoose(query || '');
+        if (!normalizedQuery || normalizedQuery.length < 3) {
+            return [];
+        }
+
+        const cached = this.fieldsSearchCache.get(normalizedQuery);
+        if (cached && this.isCacheFresh(cached.loadedAt)) {
+            return cached.data;
+        }
+
+        try {
+            let loaded = await this.getOsonishFieldsFromDb(normalizedQuery);
+            if (!loaded.length) {
+                loaded = await this.buildOsonishFieldsFromJobs(normalizedQuery);
+            }
+            if (!loaded.length) {
+                const catalog = await this.getOsonishFieldsCatalog(1800);
+                loaded = this.pickFieldMatches(catalog, normalizedQuery, 300);
+            }
+            if (!loaded.length) {
+                loaded = await this.getOsonishFieldsFromRemote(normalizedQuery);
+            }
+            const modern = this.getModernProfessionMatches(normalizedQuery);
+            if (modern.length > 0) {
+                loaded = this.mergeProfessionLists(loaded, modern);
+            }
+
+            const enriched = await this.enrichProfessionsWithCategory(loaded);
+            this.fieldsSearchCache.set(normalizedQuery, { data: enriched, loadedAt: Date.now() });
+            if (this.fieldsSearchCache.size > 60) {
+                const oldestKey = this.fieldsSearchCache.keys().next().value;
+                if (oldestKey) this.fieldsSearchCache.delete(oldestKey);
+            }
+            if (enriched.length > 0) {
+                this.fieldsCache = { data: enriched, loadedAt: Date.now() };
+            }
+            return enriched;
+        } catch (err) {
+            console.warn('[BOT] Failed to load Osonish professions:', err);
+            return [];
+        }
+    }
+
+    private async getProfessionCategoryMap(): Promise<Record<string, string>> {
+        if (Object.keys(this.professionCategoryCache.map).length > 0 && this.isCacheFresh(this.professionCategoryCache.loadedAt)) {
+            return this.professionCategoryCache.map;
+        }
+
+        const counts: Record<string, Record<string, number>> = {};
+        const pageSize = 1000;
+        let offset = 0;
+
+        while (true) {
+            const { data, error } = await this.supabase
+                .from('jobs')
+                .select('category_id, raw_source_json')
+                .not('category_id', 'is', null)
+                .range(offset, offset + pageSize - 1);
+
+            if (error) {
+                console.warn('[BOT] Failed to build profession category map:', error);
+                break;
+            }
+            if (!data || data.length === 0) break;
+
+            for (const row of data as any[]) {
+                const raw = row?.raw_source_json;
+                const mmkId = raw?.mmk_position?.id ?? raw?.mmk_position_id ?? null;
+                const categoryId = row?.category_id ? String(row.category_id) : null;
+                if (!mmkId || !categoryId) continue;
+                const key = String(mmkId);
+                counts[key] = counts[key] || {};
+                counts[key][categoryId] = (counts[key][categoryId] || 0) + 1;
+            }
+
+            if (data.length < pageSize) break;
+            offset += pageSize;
+        }
+
+        const map: Record<string, string> = {};
+        for (const [mmkId, categoryCounts] of Object.entries(counts)) {
+            const sorted = Object.entries(categoryCounts).sort((a, b) => b[1] - a[1]);
+            if (sorted.length > 0) {
+                map[mmkId] = sorted[0][0];
+            }
+        }
+
+        this.professionCategoryCache = { map, loadedAt: Date.now() };
+        return map;
+    }
+
+    private async enrichProfessionsWithCategory(fields: OsonishField[]): Promise<OsonishField[]> {
+        if (!Array.isArray(fields) || fields.length === 0) return [];
+        const categories = await this.getCategories();
+        const professionMap = await this.getProfessionCategoryMap();
+
+        return fields.map((field) => {
+            let categoryId = field.category_id ? String(field.category_id) : null;
+            if (!categoryId && field.id !== null && field.id !== undefined) {
+                categoryId = professionMap[String(field.id)] || null;
+            }
+            if (!categoryId) {
+                const mapped = mapOsonishCategory(
+                    field.title_uz || field.title || '',
+                    null,
+                    field.title_uz || field.title || ''
+                );
+                if (mapped?.categoryId) categoryId = mapped.categoryId;
+            }
+            const category = categoryId
+                ? categories.find(cat => String(cat.id) === String(categoryId))
+                : null;
+            return {
+                ...field,
+                category_id: category?.id || categoryId || null,
+                category_title: category
+                    ? (category.name_uz || category.name_ru || null)
+                    : field.category_title || null
+            };
+        });
+    }
+
+    private normalizeLoose(text?: string | null): string {
+        if (!text) return '';
+        return String(text)
+            .toLowerCase()
+            .replace(/[\u2018\u2019\u02BC\u02BB`']/g, '')
+            .replace(/[^a-z0-9\u0400-\u04FF\s]/gi, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    private escapeHtml(value: string): string {
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    private buildFieldPromptText(lang: BotLang, query: string, total: number, page: number, perPage: number): string {
+        const start = total > 0 ? (page * perPage) + 1 : 0;
+        const end = Math.min((page + 1) * perPage, total);
+        const safeQuery = this.escapeHtml(query);
+        if (lang === 'ru') {
+            return `<b>🧭 | Близкая профессия к должности</b>\n<i>Запрос: ${safeQuery}</i>\n<i>Результаты ${start}-${end} из ${total}</i>`;
+        }
+        return `<b>🧭 | Lavozimga yaqin bo'lgan kasb</b>\n<i>So'rov: ${safeQuery}</i>\n<i>Natijalar ${start}-${end} / ${total}</i>`;
+    }
+
+    private buildFieldNoResultText(lang: BotLang, query: string): string {
+        const safeQuery = this.escapeHtml(query);
+        if (lang === 'ru') {
+            return `<b>⚠️ | По вашему запросу ничего не найдено</b>\n<i>Запрос: ${safeQuery}</i>\n<i>Попробуйте другой вариант (минимум 3 буквы).</i>`;
+        }
+        return `<b>🔎 | So'rov bo'yicha kasb topilmadi</b>\n<i>So'rov: ${safeQuery}</i>\n<i>Boshqa variant bilan qayta qidiring (kamida 3 ta harf).</i>`;
+    }
+
+    private buildBigrams(text: string): string[] {
+        const source = String(text || '').trim();
+        if (source.length < 2) return [];
+        const grams: string[] = [];
+        for (let i = 0; i < source.length - 1; i += 1) {
+            grams.push(source.slice(i, i + 2));
+        }
+        return grams;
+    }
+
+    private diceSimilarity(a: string, b: string): number {
+        if (!a || !b) return 0;
+        if (a === b) return 1;
+        const aBigrams = this.buildBigrams(a);
+        const bBigrams = this.buildBigrams(b);
+        if (!aBigrams.length || !bBigrams.length) return 0;
+        const bCount = new Map<string, number>();
+        for (const g of bBigrams) bCount.set(g, (bCount.get(g) || 0) + 1);
+        let overlap = 0;
+        for (const g of aBigrams) {
+            const count = bCount.get(g) || 0;
+            if (count > 0) {
+                overlap += 1;
+                bCount.set(g, count - 1);
+            }
+        }
+        return (2 * overlap) / (aBigrams.length + bBigrams.length);
+    }
+
+    private extractMissingColumn(error: any): string | null {
+        if (!error) return null;
+        const message = [error.message, error.details, error.hint].filter(Boolean).join(' ');
+        const lower = String(message).toLowerCase();
+        if (!lower.includes('does not exist')
+            && !lower.includes('not found')
+            && !lower.includes('could not find')
+            && !lower.includes('schema cache')) {
+            return null;
+        }
+        const match =
+            message.match(/column ["']?([a-z0-9_]+)["']? (?:does not exist|not found)/i)
+            || message.match(/Could not find the '([^']+)' column/i)
+            || message.match(/column ([a-z0-9_]+) does not exist/i);
+        if (!match) return null;
+        return match[1] ? String(match[1]) : null;
+    }
+
+    private stripColumnFromSelect(select: string, column: string): string {
+        if (!select) return select;
+        const normalized = column.trim();
+        const parts = select
+            .split(',')
+            .map(part => part.trim())
+            .filter(Boolean)
+            .filter(part => {
+                if (part === normalized) return false;
+                if (part.startsWith(`${normalized} `)) return false;
+                if (part.startsWith(`${normalized},`)) return false;
+                return true;
+            });
+        return parts.join(', ');
+    }
+
+    private shouldEnforceAlphabet(state: BotState): boolean {
+        return [
+            BotState.ENTERING_NAME,
+            BotState.ENTERING_TITLE,
+            BotState.SELECTING_FIELD,
+            BotState.ENTERING_ABOUT,
+            BotState.ADDING_SKILLS,
+            BotState.ENTERING_WORKPLACE,
+            BotState.ENTERING_EDUCATION_PLACE,
+            BotState.POSTING_JOB_TITLE,
+            BotState.POSTING_JOB_ADDRESS,
+            BotState.POSTING_JOB_LANGUAGES,
+            BotState.POSTING_JOB_BENEFITS,
+            BotState.POSTING_JOB_HR_NAME,
+            BotState.POSTING_JOB_DESCRIPTION,
+            BotState.EMPLOYER_PROFILE_COMPANY,
+            BotState.EMPLOYER_PROFILE_DIRECTOR,
+            BotState.EMPLOYER_PROFILE_INDUSTRY,
+            BotState.EMPLOYER_PROFILE_DESCRIPTION
+        ].includes(state);
+    }
+
+    private violatesAlphabet(text: string, lang: BotLang): boolean {
+        if (!text) return false;
+        const trimmed = text.trim();
+        if (!trimmed) return false;
+        const hasCyrillic = /[\u0400-\u04FF]/.test(trimmed);
+        const hasLatin = /[A-Za-z]/.test(trimmed);
+        if (lang === 'uz') {
+            return hasCyrillic && hasLatin === false ? true : hasCyrillic;
+        }
+        if (lang === 'ru') {
+            return hasLatin && hasCyrillic === false ? true : hasLatin;
+        }
+        return false;
+    }
+
+    private async resolveCategoryFromTitleOrField(
+        title: string,
+        fieldTitle?: string | null
+    ): Promise<{ id: string; name_uz?: string | null; name_ru?: string | null } | null> {
+        const categories = await this.getCategories();
+        const fieldSource = fieldTitle || '';
+        const mapped = mapOsonishCategory(fieldSource, null, title) || mapOsonishCategory('', null, title);
+        if (mapped?.categoryId) {
+            const match = categories.find(cat => cat.id === mapped.categoryId);
+            return {
+                id: mapped.categoryId,
+                name_uz: match?.name_uz || mapped.categoryName,
+                name_ru: match?.name_ru || mapped.categoryName
+            };
+        }
+
+        if (fieldSource) {
+            const normField = this.normalizeLoose(fieldSource);
+            const byName = categories.find(cat => {
+                const uz = this.normalizeLoose(cat.name_uz || '');
+                const ru = this.normalizeLoose(cat.name_ru || '');
+                return normField === uz || normField === ru || normField.includes(uz) || normField.includes(ru);
+            });
+            if (byName) {
+                return { id: byName.id, name_uz: byName.name_uz, name_ru: byName.name_ru };
+            }
+        }
+
+        return null;
+    }
+
+    private async resolveCategoryFromFieldId(
+        fieldId: string | number,
+        title: string,
+        fieldOptions?: OsonishField[]
+    ): Promise<{ id: string; name_uz?: string | null; name_ru?: string | null } | null> {
+        const fields = Array.isArray(fieldOptions) && fieldOptions.length > 0
+            ? fieldOptions
+            : await this.getOsonishFields(String(title || '').trim());
+        const match = fields.find(field => String(field.id) === String(fieldId));
+        const fieldTitle = match?.title_uz || match?.title_ru || match?.title || null;
+        const categoryTitle = match?.category_title || null;
+        const categoryIdRaw = match?.category_id ?? null;
+        if (categoryIdRaw) {
+            const categories = await this.getCategories();
+            const normalizedId = String(categoryIdRaw);
+            const cat = categories.find(item => String(item.id) === normalizedId);
+            if (cat) {
+                return {
+                    id: cat.id,
+                    name_uz: cat.name_uz,
+                    name_ru: cat.name_ru
+                };
+            }
+        }
+        return this.resolveCategoryFromTitleOrField(title, categoryTitle || fieldTitle);
+    }
+
+    private pickFieldMatches(fields: OsonishField[], query?: string | null, limit: number = 300): OsonishField[] {
+        if (!Array.isArray(fields) || fields.length === 0) return [];
+        const normalizedQuery = this.normalizeLoose(query || '');
+        if (!normalizedQuery || normalizedQuery.length < 3) return [];
+        const tokens = normalizedQuery.split(' ').filter(Boolean);
+
+        const scored = fields.map(field => {
+            const title = this.normalizeLoose(field.title_uz || field.title_ru || field.title || '');
+            let score = 0;
+            if (normalizedQuery && title === normalizedQuery) score += 100;
+            if (normalizedQuery && title.startsWith(normalizedQuery)) score += 60;
+            if (normalizedQuery && title.includes(normalizedQuery)) score += 40;
+            if (tokens.length) {
+                tokens.forEach(token => {
+                    if (title.includes(token)) score += 10;
+                });
+            }
+            if (score === 0) {
+                const fullSimilarity = this.diceSimilarity(title, normalizedQuery);
+                const tokenSimilarity = Math.max(
+                    0,
+                    ...title
+                        .split(' ')
+                        .filter(Boolean)
+                        .map((token) => this.diceSimilarity(token, normalizedQuery))
+                );
+                const bestSimilarity = Math.max(fullSimilarity, tokenSimilarity);
+                if (bestSimilarity >= 0.62) {
+                    score = Math.round(bestSimilarity * 100);
+                }
+            }
+            return { field, score };
+        });
+
+        const filtered = scored.filter(item => item.score > 0);
+        if (!filtered.length) return [];
+
+        filtered.sort((a, b) => {
+            if (b.score !== a.score) return b.score - a.score;
+            const countA = a.field.vacancies_count ?? 0;
+            const countB = b.field.vacancies_count ?? 0;
+            return countB - countA;
+        });
+
+        return filtered.slice(0, limit).map(item => item.field);
+    }
+
+    private getModernProfessionMatches(query: string): OsonishField[] {
+        const normalizedQuery = this.normalizeLoose(query || '');
+        if (!normalizedQuery || normalizedQuery.length < 3) return [];
+        const tokens = normalizedQuery.split(' ').filter(Boolean);
+
+        const scored = MODERN_PROFESSIONS.map(item => {
+            const title = this.normalizeLoose(`${item.title_uz} ${item.title_ru}`);
+            let score = 0;
+            if (title === normalizedQuery) score += 120;
+            if (title.startsWith(normalizedQuery)) score += 80;
+            if (title.includes(normalizedQuery)) score += 50;
+            if (tokens.length > 0) {
+                for (const token of tokens) {
+                    if (title.includes(token)) score += 15;
+                }
+            }
+            return { item, score };
+        }).filter(entry => entry.score > 0);
+
+        scored.sort((a, b) => b.score - a.score);
+        return scored.slice(0, 160).map(({ item }) => ({
+            id: item.id,
+            title: item.title_uz,
+            title_uz: item.title_uz,
+            title_ru: item.title_ru,
+            vacancies_count: 0,
+            category_id: item.category_id,
+            category_title: null
+        }));
+    }
+
+    private mergeProfessionLists(primary: OsonishField[], secondary: OsonishField[]): OsonishField[] {
+        const map = new Map<string, OsonishField>();
+        const put = (field: OsonishField) => {
+            const key = this.normalizeLoose(field.title_uz || field.title_ru || field.title || '');
+            if (!key) return;
+            const current = map.get(key);
+            if (!current) {
+                map.set(key, field);
+                return;
+            }
+            const currentCount = Number(current.vacancies_count || 0);
+            const nextCount = Number(field.vacancies_count || 0);
+            if (nextCount > currentCount) {
+                map.set(key, { ...current, ...field });
+                return;
+            }
+            if (!current.category_id && field.category_id) {
+                map.set(key, { ...current, category_id: field.category_id, category_title: field.category_title || current.category_title || null });
+            }
+        };
+
+        for (const field of primary) put(field);
+        for (const field of secondary) put(field);
+        return Array.from(map.values());
+    }
+
+    private async ensureRequiredCategories(categories: CategoryRef[]): Promise<CategoryRef[]> {
+        const required: CategoryRef[] = DEFAULT_CATEGORIES;
+
+        const missing = required.filter(req => {
+            const reqUz = this.normalizeLoose(req.name_uz);
+            const reqRu = this.normalizeLoose(req.name_ru);
+            return !categories.some(cat => {
+                if (cat.id === req.id) return true;
+                const uz = this.normalizeLoose(cat.name_uz || '');
+                const ru = this.normalizeLoose(cat.name_ru || '');
+                return (reqUz && (uz === reqUz || uz.includes(reqUz)))
+                    || (reqRu && (ru === reqRu || ru.includes(reqRu)));
+            });
+        });
+        if (!missing.length) {
+            return categories
+                .slice()
+                .sort((a, b) => Number(a.sort_order || 999) - Number(b.sort_order || 999));
+        }
 
         try {
             await this.supabase
@@ -286,7 +1048,8 @@ export class TelegramBot {
             console.warn('[BOT] Failed to upsert required categories:', err);
         }
 
-        return [...categories, ...missing];
+        return [...categories, ...missing]
+            .sort((a, b) => Number(a.sort_order || 999) - Number(b.sort_order || 999));
     }
 
     private async getDistrictJobCounts(regionId: number): Promise<Record<string, number>> {
@@ -464,9 +1227,12 @@ export class TelegramBot {
             return merged;
         }
 
-        const normalizedFallback = normalize(fallback);
+        const normalizedFallback = normalize(fallback.length ? fallback : DEFAULT_CATEGORIES);
         for (const req of required) {
             if (!normalizedFallback.some(cat => cat.id === req.id)) normalizedFallback.push(req);
+        }
+        for (const cat of DEFAULT_CATEGORIES) {
+            if (!normalizedFallback.some(item => item.id === cat.id)) normalizedFallback.push(cat);
         }
         return normalizedFallback;
     }
@@ -546,12 +1312,18 @@ export class TelegramBot {
             BotState.POSTING_JOB_SALARY_MAX,
             BotState.POSTING_JOB_WORK_HOURS,
             BotState.POSTING_JOB_AGE,
-            BotState.ENTERING_BIRTH_DATE
+            BotState.ENTERING_BIRTH_DATE,
+            BotState.SELECTING_SALARY,
+            BotState.SELECTING_SALARY_MAX,
+            BotState.ENTERING_WORKPLACE_YEARS,
+            BotState.ENTERING_WORKPLACE_END_YEAR,
+            BotState.ENTERING_EDUCATION_START_YEAR,
+            BotState.ENTERING_EDUCATION_END_YEAR
         ];
         if (skipStates.includes(state)) return true;
         if (!text) return false;
         const numericLike = /^[\d\s+.,-]+$/.test(text.trim());
-        return numericLike && skipStates.includes(state);
+        return numericLike || skipStates.includes(state);
     }
 
     private async sendPrompt(
@@ -569,16 +1341,40 @@ export class TelegramBot {
                 // ignore delete errors
             }
         }
-        const result = await sendMessage(chatId, safeText, {
-            parseMode: options.parseMode ?? 'HTML',
-            replyMarkup: options.replyMarkup
-        });
+        let result: any = null;
+        try {
+            result = await sendMessage(chatId, safeText, {
+                parseMode: options.parseMode ?? 'HTML',
+                replyMarkup: options.replyMarkup
+            });
+        } catch (err: any) {
+            // Fallback for malformed HTML/Markdown content so the flow does not break.
+            const fallbackText = this.stripHtmlTags(safeText);
+            result = await sendMessage(chatId, fallbackText, {
+                replyMarkup: options.replyMarkup
+            });
+        }
         const messageId = result?.message_id;
         if (messageId) {
             const updatedData = { ...session.data, last_prompt_message_id: messageId };
             session.data = updatedData;
             await this.updateSession(session.telegram_user_id, { data: updatedData });
         }
+    }
+
+    private stripHtmlTags(value: string): string {
+        return String(value || '')
+            .replace(/<[^>]+>/g, '')
+            .replace(/&nbsp;/g, ' ')
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .trim();
+    }
+
+    private normalizePhoneValue(value: string | null | undefined): string {
+        if (!value) return '';
+        return String(value).replace(/\D/g, '');
     }
 
     private async isUserBanned(chatId: number, session: TelegramSession): Promise<boolean> {
@@ -777,7 +1573,11 @@ export class TelegramBot {
         if (!message || !data) return;
 
         try {
-            await answerCallbackQuery(id);
+            try {
+                await answerCallbackQuery(id);
+            } catch {
+                // Old/expired callback query should not break the whole flow.
+            }
             const session = sessionOverride || await this.getOrCreateSession(from.id);
             if (!session) return;
             if (!session.data) session.data = {};
@@ -796,16 +1596,74 @@ export class TelegramBot {
                 case 'district': await this.handleDistrictSelect(chatId, value, session, message.message_id); break;
                 case 'distpage': await this.showDistrictPage(chatId, parseInt(value), session, message.message_id); break;
                 case 'category': await this.handleCategorySelect(chatId, value, session, message.message_id); break;
+                case 'field': await this.handleFieldSelect(chatId, value, session, message.message_id); break;
+                case 'fieldpage': await this.showFieldPage(chatId, parseInt(value), session, message.message_id); break;
                 case 'experience': await this.handleExperienceSelect(chatId, value, session, message.message_id); break;
-                case 'education': await this.handleEducationSelect(chatId, value, session, message.message_id); break;
+                case 'education':
+                    if (value === 'add') {
+                        await this.setSession(session, { state: BotState.ENTERING_EDUCATION_PLACE, data: { ...session.data, education_pending: null } });
+                        await this.setFlowCancelKeyboard(chatId, session, 'back');
+                        await this.sendPrompt(chatId, session, botTexts.askEducationPlace[session.lang], {
+                            replyMarkup: keyboards.backKeyboard(session.lang, 'education')
+                        });
+                    } else if (value === 'done') {
+                        await this.finishEducationStep(chatId, session);
+                    } else {
+                        await this.handleEducationSelect(chatId, value, session, message.message_id);
+                    }
+                    break;
+                case 'educont':
+                    if (value === 'add') {
+                        await this.setSession(session, { state: BotState.ENTERING_EDUCATION_PLACE, data: { ...session.data, education_pending: null } });
+                        await this.setFlowCancelKeyboard(chatId, session, 'back');
+                        await this.sendPrompt(chatId, session, botTexts.askEducationPlace[session.lang], {
+                            replyMarkup: keyboards.backKeyboard(session.lang, 'education')
+                        });
+                    } else {
+                        await this.finishEducationStep(chatId, session);
+                    }
+                    break;
                 case 'gender': await this.handleGenderSelect(chatId, value, session, message.message_id); break;
                 case 'special': await this.handleSpecialCriteria(chatId, value, session, message.message_id); break;
                 case 'salary': await this.handleSalarySelect(chatId, value, session, message.message_id); break;
                 case 'jobsalary': await this.handleJobSalaryQuick(chatId, value, session, message.message_id); break;
                 case 'jobsalarymax': await this.handleJobSalaryMaxQuick(chatId, value, session, message.message_id); break;
                 case 'matchjob': await this.handleMatchJob(chatId, value, session); break;
+                case 'matchrelated':
+                    if (value === 'open') {
+                        const relatedResumes: Array<{ id: string; full_name?: string | null; title?: string | null; score?: number | null }> =
+                            Array.isArray(session.data?.related_resume_list) ? session.data.related_resume_list : [];
+                        if (!relatedResumes.length) {
+                            await this.sendPrompt(chatId, session, botTexts.noJobsFound[session.lang], {
+                                replyMarkup: keyboards.employerMainMenuKeyboard(session.lang)
+                            });
+                            break;
+                        }
+                        await this.sendPrompt(chatId, session, session.lang === 'uz' ? '🧾 Yaqin rezyumelar:' : '🧾 Похожие резюме:', {
+                            replyMarkup: keyboards.resumeMatchKeyboard(session.lang, relatedResumes)
+                        });
+                    }
+                    break;
                 case 'jobview': await this.handleEmployerJobView(chatId, value, session); break;
                 case 'jobclose': await this.handleEmployerJobClose(chatId, value, session); break;
+                case 'autojobs':
+                    if (value === 'open') {
+                        const autoList: MatchedJob[] = Array.isArray(session.data?.auto_job_list)
+                            ? session.data.auto_job_list
+                            : [];
+                        if (!autoList.length) {
+                            await this.sendPrompt(chatId, session, botTexts.noJobsFound[session.lang], {
+                                replyMarkup: keyboards.mainMenuKeyboard(session.lang, 'seeker')
+                            });
+                            break;
+                        }
+                        await this.setSession(session, {
+                            state: BotState.BROWSING_JOBS,
+                            data: { ...session.data, job_list: autoList, currentJobIndex: 0, job_source: 'auto' }
+                        });
+                        await this.showJob(chatId, session, 0);
+                    }
+                    break;
                 case 'appview': await this.handleApplicationView(chatId, value, session); break;
                 case 'apps':
                     if (value === 'back') await this.showEmployerApplications(chatId, session);
@@ -816,6 +1674,12 @@ export class TelegramBot {
                 case 'workingdays': await this.handleWorkingDaysSelect(chatId, value, session, message.message_id); break;
                 case 'skip': await this.handleSkip(chatId, session); break;
                 case 'skills': if (value === 'done') await this.finishSkills(chatId, session); break;
+                case 'workend':
+                    if (value === 'current') await this.handleWorkEndCurrent(chatId, session);
+                    break;
+                case 'eduend':
+                    if (value === 'current') await this.handleEducationEndCurrent(chatId, session);
+                    break;
                 case 'workplace':
                     if (value === 'add') {
                         await this.setSession(session, {
@@ -827,17 +1691,6 @@ export class TelegramBot {
                         });
                     } else if (value === 'done') {
                         await this.finishWorkplaceStep(chatId, session);
-                    }
-                    break;
-                case 'education':
-                    if (value === 'add') {
-                        await this.setSession(session, { state: BotState.ENTERING_EDUCATION_PLACE, data: { ...session.data, education_pending: null } });
-                        await this.setFlowCancelKeyboard(chatId, session, 'back');
-                        await this.sendPrompt(chatId, session, botTexts.askEducationPlace[session.lang], {
-                            replyMarkup: keyboards.backKeyboard(session.lang, 'education')
-                        });
-                    } else if (value === 'done') {
-                        await this.finishEducationStep(chatId, session);
                     }
                     break;
                 case 'delskill': await this.deleteSkill(chatId, parseInt(value), session); break;
@@ -881,6 +1734,7 @@ export class TelegramBot {
                     }
                     break;
                 case 'mcat': await this.handleMultiCategory(chatId, value, session, message.message_id); break;
+                case 'noop': break;
                 default: console.log('Unknown callback:', data);
             }
         } catch (err) {
@@ -1697,6 +2551,7 @@ export class TelegramBot {
                 .order('name_uz');
             const districtCounts = await this.getDistrictJobCounts(regionIdNum);
             const districts = this.sortDistrictsByDemand(districtsRaw || [], districtCounts);
+            const showCounts = session.data?.active_role !== 'employer';
 
             const updatedResume = {
                 ...session.data?.resume,
@@ -1718,11 +2573,12 @@ export class TelegramBot {
                 data: updatedData
             });
 
-            const options = { replyMarkup: keyboards.districtKeyboard(districts, lang, 0, districtCounts, 'region') };
+            const options = { replyMarkup: keyboards.districtKeyboard(districts, lang, 0, districtCounts, 'region', showCounts) };
+            const promptText = showCounts ? botTexts.askDistrictWithCounts[lang] : botTexts.askDistrict[lang];
             if (messageId) {
-                await editMessage(chatId, messageId, botTexts.askDistrict[lang], options);
+                await editMessage(chatId, messageId, promptText, options);
             } else {
-                await this.sendPrompt(chatId, session, botTexts.askDistrict[lang], options);
+                await this.sendPrompt(chatId, session, promptText, options);
             }
             return;
         }
@@ -1747,7 +2603,7 @@ export class TelegramBot {
                 data: { ...session.data, employer_profile: updatedDraft, districts, districtPage: 0, district_counts: districtCounts }
             });
 
-            const options = { replyMarkup: keyboards.districtKeyboard(districts, lang, 0, districtCounts, 'employer_region') };
+            const options = { replyMarkup: keyboards.districtKeyboard(districts, lang, 0, districtCounts, 'employer_region', false) };
             if (messageId) {
                 await editMessage(chatId, messageId, botTexts.employerDistrictPrompt[lang], options);
             } else {
@@ -1796,6 +2652,7 @@ export class TelegramBot {
                 .order('name_uz');
             const districtCounts = await this.getDistrictJobCounts(regionIdNum);
             const districts = this.sortDistrictsByDemand(districtsRaw || [], districtCounts);
+            const showCounts = session.data?.active_role !== 'employer';
 
             const draft = { ...(session.data?.subscription_draft || {}) };
             draft.region_id = regionIdNum;
@@ -1813,11 +2670,12 @@ export class TelegramBot {
                 data: updatedData
             });
 
-            const options = { replyMarkup: keyboards.districtKeyboard(districts, lang, 0, districtCounts, 'region') };
+            const options = { replyMarkup: keyboards.districtKeyboard(districts, lang, 0, districtCounts, 'region', showCounts) };
+            const promptText = showCounts ? botTexts.askDistrictWithCounts[lang] : botTexts.askDistrict[lang];
             if (messageId) {
-                await editMessage(chatId, messageId, botTexts.askDistrict[lang], options);
+                await editMessage(chatId, messageId, promptText, options);
             } else {
-                await sendMessage(chatId, botTexts.askDistrict[lang], options);
+                await sendMessage(chatId, promptText, options);
             }
             return;
         }
@@ -1829,6 +2687,7 @@ export class TelegramBot {
             .order('name_uz');
         const districtCounts = await this.getDistrictJobCounts(regionIdNum);
         const districts = this.sortDistrictsByDemand(districtsRaw || [], districtCounts);
+        const showCounts = session.data?.active_role !== 'employer';
 
         const updatedData = {
             ...session.data,
@@ -1846,7 +2705,8 @@ export class TelegramBot {
             data: updatedData
         });
 
-        const options = { replyMarkup: keyboards.districtKeyboard(districts, lang, 0, districtCounts, 'region') };
+        const options = { replyMarkup: keyboards.districtKeyboard(districts, lang, 0, districtCounts, 'region', showCounts) };
+        const promptText = showCounts ? botTexts.askDistrictWithCounts[lang] : botTexts.askDistrict[lang];
         if (messageId) {
             try {
                 await deleteMessage(chatId, messageId);
@@ -1854,7 +2714,7 @@ export class TelegramBot {
                 // ignore
             }
         }
-        await this.sendPrompt(chatId, session, botTexts.askDistrict[lang], options);
+        await this.sendPrompt(chatId, session, promptText, options);
     }
 
     private async showDistrictPage(chatId: number, page: number, session: TelegramSession, messageId?: number): Promise<void> {
@@ -1863,16 +2723,21 @@ export class TelegramBot {
         const districtCounts = session.data?.district_counts || {};
         await this.setSession(session, { data: { ...session.data, districtPage: page } });
         const isJobFlow = session.state === BotState.POSTING_JOB_DISTRICT;
+        const isEmployerProfileFlow = session.state === BotState.EMPLOYER_PROFILE_DISTRICT;
         const backAction = isJobFlow
             ? 'job_region'
-            : session.state === BotState.EMPLOYER_PROFILE_DISTRICT
+            : isEmployerProfileFlow
                 ? 'employer_region'
                 : 'region';
-        const options = { replyMarkup: keyboards.districtKeyboard(districts, lang, page, districtCounts, backAction, !isJobFlow) };
+        const showCounts = !(isJobFlow || isEmployerProfileFlow) && session.data?.active_role !== 'employer';
+        const options = { replyMarkup: keyboards.districtKeyboard(districts, lang, page, districtCounts, backAction, showCounts) };
+        const promptText = isJobFlow || isEmployerProfileFlow
+            ? botTexts.employerDistrictPrompt[lang]
+            : (showCounts ? botTexts.askDistrictWithCounts[lang] : botTexts.askDistrict[lang]);
         if (messageId) {
-            await editMessage(chatId, messageId, botTexts.askDistrict[lang], options);
+            await editMessage(chatId, messageId, promptText, options);
         } else {
-            await sendMessage(chatId, botTexts.askDistrict[lang], options);
+            await sendMessage(chatId, promptText, options);
         }
     }
 
@@ -1958,24 +2823,14 @@ export class TelegramBot {
                 ...session.data?.resume,
                 district_id: Number.isFinite(districtIdNum) ? districtIdNum : districtId,
                 district_name: lang === 'uz' ? district?.name_uz : district?.name_ru
-            },
-            selected_categories: []
-        };
-        const regionIdNum = this.toCoordinate(updatedData.resume?.region_id);
-        const districtIdForCounts = Number.isFinite(districtIdNum) ? districtIdNum : null;
-        const categoryCounts = await this.getCategoryJobCounts(regionIdNum, districtIdForCounts);
-        const allCategories = await this.getCategories();
-        const sortedCategories = this.sortCategoriesByDemand(allCategories, categoryCounts);
-        await this.setSession(session, {
-            state: BotState.SELECTING_CATEGORY,
-            data: {
-                ...updatedData,
-                category_counts: categoryCounts,
-                category_options: sortedCategories
             }
+        };
+        await this.setSession(session, {
+            state: BotState.SELECTING_EXPERIENCE,
+            data: updatedData
         });
 
-        const options = { replyMarkup: keyboards.multiCategoryKeyboard(lang, [], sortedCategories as any, categoryCounts, 'district') };
+        const options = { replyMarkup: keyboards.experienceKeyboard(lang) };
         if (messageId) {
             try {
                 await deleteMessage(chatId, messageId);
@@ -1983,7 +2838,7 @@ export class TelegramBot {
                 // ignore
             }
         }
-        await this.sendPrompt(chatId, session, botTexts.askCategory[lang], options);
+        await this.sendPrompt(chatId, session, botTexts.askExperience[lang], options);
     }
 
     private async handleCategorySelect(chatId: number, categoryId: string, session: TelegramSession, messageId?: number): Promise<void> {
@@ -2044,6 +2899,117 @@ export class TelegramBot {
         } else {
             await sendMessage(chatId, botTexts.askExperience[lang], options);
         }
+    }
+
+    private async showFieldPage(chatId: number, page: number, session: TelegramSession, messageId?: number): Promise<void> {
+        const lang = session.lang;
+        const fields: OsonishField[] = Array.isArray(session.data?.field_options) ? session.data.field_options : [];
+        const query = String(session.data?.field_query || '').trim();
+        const context = session.data?.field_context === 'job' ? 'job' : 'resume';
+        const backAction = context === 'job' ? 'job_title' : 'title';
+
+        if (!fields.length) {
+            const text = query.length >= 3
+                ? this.buildFieldNoResultText(lang, query)
+                : `${botTexts.fieldMinChars[lang]}\n\n${botTexts.askField[lang]}`;
+            const options = { replyMarkup: keyboards.backKeyboard(lang, backAction) };
+            if (messageId) {
+                await editMessage(chatId, messageId, text, options);
+            } else {
+                await sendMessage(chatId, text, options);
+            }
+            return;
+        }
+
+        const perPage = 10;
+        const totalPages = Math.max(1, Math.ceil(fields.length / perPage));
+        const safePage = Number.isFinite(page) ? Math.max(0, Math.min(page, totalPages - 1)) : 0;
+        await this.setSession(session, {
+            data: { ...session.data, field_page: safePage }
+        });
+
+        const promptText = this.buildFieldPromptText(lang, query, fields.length, safePage, perPage);
+        const options = {
+            replyMarkup: keyboards.fieldsKeyboard(lang, fields, backAction, safePage, perPage)
+        };
+        if (messageId) {
+            await editMessage(chatId, messageId, promptText, options);
+        } else {
+            await sendMessage(chatId, promptText, options);
+        }
+    }
+
+    private async handleFieldSelect(chatId: number, fieldId: string, session: TelegramSession, messageId?: number): Promise<void> {
+        const lang = session.lang;
+        const context = session.data?.field_context || 'resume';
+        const title = context === 'job'
+            ? (session.data?.temp_job?.title || '')
+            : (session.data?.resume?.title || '');
+        const currentFieldOptions: OsonishField[] = Array.isArray(session.data?.field_options) ? session.data.field_options : [];
+        const resolved = await this.resolveCategoryFromFieldId(fieldId, title, currentFieldOptions);
+        if (!resolved) {
+            const fields = await this.getOsonishFields(session.data?.field_query || title || '');
+            const fallback = currentFieldOptions.length ? currentFieldOptions : this.pickFieldMatches(fields, session.data?.field_query || title || '', 300);
+            const page = Number.isFinite(Number(session.data?.field_page)) ? Number(session.data?.field_page) : 0;
+            await this.setSession(session, {
+                state: BotState.SELECTING_FIELD,
+                data: {
+                    ...session.data,
+                    field_context: context,
+                    field_query: session.data?.field_query || title,
+                    field_options: fallback,
+                    field_page: page
+                }
+            });
+            const promptText = this.buildFieldPromptText(lang, String(session.data?.field_query || title || ''), fallback.length, page, 10);
+            await this.sendPrompt(chatId, session, promptText, {
+                replyMarkup: keyboards.fieldsKeyboard(lang, fallback, context === 'job' ? 'job_title' : 'title', page, 10)
+            });
+            return;
+        }
+
+        const fields = currentFieldOptions.length ? currentFieldOptions : await this.getOsonishFields(session.data?.field_query || title || '');
+        const selectedField = fields.find(field => String(field.id) === String(fieldId));
+        const fieldTitle = selectedField?.title_uz || selectedField?.title_ru || selectedField?.title || null;
+
+        if (context === 'job') {
+            const updatedJob = {
+                ...session.data?.temp_job,
+                category_id: resolved.id,
+                category_name: lang === 'uz' ? resolved.name_uz : resolved.name_ru,
+                field_id: fieldId,
+                field_title: fieldTitle
+            };
+            await this.updateSession(session.telegram_user_id, {
+                state: BotState.POSTING_JOB_SALARY,
+                data: { ...session.data, temp_job: updatedJob, field_context: null, field_query: '', field_options: [], field_page: 0 }
+            });
+            await this.sendPrompt(chatId, session, botTexts.postJobSalary[lang], {
+                replyMarkup: keyboards.jobSalaryKeyboard(lang)
+            });
+            return;
+        }
+
+        const updatedData = {
+            ...session.data,
+            resume: {
+                ...session.data?.resume,
+                category_id: resolved.id,
+                category_ids: [resolved.id],
+                category_name: lang === 'uz' ? resolved.name_uz : resolved.name_ru,
+                field_id: fieldId,
+                field_title: fieldTitle
+            },
+            field_context: null,
+            field_query: '',
+            field_options: [],
+            field_page: 0
+        };
+        await this.setSession(session, { state: BotState.SELECTING_REGION, data: updatedData });
+        const regions = await this.getRegions();
+        await this.sendPrompt(chatId, session, botTexts.askRegion[lang], {
+            replyMarkup: keyboards.regionKeyboard(lang, regions, 'title')
+        });
     }
 
     private async handleMultiCategory(chatId: number, value: string, session: TelegramSession, messageId?: number): Promise<void> {
@@ -2227,6 +3193,10 @@ export class TelegramBot {
 
     private async handleEducationSelect(chatId: number, value: string, session: TelegramSession, messageId?: number): Promise<void> {
         const lang = session.lang;
+        if (value === 'done') {
+            await this.finishEducationStep(chatId, session);
+            return;
+        }
 
         if (session.state === BotState.POSTING_JOB_EDUCATION) {
             const updatedJob = { ...session.data?.temp_job, education_level: value };
@@ -2367,10 +3337,10 @@ export class TelegramBot {
         }
 
         await this.setSession(session, {
-            state: BotState.SELECTING_GENDER,
+            state: BotState.SELECTING_SPECIAL,
             data: updatedData
         });
-        const options = { replyMarkup: keyboards.genderKeyboard(lang, false) };
+        const options = { replyMarkup: keyboards.specialCriteriaKeyboard(lang, updatedData.resume?.special || [], 'education') };
         if (messageId) {
             try {
                 await deleteMessage(chatId, messageId);
@@ -2378,7 +3348,7 @@ export class TelegramBot {
                 // ignore
             }
         }
-        await this.sendPrompt(chatId, session, botTexts.askGender[lang], options);
+        await this.sendPrompt(chatId, session, botTexts.askSpecialCriteria[lang], options);
     }
 
     private async handleGenderSelect(chatId: number, value: string, session: TelegramSession, messageId?: number): Promise<void> {
@@ -2503,10 +3473,10 @@ export class TelegramBot {
             resume: { ...session.data?.resume, gender: value }
         };
         await this.setSession(session, {
-            state: BotState.ENTERING_BIRTH_DATE,
+            state: BotState.ENTERING_TITLE,
             data: updatedData
         });
-        const options = { replyMarkup: keyboards.cancelReplyKeyboard(lang) };
+        const options = { replyMarkup: keyboards.backKeyboard(lang, 'gender') };
         if (messageId) {
             try {
                 await deleteMessage(chatId, messageId);
@@ -2514,7 +3484,7 @@ export class TelegramBot {
                 // ignore
             }
         }
-        await this.sendPrompt(chatId, session, botTexts.askBirthDate[lang], options);
+        await this.sendPrompt(chatId, session, botTexts.askTitle[lang], options);
     }
 
     private async handleSpecialCriteria(chatId: number, value: string, session: TelegramSession, messageId?: number): Promise<void> {
@@ -2554,12 +3524,12 @@ export class TelegramBot {
         const updatedData = { ...session.data, resume: { ...session.data?.resume, special: currentSpecial } };
         await this.setSession(session, { data: updatedData });
 
-        const options = { replyMarkup: keyboards.specialCriteriaKeyboard(lang, currentSpecial, 'birthdate') };
-        if (messageId) {
-            await editMessage(chatId, messageId, botTexts.askSpecialCriteria[lang], options);
-        } else {
-            await this.sendPrompt(chatId, session, botTexts.askSpecialCriteria[lang], options);
-        }
+            const options = { replyMarkup: keyboards.specialCriteriaKeyboard(lang, currentSpecial, 'education') };
+            if (messageId) {
+                await editMessage(chatId, messageId, botTexts.askSpecialCriteria[lang], options);
+            } else {
+                await this.sendPrompt(chatId, session, botTexts.askSpecialCriteria[lang], options);
+            }
     }
 
     private async handleSalarySelect(chatId: number, value: string, session: TelegramSession, messageId?: number): Promise<void> {
@@ -2594,10 +3564,10 @@ export class TelegramBot {
             }
         };
         await this.setSession(session, {
-            state: BotState.ENTERING_TITLE,
+            state: BotState.ENTERING_ABOUT,
             data: updatedData
         });
-        const options = { replyMarkup: keyboards.cancelReplyKeyboard(lang) };
+        const options = { replyMarkup: keyboards.aboutSkipInlineKeyboard(lang, 'salary') };
         if (messageId) {
             try {
                 await deleteMessage(chatId, messageId);
@@ -2605,7 +3575,7 @@ export class TelegramBot {
                 // ignore
             }
         }
-        await this.sendPrompt(chatId, session, botTexts.askTitle[lang], options);
+        await this.sendPrompt(chatId, session, botTexts.askAbout[lang], options);
     }
 
     private async handleJobSalaryQuick(chatId: number, value: string, session: TelegramSession, messageId?: number): Promise<void> {
@@ -2760,6 +3730,61 @@ export class TelegramBot {
         await this.sendPrompt(chatId, session, botTexts.askExperience[lang], options);
     }
 
+    private sanitizeYearValue(value: any): number | null {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) return null;
+        const year = Math.round(numeric);
+        const nowYear = new Date().getFullYear();
+        if (year < 1950 || year > nowYear) return null;
+        return year;
+    }
+
+    private sanitizeExperienceDetails(list: any): any[] {
+        if (!Array.isArray(list)) return [];
+        const sanitized: any[] = [];
+        for (const item of list) {
+            if (!item || typeof item !== 'object') continue;
+            const company = String(item.company || item.employer || '').trim();
+            const position = String(item.position || item.role || '').trim();
+            const startYear = this.sanitizeYearValue(item.start_year);
+            const endYearRaw = item.end_year === undefined || item.end_year === null || item.end_year === '' ? null : this.sanitizeYearValue(item.end_year);
+            const isCurrent = Boolean(item.is_current);
+            if (!company && !position) continue;
+            if (startYear && endYearRaw && endYearRaw < startYear) continue;
+            sanitized.push({
+                company: company || undefined,
+                position: position || undefined,
+                start_year: startYear || undefined,
+                end_year: isCurrent ? undefined : (endYearRaw || undefined),
+                is_current: isCurrent
+            });
+        }
+        return sanitized;
+    }
+
+    private sanitizeEducationEntries(list: any): any[] {
+        if (!Array.isArray(list)) return [];
+        const sanitized: any[] = [];
+        for (const item of list) {
+            if (!item || typeof item !== 'object') continue;
+            const institution = String(item.institution || item.school || '').trim();
+            const field = String(item.field || item.specialty || '').trim();
+            const startYear = this.sanitizeYearValue(item.start_year);
+            const endYearRaw = item.end_year === undefined || item.end_year === null || item.end_year === '' ? null : this.sanitizeYearValue(item.end_year);
+            const isCurrent = Boolean(item.is_current);
+            if (!institution && !field) continue;
+            if (startYear && endYearRaw && endYearRaw < startYear) continue;
+            sanitized.push({
+                institution: institution || undefined,
+                field: field || undefined,
+                start_year: startYear || undefined,
+                end_year: isCurrent ? undefined : (endYearRaw || undefined),
+                is_current: isCurrent
+            });
+        }
+        return sanitized;
+    }
+
     private async saveResume(session: TelegramSession, resumeData: any, resumeId?: string | null): Promise<string | null> {
         if (!session.user_id || !resumeData) return null;
 
@@ -2769,7 +3794,7 @@ export class TelegramBot {
             let data: any = null;
             const primary = await this.supabase
                 .from('resumes')
-                .select('title, full_name, region_id, district_id, category_id, category_ids, skills, experience_details, education, expected_salary_min, gender, education_level, experience, birth_date, special')
+                .select('title, full_name, about, phone, region_id, district_id, category_id, category_ids, field_id, field_title, skills, experience_details, education, expected_salary_min, expected_salary_max, gender, education_level, experience, birth_date, special')
                 .eq('id', resumeId)
                 .maybeSingle();
             data = primary.data || null;
@@ -2777,7 +3802,7 @@ export class TelegramBot {
             if (selectError && String(selectError.message || '').includes('special')) {
                 const fallback = await this.supabase
                     .from('resumes')
-                    .select('title, full_name, region_id, district_id, category_id, category_ids, skills, experience_details, education, expected_salary_min, gender, education_level, experience, birth_date')
+                    .select('title, full_name, about, phone, region_id, district_id, category_id, category_ids, field_id, field_title, skills, experience_details, education, expected_salary_min, expected_salary_max, gender, education_level, experience, birth_date')
                     .eq('id', resumeId)
                     .maybeSingle();
                 data = fallback.data || null;
@@ -2793,7 +3818,7 @@ export class TelegramBot {
             region_id, district_id, category_id, category_ids,
             experience, experience_level, education: educationData, education_level, gender,
             salary, title, name, about, skills, desired_position, full_name,
-            expected_salary_min, birth_date, experience_details, special
+            expected_salary_min, birth_date, experience_details, special, field_id, field_title
         } = resumeData;
 
         const parseNumber = (value: any): number | null => {
@@ -2809,10 +3834,22 @@ export class TelegramBot {
         const sourceCategoryIds = Array.isArray(category_ids) && category_ids.length > 0
             ? category_ids
             : (Array.isArray(existing?.category_ids) && existing?.category_ids?.length > 0 ? existing.category_ids : []);
-        const finalCategoryIds = Array.from(new Set(sourceCategoryIds.map((id: any) => String(id))));
+        const combinedCategoryIds = new Set<string>();
+        sourceCategoryIds.forEach((id: any) => {
+            if (id !== null && id !== undefined) combinedCategoryIds.add(String(id));
+        });
+        if (category_id) combinedCategoryIds.add(String(category_id));
+        if (existing?.category_id) combinedCategoryIds.add(String(existing.category_id));
+        const finalCategoryIds = Array.from(combinedCategoryIds);
         const finalCategoryId = category_id
             ? String(category_id)
             : (existing?.category_id ? String(existing.category_id) : (finalCategoryIds.length > 0 ? finalCategoryIds[0] : null));
+        const finalFieldId = hasProp(resumeData, 'field_id')
+            ? (field_id ?? null)
+            : (existing?.field_id ?? null);
+        const finalFieldTitle = hasProp(resumeData, 'field_title')
+            ? (field_title ?? null)
+            : (existing?.field_title ?? null);
         const normalizedGender = gender === 'any' ? null : gender;
         const salaryMin = parseNumber(expected_salary_min ?? salary);
         const skillsSource = hasProp(resumeData, 'skills')
@@ -2848,12 +3885,21 @@ export class TelegramBot {
         const finalBirthDate = hasProp(resumeData, 'birth_date') ? (birth_date || null) : (existing?.birth_date ?? null);
         const finalFullName = full_name || name || existing?.full_name || null;
         const finalExpectedSalary = parseNumber(expected_salary_min ?? salary ?? existing?.expected_salary_min ?? null);
-        const finalExperienceDetails = hasProp(resumeData, 'experience_details')
-            ? (Array.isArray(experience_details) ? experience_details : [])
-            : (Array.isArray(existing?.experience_details) ? existing.experience_details : []);
-        const finalEducation = hasProp(resumeData, 'education')
-            ? (Array.isArray(educationData) ? educationData : [])
-            : (Array.isArray(existing?.education) ? existing.education : []);
+        const finalExperienceDetails = this.sanitizeExperienceDetails(
+            hasProp(resumeData, 'experience_details')
+                ? (Array.isArray(experience_details) ? experience_details : [])
+                : (Array.isArray(existing?.experience_details) ? existing.experience_details : [])
+        );
+        const finalEducation = this.sanitizeEducationEntries(
+            hasProp(resumeData, 'education')
+                ? (Array.isArray(educationData) ? educationData : [])
+                : (Array.isArray(existing?.education) ? existing.education : [])
+        );
+
+        const educationCandidate = hasProp(resumeData, 'education_level')
+            ? education_level
+            : (typeof educationData === 'string' ? educationData : existing?.education_level);
+        const normalizedEducationLevel = this.normalizeEducationLevelKey(educationCandidate);
 
         const payload = {
             user_id: session.user_id,
@@ -2861,13 +3907,15 @@ export class TelegramBot {
             district_id: finalDistrictId,
             category_id: finalCategoryId,
             category_ids: finalCategoryIds,
+            field_id: finalFieldId,
+            field_title: finalFieldTitle,
             title: safeTitle,
             full_name: finalFullName,
             about: finalAbout,
             skills: normalizedSkills,
             experience: experience_level || experience || existing?.experience || 'no_experience',
             experience_level: experience_level || experience || existing?.experience || 'no_experience',
-            education_level: education_level || (typeof educationData === 'string' ? educationData : null) || existing?.education_level || 'secondary',
+            education_level: normalizedEducationLevel,
             experience_details: finalExperienceDetails,
             education: finalEducation,
             gender: normalizedGender,
@@ -2877,7 +3925,7 @@ export class TelegramBot {
             is_public: true,
             status: 'active',
             updated_at: new Date().toISOString(),
-            phone: session.phone || null
+            phone: session.phone || existing?.phone || null
         } as Record<string, any>;
 
         if (!payload.title || String(payload.title).trim().length === 0) {
@@ -2885,25 +3933,42 @@ export class TelegramBot {
         }
 
         if (resumeId) {
-            let { error } = await this.supabase
-                .from('resumes')
-                .update(payload)
-                .eq('id', resumeId);
-            if (error && String(error.message || '').includes('special')) {
-                const { special, ...fallbackPayload } = payload;
-                const retry = await this.supabase
+            let payloadToUse: Record<string, any> = { ...payload };
+            let error: any = null;
+            for (let attempt = 0; attempt < 5; attempt += 1) {
+                const updateResult = await this.supabase
                     .from('resumes')
-                    .update(fallbackPayload)
+                    .update(payloadToUse)
                     .eq('id', resumeId);
-                error = retry.error || null;
-            }
-            if (error && String(error.message || '').includes('experience_level')) {
-                const { experience_level, ...fallbackPayload } = payload;
-                const retry = await this.supabase
-                    .from('resumes')
-                    .update(fallbackPayload)
-                    .eq('id', resumeId);
-                error = retry.error || null;
+                error = updateResult.error || null;
+                if (!error) break;
+                const missingColumn = this.extractMissingColumn(error);
+                if (missingColumn && Object.prototype.hasOwnProperty.call(payloadToUse, missingColumn)) {
+                    delete payloadToUse[missingColumn];
+                    continue;
+                }
+                // Handle known missing columns for legacy schemas.
+                if (String(error.message || '').includes('special') && payloadToUse.special) {
+                    delete payloadToUse.special;
+                    continue;
+                }
+                if (String(error.message || '').includes('experience_level') && payloadToUse.experience_level) {
+                    delete payloadToUse.experience_level;
+                    continue;
+                }
+                if (String(error.message || '').includes('category_ids') && payloadToUse.category_ids) {
+                    delete payloadToUse.category_ids;
+                    continue;
+                }
+                if (String(error.message || '').includes('experience_details') && payloadToUse.experience_details) {
+                    delete payloadToUse.experience_details;
+                    continue;
+                }
+                if (String(error.message || '').includes('education') && payloadToUse.education) {
+                    delete payloadToUse.education;
+                    continue;
+                }
+                break;
             }
             if (error) {
                 console.error('Save resume error:', error);
@@ -2915,37 +3980,55 @@ export class TelegramBot {
                 phone: payload.phone || session.phone || null,
                 region_id: payload.region_id || null,
                 district_id: payload.district_id || null,
+                category_id: payload.category_id || null,
+                gender: payload.gender || null,
+                experience: payload.experience || null,
+                education_level: payload.education_level || null,
+                expected_salary_min: payload.expected_salary_min || null,
                 birth_date: payload.birth_date || null,
                 updated_at: new Date().toISOString()
             }, { onConflict: 'user_id' });
             return resumeId;
         }
 
-        let { data, error } = await this.supabase
-            .from('resumes')
-            .insert({ ...payload, created_at: new Date().toISOString() })
-            .select('id')
-            .single();
-
-        if (error && String(error.message || '').includes('special')) {
-            const { special, ...fallbackPayload } = payload;
-            const retry = await this.supabase
+        let payloadToUse: Record<string, any> = { ...payload };
+        let data: any = null;
+        let error: any = null;
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+            const insertResult = await this.supabase
                 .from('resumes')
-                .insert({ ...fallbackPayload, created_at: new Date().toISOString() })
+                .insert({ ...payloadToUse, created_at: new Date().toISOString() })
                 .select('id')
                 .single();
-            data = retry.data;
-            error = retry.error;
-        }
-        if (error && String(error.message || '').includes('experience_level')) {
-            const { experience_level, ...fallbackPayload } = payload;
-            const retry = await this.supabase
-                .from('resumes')
-                .insert({ ...fallbackPayload, created_at: new Date().toISOString() })
-                .select('id')
-                .single();
-            data = retry.data;
-            error = retry.error;
+            data = insertResult.data;
+            error = insertResult.error || null;
+            if (!error) break;
+            const missingColumn = this.extractMissingColumn(error);
+            if (missingColumn && Object.prototype.hasOwnProperty.call(payloadToUse, missingColumn)) {
+                delete payloadToUse[missingColumn];
+                continue;
+            }
+            if (String(error.message || '').includes('special') && payloadToUse.special) {
+                delete payloadToUse.special;
+                continue;
+            }
+            if (String(error.message || '').includes('experience_level') && payloadToUse.experience_level) {
+                delete payloadToUse.experience_level;
+                continue;
+            }
+            if (String(error.message || '').includes('category_ids') && payloadToUse.category_ids) {
+                delete payloadToUse.category_ids;
+                continue;
+            }
+            if (String(error.message || '').includes('experience_details') && payloadToUse.experience_details) {
+                delete payloadToUse.experience_details;
+                continue;
+            }
+            if (String(error.message || '').includes('education') && payloadToUse.education) {
+                delete payloadToUse.education;
+                continue;
+            }
+            break;
         }
 
         if (error) {
@@ -2959,6 +4042,11 @@ export class TelegramBot {
             phone: payload.phone || session.phone || null,
             region_id: payload.region_id || null,
             district_id: payload.district_id || null,
+            category_id: payload.category_id || null,
+            gender: payload.gender || null,
+            experience: payload.experience || null,
+            education_level: payload.education_level || null,
+            expected_salary_min: payload.expected_salary_min || null,
             birth_date: payload.birth_date || null,
             updated_at: new Date().toISOString()
         }, { onConflict: 'user_id' });
@@ -2968,19 +4056,90 @@ export class TelegramBot {
 
     private async saveResumePartial(session: TelegramSession, resumeId: string, patch: Record<string, any>): Promise<void> {
         if (!session.user_id) return;
-        const payload = { ...patch, updated_at: new Date().toISOString() };
-        const { error } = await this.supabase
-            .from('resumes')
-            .update(payload)
-            .eq('id', resumeId);
-        if (error) {
-            console.error('Save resume partial error:', error);
+        let payload = { ...patch, updated_at: new Date().toISOString() } as Record<string, any>;
+        if (typeof payload.education_level === 'string') {
+            const normalized = this.normalizeEducationLevelKey(payload.education_level);
+            if (!normalized) {
+                payload.education_level = null;
+            } else {
+                payload.education_level = normalized;
+            }
         }
+        let error: any = null;
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+            const result = await this.supabase
+                .from('resumes')
+                .update(payload)
+                .eq('id', resumeId);
+            error = result.error || null;
+            if (!error) break;
+            const missingColumn = this.extractMissingColumn(error);
+            if (missingColumn && Object.prototype.hasOwnProperty.call(payload, missingColumn)) {
+                delete payload[missingColumn];
+                continue;
+            }
+            if (String(error.message || '').includes('special') && payload.special) {
+                delete payload.special;
+                continue;
+            }
+            if (String(error.message || '').includes('experience_level') && payload.experience_level) {
+                delete payload.experience_level;
+                continue;
+            }
+            if (String(error.message || '').includes('category_ids') && payload.category_ids) {
+                delete payload.category_ids;
+                continue;
+            }
+            if (String(error.message || '').includes('experience_details') && payload.experience_details) {
+                delete payload.experience_details;
+                continue;
+            }
+            if (String(error.message || '').includes('education') && payload.education) {
+                delete payload.education;
+                continue;
+            }
+            break;
+        }
+        if (error) console.error('Save resume partial error:', error);
     }
 
     private async handleTextByState(chatId: number, text: string, session: TelegramSession): Promise<void> {
         const lang = session.lang;
-        const state = session.state;
+        let state = session.state;
+
+        // Migrate legacy state where job category was asked before profession.
+        if (state === BotState.POSTING_JOB_CATEGORY) {
+            const existingTitle = String(session.data?.temp_job?.title || '').trim();
+            if (existingTitle.length >= 3) {
+                const fields = await this.getOsonishFields(existingTitle);
+                const matches = fields.length ? this.pickFieldMatches(fields, existingTitle, 300) : [];
+                await this.setSession(session, {
+                    state: BotState.SELECTING_FIELD,
+                    data: {
+                        ...session.data,
+                        field_context: 'job',
+                        field_query: existingTitle,
+                        field_options: matches,
+                        field_page: 0
+                    }
+                });
+                state = BotState.SELECTING_FIELD;
+                const replyMarkup = matches.length
+                    ? keyboards.fieldsKeyboard(lang, matches, 'job_title', 0, 10)
+                    : keyboards.backKeyboard(lang, 'job_title');
+                const promptText = matches.length
+                    ? this.buildFieldPromptText(lang, existingTitle, matches.length, 0, 10)
+                    : this.buildFieldNoResultText(lang, existingTitle);
+                await this.sendPrompt(chatId, session, promptText, { replyMarkup });
+                return;
+            }
+
+            await this.setSession(session, { state: BotState.POSTING_JOB_TITLE });
+            await this.sendPrompt(chatId, session, botTexts.postJobTitle[lang], {
+                replyMarkup: keyboards.backKeyboard(lang, 'employer_menu')
+            });
+            return;
+        }
 
         const skipTexts = ["O'tkazib yuborish", "O‘tkazib yuborish", 'Пропустить', "⏭️ O'tkazib yuborish", '⏭️ Пропустить'];
         const cancelTexts = ['Bekor qilish', 'Отмена', '❌ Bekor qilish', '❌ Отмена'];
@@ -3009,6 +4168,32 @@ export class TelegramBot {
         }
         if (cancelTexts.includes(text)) {
             await this.handleCancel(chatId, session);
+            return;
+        }
+
+        if (this.shouldEnforceAlphabet(state) && this.violatesAlphabet(text, lang)) {
+            if (state === BotState.ENTERING_TITLE) {
+                await this.sendPrompt(chatId, session, `${botTexts.titleInvalidAlphabet[lang]}\n\n${botTexts.askTitle[lang]}`, {
+                    replyMarkup: keyboards.backKeyboard(lang, 'salary')
+                });
+                return;
+            }
+            if (state === BotState.SELECTING_FIELD) {
+                const fieldQuery = String(session.data?.field_query || '').trim();
+                const options = Array.isArray(session.data?.field_options) ? session.data.field_options : [];
+                const page = Number.isFinite(Number(session.data?.field_page)) ? Number(session.data?.field_page) : 0;
+                const backAction = session.data?.field_context === 'job' ? 'job_title' : 'title';
+                const followUp = options.length > 0
+                    ? this.buildFieldPromptText(lang, fieldQuery, options.length, page, 10)
+                    : botTexts.askField[lang];
+                await this.sendPrompt(chatId, session, `${botTexts.fieldInvalidAlphabet[lang]}\n\n${followUp}`, {
+                    replyMarkup: options.length > 0
+                        ? keyboards.fieldsKeyboard(lang, options, backAction, page, 10)
+                        : keyboards.backKeyboard(lang, backAction)
+                });
+                return;
+            }
+            await this.sendPrompt(chatId, session, botTexts.invalidAlphabet[lang]);
             return;
         }
 
@@ -3081,14 +4266,27 @@ export class TelegramBot {
         }
 
         if (state === BotState.POSTING_JOB_TITLE) {
+            const title = text.trim();
+            const fields = await this.getOsonishFields(title);
+            const matches = fields.length ? this.pickFieldMatches(fields, title, 300) : [];
             await this.updateSession(session.telegram_user_id, {
-                state: BotState.POSTING_JOB_CATEGORY,
-                data: { ...session.data, temp_job: { ...session.data?.temp_job, title: text } }
+                state: BotState.SELECTING_FIELD,
+                data: {
+                    ...session.data,
+                    temp_job: { ...session.data?.temp_job, title },
+                    field_context: 'job',
+                    field_query: title,
+                    field_options: matches,
+                    field_page: 0
+                }
             });
-            const categories = await this.getCategories();
-            await this.sendPrompt(chatId, session, botTexts.postJobCategory[lang], {
-                replyMarkup: keyboards.categoryKeyboard(lang, categories, 'job_title')
-            });
+            const replyMarkup = matches.length
+                ? keyboards.fieldsKeyboard(lang, matches, 'job_title', 0, 10)
+                : keyboards.backKeyboard(lang, 'job_title');
+            const promptText = matches.length
+                ? this.buildFieldPromptText(lang, title, matches.length, 0, 10)
+                : this.buildFieldNoResultText(lang, title);
+            await this.sendPrompt(chatId, session, promptText, { replyMarkup });
             return;
         }
 
@@ -3233,7 +4431,7 @@ export class TelegramBot {
             const parsed = this.parseBirthDateInput(text);
             if (!parsed) {
                 await this.sendPrompt(chatId, session, botTexts.birthDateInvalid[lang], {
-                    replyMarkup: keyboards.backKeyboard(lang, 'gender')
+                    replyMarkup: keyboards.backKeyboard(lang, 'name')
                 });
                 return;
             }
@@ -3248,11 +4446,45 @@ export class TelegramBot {
 
             const updatedData = { ...session.data, resume: { ...session.data?.resume, birth_date: parsed } };
             await this.setSession(session, {
-                state: BotState.SELECTING_SPECIAL,
+                state: BotState.SELECTING_GENDER,
                 data: updatedData
             });
-            await this.sendPrompt(chatId, session, botTexts.askSpecialCriteria[lang], {
-                replyMarkup: keyboards.specialCriteriaKeyboard(lang, updatedData.resume?.special || [], 'birthdate')
+            await this.sendPrompt(chatId, session, botTexts.askGender[lang], {
+                replyMarkup: keyboards.genderKeyboard(lang, false)
+            });
+            return;
+        }
+
+        if (state === BotState.SELECTING_FIELD) {
+            const query = text.trim();
+            if (query.length < 3) {
+                await this.setSession(session, {
+                    data: { ...session.data, field_query: query, field_options: [], field_page: 0 }
+                });
+                await this.sendPrompt(chatId, session, botTexts.fieldMinChars[lang], {
+                    replyMarkup: keyboards.backKeyboard(lang, session.data?.field_context === 'job' ? 'job_title' : 'title')
+                });
+                return;
+            }
+            const fields = await this.getOsonishFields(query);
+            const matches = this.pickFieldMatches(fields, query, 300);
+            if (!matches.length) {
+                const backAction = session.data?.field_context === 'job' ? 'job_title' : 'title';
+                await this.setSession(session, {
+                    data: { ...session.data, field_query: query, field_options: [], field_page: 0 }
+                });
+                await this.sendPrompt(chatId, session, this.buildFieldNoResultText(lang, query), {
+                    replyMarkup: keyboards.backKeyboard(lang, backAction)
+                });
+                return;
+            }
+            const backAction = session.data?.field_context === 'job' ? 'job_title' : 'title';
+            const page = 0;
+            await this.setSession(session, {
+                data: { ...session.data, field_query: query, field_options: matches, field_page: page }
+            });
+            await this.sendPrompt(chatId, session, this.buildFieldPromptText(lang, query, matches.length, page, 10), {
+                replyMarkup: keyboards.fieldsKeyboard(lang, matches, backAction, page, 10)
             });
             return;
         }
@@ -3265,13 +4497,61 @@ export class TelegramBot {
                 await this.showResumeById(chatId, session.data.active_resume_id, session);
                 return;
             }
-            const updatedData = { ...session.data, resume: { ...session.data?.resume, title: text } };
+            const title = text.trim();
+            if (title.length < 3) {
+                await this.sendPrompt(chatId, session, `${botTexts.titleTooShort[lang]}\n\n${botTexts.askTitle[lang]}`, {
+                    replyMarkup: keyboards.backKeyboard(lang, 'salary')
+                });
+                return;
+            }
+            const updatedData = { ...session.data, resume: { ...session.data?.resume, title } };
+            const fields = await this.getOsonishFields(title);
+            const matches = fields.length ? this.pickFieldMatches(fields, title) : [];
+            if (!matches.length) {
+                const queryTokens = this.tokenizeTitle(title);
+                let suggested: OsonishField[] = [];
+                for (const token of queryTokens) {
+                    if (token.length < 3) continue;
+                    const tokenFields = await this.getOsonishFields(token);
+                    const tokenMatches = tokenFields.length ? this.pickFieldMatches(tokenFields, token) : [];
+                    if (tokenMatches.length) {
+                        suggested = tokenMatches;
+                        break;
+                    }
+                }
+
+                if (!suggested.length) {
+                    await this.setSession(session, {
+                        state: BotState.ENTERING_TITLE,
+                        data: { ...updatedData, field_context: null, field_query: '', field_options: [] }
+                    });
+                    await this.sendPrompt(chatId, session, `${botTexts.titleNotRecognized[lang]}\n\n${botTexts.askTitle[lang]}`, {
+                        replyMarkup: keyboards.backKeyboard(lang, 'salary')
+                    });
+                    return;
+                }
+
+                await this.setSession(session, {
+                    state: BotState.SELECTING_FIELD,
+                    data: {
+                        ...updatedData,
+                        field_context: 'resume',
+                        field_query: title,
+                        field_options: suggested,
+                        field_page: 0
+                    }
+                });
+                await this.sendPrompt(chatId, session, `${botTexts.titleSuggestions[lang]}\n${this.buildFieldPromptText(lang, title, suggested.length, 0, 10)}`, {
+                    replyMarkup: keyboards.fieldsKeyboard(lang, suggested, 'title', 0, 10)
+                });
+                return;
+            }
             await this.setSession(session, {
-                state: BotState.ENTERING_NAME,
-                data: updatedData
+                state: BotState.SELECTING_FIELD,
+                data: { ...updatedData, field_context: 'resume', field_query: title, field_options: matches, field_page: 0 }
             });
-            const options = { replyMarkup: keyboards.backKeyboard(lang, 'title') };
-            await this.sendPrompt(chatId, session, botTexts.askName[lang], options);
+            const replyMarkup = keyboards.fieldsKeyboard(lang, matches, 'title', 0, 10);
+            await this.sendPrompt(chatId, session, this.buildFieldPromptText(lang, title, matches.length, 0, 10), { replyMarkup });
             return;
         }
 
@@ -3285,11 +4565,11 @@ export class TelegramBot {
             }
             const updatedData = { ...session.data, resume: { ...session.data?.resume, full_name: text } };
             await this.setSession(session, {
-                state: BotState.ENTERING_ABOUT,
+                state: BotState.ENTERING_BIRTH_DATE,
                 data: updatedData
             });
-            const options = { replyMarkup: keyboards.aboutSkipInlineKeyboard(lang, 'name') };
-            await this.sendPrompt(chatId, session, botTexts.askAbout[lang], options);
+            const options = { replyMarkup: keyboards.backKeyboard(lang, 'name') };
+            await this.sendPrompt(chatId, session, botTexts.askBirthDate[lang], options);
             return;
         }
 
@@ -3319,7 +4599,8 @@ export class TelegramBot {
 
         if (state === BotState.ADDING_SKILLS) {
             const skipText = text.toLowerCase();
-            if (skipText === "o'tkazib yuborish" || skipText === 'пропустить') {
+            const currentSkills = session.data?.resume?.skills || [];
+            if ((skipText === "o'tkazib yuborish" || skipText === 'пропустить') && currentSkills.length === 0) {
                 await this.handleSkip(chatId, session);
                 return;
             }
@@ -3328,7 +4609,6 @@ export class TelegramBot {
                 await this.finishSkills(chatId, session);
                 return;
             }
-            const currentSkills = session.data?.resume?.skills || [];
             const items = text.split(',').map(item => item.trim()).filter(Boolean);
             items.forEach(item => {
                 if (!currentSkills.includes(item)) currentSkills.push(item);
@@ -3379,7 +4659,7 @@ export class TelegramBot {
                 data: { ...session.data, workplace_pending: { ...pending, start_year: startYear } }
             });
             await this.sendPrompt(chatId, session, botTexts.askWorkEndYear[lang], {
-                replyMarkup: keyboards.backKeyboard(lang, 'workstart')
+                replyMarkup: keyboards.workEndYearKeyboard(lang)
             });
             return;
         }
@@ -3426,7 +4706,7 @@ export class TelegramBot {
             await this.sendPrompt(
                 chatId,
                 session,
-                `${botTexts.skillAdded[lang]} ${company}${position ? ` — ${position}` : ''}${yearsLabel ? ` (${yearsLabel})` : ''}`,
+                `${botTexts.skillAdded[lang]} ${company}${position ? ` — ${position}` : ''}${yearsLabel ? ` (${yearsLabel})` : ''}\n${botTexts.entryContinueHint[lang]}`,
                 { parseMode: 'HTML', replyMarkup: keyboards.workplaceContinueKeyboard(lang) }
             );
             return;
@@ -3470,7 +4750,7 @@ export class TelegramBot {
                 data: { ...session.data, education_pending: { ...pending, start_year: startYear } }
             });
             await this.sendPrompt(chatId, session, botTexts.askEducationEndYear[lang], {
-                replyMarkup: keyboards.backKeyboard(lang, 'edu_start')
+                replyMarkup: keyboards.educationEndYearKeyboard(lang)
             });
             return;
         }
@@ -3481,14 +4761,14 @@ export class TelegramBot {
             const endParsed = this.parseEndYearInput(text);
             if (!endParsed) {
                 await this.sendPrompt(chatId, session, botTexts.educationEndYearInvalid[lang], {
-                    replyMarkup: keyboards.backKeyboard(lang, 'edu_start')
+                    replyMarkup: keyboards.educationEndYearKeyboard(lang)
                 });
                 return;
             }
             const endYear = endParsed.end_year ?? null;
             if (endYear && startYear && endYear < startYear) {
                 await this.sendPrompt(chatId, session, botTexts.educationEndYearInvalid[lang], {
-                    replyMarkup: keyboards.backKeyboard(lang, 'edu_start')
+                    replyMarkup: keyboards.educationEndYearKeyboard(lang)
                 });
                 return;
             }
@@ -3512,8 +4792,8 @@ export class TelegramBot {
             if (session.data?.edit_mode && session.data?.active_resume_id) {
                 await this.saveResume(session, { ...session.data?.resume, education }, session.data.active_resume_id);
             }
-            const yearsLabel = this.formatWorkYears(educationEntry);
-            await this.sendPrompt(chatId, session, `${botTexts.skillAdded[lang]} ${institution}${field ? ` — ${field}` : ''}${yearsLabel ? ` (${yearsLabel})` : ''}`, {
+            const yearsLabel = this.formatEducationYears(educationEntry);
+            await this.sendPrompt(chatId, session, `${botTexts.skillAdded[lang]} ${institution}${field ? ` — ${field}` : ''}${yearsLabel ? ` (${yearsLabel})` : ''}\n${botTexts.entryContinueHint[lang]}`, {
                 parseMode: 'HTML',
                 replyMarkup: keyboards.educationContinueKeyboard(lang)
             });
@@ -3897,11 +5177,32 @@ export class TelegramBot {
         }
 
         if (target === 'job_category') {
-            const categories = await this.getCategories();
-            await this.setSession(session, { state: BotState.POSTING_JOB_CATEGORY });
-            await this.sendPrompt(chatId, session, botTexts.postJobCategory[lang], {
-                replyMarkup: keyboards.categoryKeyboard(lang, categories, 'job_title')
-            });
+            const existingTitle = String(session.data?.temp_job?.title || '').trim();
+            if (existingTitle.length >= 3) {
+                const fields = await this.getOsonishFields(existingTitle);
+                const matches = fields.length ? this.pickFieldMatches(fields, existingTitle, 300) : [];
+                await this.setSession(session, {
+                    state: BotState.SELECTING_FIELD,
+                    data: {
+                        ...session.data,
+                        field_context: 'job',
+                        field_query: existingTitle,
+                        field_options: matches,
+                        field_page: 0
+                    }
+                });
+                const replyMarkup = matches.length
+                    ? keyboards.fieldsKeyboard(lang, matches, 'job_title', 0, 10)
+                    : keyboards.backKeyboard(lang, 'job_title');
+                const promptText = matches.length
+                    ? this.buildFieldPromptText(lang, existingTitle, matches.length, 0, 10)
+                    : this.buildFieldNoResultText(lang, existingTitle);
+                await this.sendPrompt(chatId, session, promptText, { replyMarkup });
+                return;
+            }
+
+            await this.setSession(session, { state: BotState.POSTING_JOB_TITLE });
+            await this.sendPrompt(chatId, session, botTexts.postJobTitle[lang], { replyMarkup: keyboards.backKeyboard(lang, 'employer_menu') });
             return;
         }
 
@@ -4043,36 +5344,12 @@ export class TelegramBot {
         }
 
         const updatedData = { ...session.data };
-        const resume = updatedData.resume || {};
-        if (this.shouldAskWorkplace(resume)) {
-            await this.setSession(session, {
-                state: BotState.ENTERING_WORKPLACE,
-                data: updatedData
-            });
-            await this.setFlowCancelKeyboard(chatId, session, 'back');
-            await this.sendPrompt(chatId, session, botTexts.askWorkplace[lang], {
-                replyMarkup: keyboards.backKeyboard(lang, 'experience')
-            });
-            return;
-        }
-
-        if (this.shouldAskEducationPlace(resume)) {
-            await this.setSession(session, {
-                state: BotState.ENTERING_EDUCATION_PLACE,
-                data: updatedData
-            });
-            await this.sendPrompt(chatId, session, botTexts.askEducationPlace[lang], {
-                replyMarkup: keyboards.backKeyboard(lang, 'education')
-            });
-            return;
-        }
-
         await this.setSession(session, {
             state: BotState.REQUESTING_LOCATION,
             data: { ...updatedData, location_intent: 'resume_final' }
         });
         await this.sendPrompt(chatId, session, botTexts.locationRequest[lang], {
-            replyMarkup: keyboards.locationRequestKeyboard(lang)
+            replyMarkup: keyboards.locationRequestKeyboard(lang, { showBack: true, showCancel: false })
         });
     }
 
@@ -4088,29 +5365,12 @@ export class TelegramBot {
             return;
         }
         await this.setFlowCancelKeyboard(chatId, session);
-        if (session.data?.workplace_stage === 'after_experience') {
-            await this.setSession(session, {
-                state: BotState.SELECTING_EDUCATION,
-                data: { ...updatedData, workplace_stage: null }
-            });
-            await this.sendPrompt(chatId, session, botTexts.askEducation[lang], {
-                replyMarkup: keyboards.educationKeyboard(lang)
-            });
-            return;
-        }
-        if (this.shouldAskEducationPlace(updatedData.resume)) {
-            await this.setSession(session, { state: BotState.ENTERING_EDUCATION_PLACE, data: updatedData });
-            await this.sendPrompt(chatId, session, botTexts.askEducationPlace[lang], {
-                replyMarkup: keyboards.backKeyboard(lang, 'education')
-            });
-            return;
-        }
         await this.setSession(session, {
-            state: BotState.REQUESTING_LOCATION,
-            data: { ...updatedData, location_intent: 'resume_final' }
+            state: BotState.SELECTING_EDUCATION,
+            data: { ...updatedData, workplace_stage: null }
         });
-        await this.sendPrompt(chatId, session, botTexts.locationRequest[lang], {
-            replyMarkup: keyboards.locationRequestKeyboard(lang)
+        await this.sendPrompt(chatId, session, botTexts.askEducation[lang], {
+            replyMarkup: keyboards.educationKeyboard(lang)
         });
     }
 
@@ -4126,18 +5386,83 @@ export class TelegramBot {
             return;
         }
         await this.setSession(session, {
-            state: BotState.REQUESTING_LOCATION,
-            data: { ...updatedData, location_intent: 'resume_final' }
+            state: BotState.SELECTING_SPECIAL,
+            data: { ...updatedData }
         });
-        await this.sendPrompt(chatId, session, botTexts.locationRequest[lang], {
-            replyMarkup: keyboards.locationRequestKeyboard(lang)
+        await this.sendPrompt(chatId, session, botTexts.askSpecialCriteria[lang], {
+            replyMarkup: keyboards.specialCriteriaKeyboard(lang, updatedData.resume?.special || [], 'education')
         });
+    }
+
+    private async handleWorkEndCurrent(chatId: number, session: TelegramSession): Promise<void> {
+        const lang = session.lang;
+        const pending = session.data?.workplace_pending || {};
+        const startYear = Number(pending.start_year);
+        const company = pending.company || '';
+        const position = pending.position || '';
+        const previous = Array.isArray(session.data?.resume?.experience_details) ? session.data?.resume?.experience_details : [];
+        const experienceEntry = {
+            company,
+            position,
+            start_year: startYear || undefined,
+            end_year: undefined,
+            is_current: true
+        };
+        const experienceDetails = [...previous, experienceEntry];
+        const updatedData = {
+            ...session.data,
+            resume: { ...session.data?.resume, experience_details: experienceDetails },
+            workplace_stage: session.data?.workplace_stage ?? null,
+            workplace_pending: null
+        };
+        await this.setSession(session, { data: updatedData });
+        if (session.data?.edit_mode && session.data?.active_resume_id) {
+            await this.saveResume(session, { ...session.data?.resume, experience_details: experienceDetails }, session.data.active_resume_id);
+        }
+        const yearsLabel = this.formatWorkYears(experienceEntry);
+        await this.sendPrompt(
+            chatId,
+            session,
+            `${botTexts.skillAdded[lang]} ${company}${position ? ` — ${position}` : ''}${yearsLabel ? ` (${yearsLabel})` : ''}\n${botTexts.entryContinueHint[lang]}`,
+            { parseMode: 'HTML', replyMarkup: keyboards.workplaceContinueKeyboard(lang) }
+        );
+    }
+
+    private async handleEducationEndCurrent(chatId: number, session: TelegramSession): Promise<void> {
+        const lang = session.lang;
+        const pending = session.data?.education_pending || {};
+        const startYear = Number(pending.start_year);
+        const institution = pending.institution || '';
+        const field = pending.field || '';
+        const previous = Array.isArray(session.data?.resume?.education) ? session.data?.resume?.education : [];
+        const educationEntry = {
+            institution,
+            field,
+            start_year: startYear || undefined,
+            end_year: undefined,
+            is_current: true
+        };
+        const updatedList = [...previous, educationEntry];
+        const updatedData = {
+            ...session.data,
+            resume: { ...session.data?.resume, education: updatedList },
+            education_pending: null
+        };
+        await this.setSession(session, { data: updatedData });
+        if (session.data?.edit_mode && session.data?.active_resume_id) {
+            await this.saveResume(session, { ...session.data?.resume, education: updatedList }, session.data.active_resume_id);
+        }
+        const yearsLabel = this.formatEducationYears(educationEntry);
+        await this.sendPrompt(
+            chatId,
+            session,
+            `${botTexts.skillAdded[lang]} ${institution}${field ? ` — ${field}` : ''}${yearsLabel ? ` (${yearsLabel})` : ''}\n${botTexts.entryContinueHint[lang]}`,
+            { parseMode: 'HTML', replyMarkup: keyboards.educationContinueKeyboard(lang) }
+        );
     }
 
     private async startResumeFlow(chatId: number, session: TelegramSession): Promise<void> {
         const lang = session.lang;
-        await this.setFlowCancelKeyboard(chatId, session);
-        const regions = await this.getRegions();
         const updatedData = {
             ...session.data,
             active_role: 'job_seeker',
@@ -4171,11 +5496,12 @@ export class TelegramBot {
             clean_inputs: true
         };
         await this.setSession(session, {
-            state: BotState.SELECTING_REGION,
+            state: BotState.ENTERING_NAME,
             data: updatedData
         });
-        await this.sendPrompt(chatId, session, botTexts.askRegion[lang], {
-            replyMarkup: keyboards.regionKeyboard(lang, regions, 'main_menu')
+        await this.setFlowCancelKeyboard(chatId, session, 'back');
+        await this.sendPrompt(chatId, session, botTexts.askName[lang], {
+            replyMarkup: keyboards.backKeyboard(lang, 'main_menu')
         });
     }
 
@@ -4269,8 +5595,8 @@ export class TelegramBot {
                 state: BotState.SELECTING_DISTRICT,
                 data: districtData
             });
-            await this.sendPrompt(chatId, session, botTexts.askDistrict[lang], {
-                replyMarkup: keyboards.districtKeyboard(sortedDistricts, lang, 0, districtCounts, 'resume_view')
+            await this.sendPrompt(chatId, session, botTexts.askDistrictWithCounts[lang], {
+                replyMarkup: keyboards.districtKeyboard(sortedDistricts, lang, 0, districtCounts, 'resume_view', true)
             });
             return;
         }
@@ -4380,6 +5706,12 @@ export class TelegramBot {
     }
 
     private async buildResumeText(resume: any, lang: BotLang): Promise<string> {
+        const normalizedEducation = this.normalizeEducationLevelKey(resume?.education_level);
+        if (!normalizedEducation) {
+            resume = { ...resume, education_level: null };
+        } else {
+            resume = { ...resume, education_level: normalizedEducation };
+        }
         const lines: string[] = [];
         const title = resume.title || (lang === 'uz' ? 'Rezyume' : 'Резюме');
         lines.push(`🧾 | ${title}`);
@@ -4435,16 +5767,22 @@ export class TelegramBot {
         }
 
         if (resume.education_level) {
-            const eduMap: Record<string, { uz: string; ru: string }> = {
-                secondary: { uz: "O'rta", ru: 'Среднее' },
-                vocational: { uz: "O'rta maxsus", ru: 'Среднее спец.' },
-                incomplete_higher: { uz: 'Oliy (tugallanmagan)', ru: 'Неоконченное высшее' },
-                higher: { uz: 'Oliy', ru: 'Высшее' },
-                master: { uz: 'Magistr', ru: 'Магистр' },
-                phd: { uz: 'PhD', ru: 'PhD' }
-            };
-            const eduLabel = eduMap[resume.education_level]?.[lang] || resume.education_level;
-            lines.push(`🎓 | ${lang === 'uz' ? "Ma'lumot" : 'Образование'}: ${eduLabel}`);
+            const normalizedEdu = this.normalizeEducationLevelKey(resume.education_level);
+            if (normalizedEdu && normalizedEdu !== 'any') {
+                const eduMap: Record<string, { uz: string; ru: string }> = {
+                    secondary: { uz: "O'rta", ru: 'Среднее' },
+                    vocational: { uz: "O'rta maxsus", ru: 'Среднее спец.' },
+                    incomplete_higher: { uz: 'Oliy (tugallanmagan)', ru: 'Неоконченное высшее' },
+                    higher: { uz: 'Oliy', ru: 'Высшее' },
+                    master: { uz: 'Magistr', ru: 'Магистр' },
+                    phd: { uz: 'PhD', ru: 'PhD' }
+                };
+                const eduLabel = eduMap[normalizedEdu]?.[lang] || String(resume.education_level);
+                const normalizedLabel = String(eduLabel || '').trim().toLowerCase();
+                if (!['done', 'undefined', 'null'].includes(normalizedLabel)) {
+                    lines.push(`🎓 | ${lang === 'uz' ? "Ma'lumot" : 'Образование'}: ${eduLabel}`);
+                }
+            }
         }
 
         if (resume.gender && !['any', 'Ahamiyatsiz', 'Любой'].includes(resume.gender)) {
@@ -4469,7 +5807,7 @@ export class TelegramBot {
             if (specialText) lines.push(`⭐️ | ${lang === 'uz' ? 'Alohida toifalar' : 'Особые категории'}: ${specialText}`);
         }
 
-        const expDetails = Array.isArray(resume.experience_details) ? resume.experience_details : [];
+        const expDetails = this.sanitizeExperienceDetails(resume.experience_details);
         if (expDetails.length > 0) {
             const expText = expDetails
                 .map((exp: any) => {
@@ -4485,7 +5823,7 @@ export class TelegramBot {
             if (expText) lines.push(`🏢 | ${lang === 'uz' ? 'Ish tajribasi' : 'Опыт работы'}: ${expText}`);
         }
 
-        const eduDetails = Array.isArray(resume.education) ? resume.education : [];
+        const eduDetails = this.sanitizeEducationEntries(resume.education);
         if (eduDetails.length > 0) {
             const eduText = eduDetails
                 .map((edu: any) => {
@@ -4515,6 +5853,9 @@ export class TelegramBot {
     private async finalizeResume(chatId: number, session: TelegramSession): Promise<void> {
         const lang = session.lang;
         const resumeData = { ...(session.data?.resume || {}) } as any;
+        if (String(resumeData.education_level || '').toLowerCase().trim() === 'done') {
+            resumeData.education_level = null;
+        }
         if (!resumeData.title) {
             resumeData.title = resumeData.desired_position || 'Mutaxassis';
         }
@@ -4559,11 +5900,119 @@ export class TelegramBot {
 
         const text = `✅ ${botTexts.resumeSaved[lang]}\n\n${await this.buildResumeText(resume, lang)}`;
         await this.sendPrompt(chatId, session, text, { parseMode: 'HTML', replyMarkup: keyboards.resumeCompleteKeyboard(lang) });
-
-        await this.offerHighMatchJobsForResume(chatId, session, resume);
+        await this.offerHighMatchJobsForResume(chatId, session, resume, false);
     }
 
-    private async offerHighMatchJobsForResume(chatId: number, session: TelegramSession, resume: any): Promise<void> {
+    private async saveMatchRecommendations(
+        direction: 'seeker_to_job' | 'employer_to_resume',
+        sourceId: string | null | undefined,
+        entries: Array<{ targetId: string | null | undefined; score: number; strictScore?: number; aiScore?: number; reason?: string | null }>
+    ): Promise<void> {
+        const normalizedSourceId = String(sourceId || '').trim();
+        if (!normalizedSourceId) return;
+        if (!Array.isArray(entries) || entries.length === 0) return;
+
+        const rows = entries
+            .map(entry => {
+                const target = String(entry.targetId || '').trim();
+                if (!target) return null;
+                const score = Math.max(0, Math.min(100, Math.round(Number(entry.score) || 0)));
+                if (score < 90) return null;
+                const strictScore = typeof entry.strictScore === 'number'
+                    ? Math.max(0, Math.min(100, Math.round(entry.strictScore)))
+                    : score;
+                const aiScore = typeof entry.aiScore === 'number'
+                    ? Math.max(0, Math.min(100, Math.round(entry.aiScore)))
+                    : null;
+                return {
+                    direction,
+                    source_id: normalizedSourceId,
+                    target_id: target,
+                    score,
+                    strict_score: strictScore,
+                    ai_score: aiScore,
+                    reason: entry.reason || null,
+                    is_active: true
+                };
+            })
+            .filter((row): row is NonNullable<typeof row> => Boolean(row));
+
+        if (!rows.length) return;
+
+        try {
+            const { error } = await this.supabase
+                .from('telegram_match_recommendations')
+                .upsert(rows, { onConflict: 'direction,source_id,target_id' });
+            if (error) {
+                // Migration might not be applied in every environment.
+                if (!String(error.message || '').toLowerCase().includes('does not exist')) {
+                    console.warn('[BOT] saveMatchRecommendations error:', error);
+                }
+            }
+        } catch (err) {
+            console.warn('[BOT] saveMatchRecommendations failed:', err);
+        }
+    }
+
+    private async applyAiRerankToMatchedJobs(
+        resume: any,
+        matched: MatchedJob[],
+        lang: BotLang
+    ): Promise<MatchedJob[]> {
+        if (!Array.isArray(matched) || matched.length === 0) return matched;
+        const aiMap = await rerankJobsForResumeAI(resume, matched as any[], lang);
+        if (!aiMap.size) return matched;
+
+        const withAi = matched.map(job => {
+            const ai = aiMap.get(String(job.id));
+            const strict = Number(job.matchScore || 0);
+            if (!ai) {
+                return { ...job, aiScore: null, strictScore: strict, matchScore: strict } as MatchedJob & any;
+            }
+            const combined = Math.round((strict * 0.75) + (ai.aiScore * 0.25));
+            return {
+                ...job,
+                aiScore: ai.aiScore,
+                strictScore: strict,
+                matchScore: Math.max(0, Math.min(100, combined)),
+                explanation: {
+                    uz: ai.reason || job.explanation?.uz || '',
+                    ru: ai.reason || job.explanation?.ru || ''
+                }
+            } as MatchedJob & any;
+        });
+
+        return withAi.sort((a: any, b: any) => {
+            const aLoc = a.matchCriteria?.location ? 1 : 0;
+            const bLoc = b.matchCriteria?.location ? 1 : 0;
+            if (bLoc !== aLoc) return bLoc - aLoc;
+            const aTitle = Number(a.titleRelevance || 0);
+            const bTitle = Number(b.titleRelevance || 0);
+            if (bTitle !== aTitle) return bTitle - aTitle;
+            return Number(b.matchScore || 0) - Number(a.matchScore || 0);
+        });
+    }
+
+    private async applyAiRerankToResumeMatches(
+        job: any,
+        matches: Array<{ resume: any; score: number }>,
+        lang: BotLang
+    ): Promise<Array<{ resume: any; score: number; strictScore: number; aiScore?: number }>> {
+        if (!Array.isArray(matches) || matches.length === 0) return [];
+        const aiMap = await rerankResumesForJobAI(job, matches.map(item => item.resume), lang);
+
+        const combined = matches.map(item => {
+            const strictScore = Math.max(0, Math.min(100, Math.round(Number(item.score) || 0)));
+            const ai = aiMap.get(String(item.resume?.id || ''));
+            if (!ai) return { ...item, score: strictScore, strictScore, aiScore: undefined };
+            const score = Math.round((strictScore * 0.75) + (ai.aiScore * 0.25));
+            return { ...item, score: Math.max(0, Math.min(100, score)), strictScore, aiScore: ai.aiScore };
+        });
+
+        return combined.sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
+    }
+
+    private async offerHighMatchJobsForResume(chatId: number, session: TelegramSession, resume: any, notify: boolean = true): Promise<void> {
         const lang = session.lang;
         const districtId = this.toCoordinate(resume?.district_id);
         const regionId = this.toCoordinate(resume?.region_id);
@@ -4575,11 +6024,16 @@ export class TelegramBot {
         const localPool = districtJobs.length ? districtJobs : (regionJobs.length ? regionJobs : broadJobs);
         if (!localPool.length) return;
 
-        const desiredTitle = resume?.title || resume?.desired_position || null;
+        const desiredTitle = resume?.field_title || resume?.title || resume?.desired_position || null;
         let scoped = localPool;
         if (desiredTitle) {
-            const preferred = this.filterJobsByDesiredTitle(localPool, desiredTitle, false);
-            if (preferred.length) scoped = preferred;
+            const strictTitle = !this.isGenericTitle(desiredTitle);
+            const preferred = this.filterJobsByDesiredTitle(localPool, desiredTitle, strictTitle);
+            if (preferred.length) {
+                scoped = preferred;
+            } else if (strictTitle) {
+                scoped = [];
+            }
         }
 
         const profile = {
@@ -4591,25 +6045,40 @@ export class TelegramBot {
             experience_level: resume.experience || resume.experience_level,
             gender: resume.gender,
             birth_date: resume.birth_date,
-            education_level: resume.education_level
+            education_level: resume.education_level,
+            title: desiredTitle
         };
 
-        const matched = matchAndSortJobs(profile, scoped)
-            .filter(job => typeof job.matchScore === 'number' && job.matchScore >= 90);
+        let matched = matchAndSortJobs(profile, scoped);
+        matched = await this.applyAiRerankToMatchedJobs(resume, matched, lang);
+        matched = matched.filter(job => typeof job.matchScore === 'number' && job.matchScore >= 90);
 
         if (!matched.length) return;
 
-        await this.clearLastJobArtifacts(chatId, session);
+        await this.saveMatchRecommendations(
+            'seeker_to_job',
+            String(resume?.id || session.data?.active_resume_id || ''),
+            matched.map(job => ({
+                targetId: String(job.id || ''),
+                score: Number(job.matchScore || 0),
+                strictScore: Number((job as any).strictScore ?? job.matchScore ?? 0),
+                aiScore: Number((job as any).aiScore ?? 0),
+                reason: job?.explanation?.uz || job?.explanation?.ru || null
+            }))
+        );
 
-        const updatedData = {
-            ...session.data,
-            job_list: matched,
-            currentJobIndex: 0,
-            job_source: 'auto',
-            clean_inputs: false
-        };
-        await this.setSession(session, { state: BotState.BROWSING_JOBS, data: updatedData });
-        await this.showJob(chatId, session, 0);
+        if (!notify) return;
+
+        await this.setSession(session, {
+            data: { ...session.data, auto_job_list: matched }
+        });
+
+        await sendMessage(chatId,
+            lang === 'uz'
+                ? `🔔 Mos vakansiyalar topildi (90%+).`
+                : `🔔 Найдены подходящие вакансии (90%+).`,
+            { replyMarkup: keyboards.autoMatchJobsKeyboard(lang) }
+        );
     }
 
     private async handleResumeSearchSelect(chatId: number, resumeId: string, session: TelegramSession): Promise<void> {
@@ -4622,6 +6091,40 @@ export class TelegramBot {
     }
 
     private async handleSearchMode(chatId: number, mode: string, session: TelegramSession): Promise<void> {
+        if (mode === 'region') {
+            const regionJobs = Array.isArray(session.data?.region_job_list) ? session.data.region_job_list : [];
+            if (regionJobs.length) {
+                const updatedData = {
+                    ...session.data,
+                    job_list: regionJobs,
+                    currentJobIndex: 0,
+                    job_source: 'resume',
+                    clean_inputs: false,
+                    region_job_list: []
+                };
+                await this.setSession(session, { state: BotState.BROWSING_JOBS, data: updatedData });
+                await this.showJob(chatId, session, 0);
+                return;
+            }
+        }
+
+        if (mode === 'related') {
+            const relatedJobs = Array.isArray(session.data?.related_job_list) ? session.data.related_job_list : [];
+            if (relatedJobs.length) {
+                const updatedData = {
+                    ...session.data,
+                    job_list: relatedJobs,
+                    currentJobIndex: 0,
+                    job_source: 'resume',
+                    clean_inputs: false,
+                    related_job_list: []
+                };
+                await this.setSession(session, { state: BotState.BROWSING_JOBS, data: updatedData });
+                await this.showJob(chatId, session, 0);
+                return;
+            }
+        }
+
         // Геопоиск удалён — всегда ищем по резюме
         await this.showResumeSearchSelection(chatId, session);
     }
@@ -4802,15 +6305,36 @@ export class TelegramBot {
             await this.sendPrompt(chatId, session, botTexts.noJobsFound[lang], { replyMarkup: keyboards.mainMenuKeyboard(lang, 'seeker') });
             return;
         }
-        const desiredTitle = resume?.title || resume?.desired_position || null;
+
+        if (districtId !== null && !hasDistrict && hasRegion) {
+            const pendingData = {
+                ...session.data,
+                region_job_list: regionNormalized,
+                job_source: 'resume',
+                active_resume_id: resume.id,
+                clean_inputs: false
+            };
+            await this.setSession(session, { state: BotState.BROWSING_JOBS, data: pendingData });
+            await this.sendPrompt(chatId, session, botTexts.noDistrictJobs[lang], {
+                replyMarkup: keyboards.regionFallbackKeyboard(lang)
+            });
+            return;
+        }
+        const desiredTitle = resume?.field_title || resume?.title || resume?.desired_position || null;
         const titleTokens = this.tokenizeTitle(desiredTitle);
         const hasTitleTokens = titleTokens.length > 0;
+        const strictTitleSearch = hasTitleTokens && !this.isGenericTitle(desiredTitle);
 
         let scopedByTitle = localPool;
         if (hasTitleTokens) {
-            const preferred = this.filterJobsByDesiredTitle(localPool, desiredTitle, false);
+            const strictTitle = !this.isGenericTitle(desiredTitle);
+            const preferred = this.filterJobsByDesiredTitle(localPool, desiredTitle, strictTitle);
             if (preferred.length >= 5) {
                 scopedByTitle = preferred;
+            } else if (strictTitle && preferred.length) {
+                scopedByTitle = preferred;
+            } else if (strictTitle && preferred.length === 0) {
+                scopedByTitle = [];
             }
         }
 
@@ -4823,13 +6347,14 @@ export class TelegramBot {
             experience_level: resume.experience || resume.experience_level,
             gender: resume.gender,
             birth_date: resume.birth_date,
-            education_level: resume.education_level
+            education_level: resume.education_level,
+            title: desiredTitle
         };
 
         let matched = matchAndSortJobs(profile, scopedByTitle);
         const seekerGeo = await this.getSeekerGeo(session.user_id);
 
-        if (!matched.length) {
+        if (!matched.length && !strictTitleSearch) {
             let fallbackPool = localPool;
             if (hasDistrict && regionNormalized.length) {
                 fallbackPool = regionNormalized;
@@ -4845,8 +6370,12 @@ export class TelegramBot {
             }
 
             if (!fallbackPool.length) fallbackPool = broadNormalized;
-
-            matched = this.buildLooseMatches(profile, fallbackPool, seekerGeo || undefined);
+            if (seekerGeo) {
+                fallbackPool = this.sortJobsByDistance(fallbackPool, seekerGeo.latitude, seekerGeo.longitude);
+            } else {
+                fallbackPool = this.sortJobsByRegionProximity(fallbackPool, regionId);
+            }
+            matched = matchAndSortJobs(profile, fallbackPool);
 
             if (!matched.length && fallbackPool !== broadNormalized) {
                 let broadPool = broadNormalized;
@@ -4859,11 +6388,90 @@ export class TelegramBot {
                 } else {
                     broadPool = this.sortJobsByRegionProximity(broadPool, regionId);
                 }
-                matched = this.buildLooseMatches(profile, broadPool, seekerGeo || undefined);
+                matched = matchAndSortJobs(profile, broadPool);
             }
         }
 
+        if (!matched.length && districtId !== null && regionNormalized.length > 0) {
+            let regionFallback = regionNormalized;
+            if (hasTitleTokens) {
+                const preferredRegion = this.filterJobsByDesiredTitle(regionFallback, desiredTitle, false);
+                if (preferredRegion.length) regionFallback = preferredRegion;
+            }
+            if (seekerGeo) {
+                regionFallback = this.sortJobsByDistance(regionFallback, seekerGeo.latitude, seekerGeo.longitude);
+            } else {
+                regionFallback = this.sortJobsByRegionProximity(regionFallback, regionId);
+            }
+            const regionMatched = matchAndSortJobs(profile, regionFallback);
+            if (regionMatched.length > 0) {
+                const aiRegionMatched = await this.applyAiRerankToMatchedJobs(resume, regionMatched, lang);
+                const pendingData = {
+                    ...session.data,
+                    region_job_list: aiRegionMatched,
+                    job_source: 'resume',
+                    active_resume_id: resume.id,
+                    clean_inputs: false
+                };
+                await this.setSession(session, { state: BotState.BROWSING_JOBS, data: pendingData });
+                await this.sendPrompt(chatId, session, botTexts.noDistrictJobs[lang], {
+                    replyMarkup: keyboards.regionFallbackKeyboard(lang)
+                });
+                return;
+            }
+        }
+
+        if (matched.length > 0) {
+            matched = await this.applyAiRerankToMatchedJobs(resume, matched, lang);
+        }
+
         if (!matched.length) {
+            let relatedPool = broadNormalized;
+            if (hasTitleTokens) {
+                const preferredRelated = this.filterJobsByDesiredTitle(broadNormalized, desiredTitle, false);
+                if (preferredRelated.length) relatedPool = preferredRelated;
+            }
+            if (seekerGeo) {
+                relatedPool = this.sortJobsByDistance(relatedPool, seekerGeo.latitude, seekerGeo.longitude);
+            } else {
+                relatedPool = this.sortJobsByRegionProximity(relatedPool, regionId);
+            }
+
+            const relaxedProfile = { ...profile, title: 'Mutaxassis' };
+            const relatedRanked = relatedPool
+                .map(job => {
+                    const base = calculateMatchScore(relaxedProfile as any, job as any);
+                    const titleRelevance = this.getTitleOverlapScore(desiredTitle, this.extractJobTitle(job));
+                    const blended = Math.max(1, Math.min(100, Math.round((base.matchScore * 0.75) + (titleRelevance * 25))));
+                    return {
+                        ...job,
+                        matchScore: blended,
+                        matchCriteria: base.matchCriteria,
+                        explanation: base.explanation,
+                        titleRelevance
+                    };
+                })
+                .filter(item => item.matchScore >= 60 || item.titleRelevance >= 0.2)
+                .sort((a, b) => Number(b.matchScore || 0) - Number(a.matchScore || 0))
+                .slice(0, 30);
+
+            if (relatedRanked.length > 0) {
+                const updatedData = {
+                    ...session.data,
+                    related_job_list: relatedRanked,
+                    active_resume_id: resume.id,
+                    clean_inputs: false
+                };
+                await this.setSession(session, {
+                    state: BotState.BROWSING_JOBS,
+                    data: updatedData
+                });
+                await this.sendPrompt(chatId, session, botTexts.noJobsByProfession[lang], {
+                    replyMarkup: keyboards.relatedJobsKeyboard(lang)
+                });
+                return;
+            }
+
             await this.clearLastJobArtifacts(chatId, session);
             await this.sendPrompt(chatId, session, botTexts.noJobsFound[lang], { replyMarkup: keyboards.mainMenuKeyboard(lang, 'seeker') });
             return;
@@ -4875,7 +6483,8 @@ export class TelegramBot {
             currentJobIndex: 0,
             job_source: 'resume',
             active_resume_id: resume.id,
-            clean_inputs: false
+            clean_inputs: false,
+            related_job_list: []
         };
         await this.setSession(session, {
             state: BotState.BROWSING_JOBS,
@@ -4923,7 +6532,7 @@ export class TelegramBot {
         const profileExperience = resume?.experience ?? resume?.experience_level ?? session.data?.resume?.experience ?? session.data?.resume?.experience_level ?? null;
         const profileCategoryId = resume?.category_id ?? null;
         const profileCategoryIds = Array.isArray(resume?.category_ids) ? resume.category_ids : undefined;
-        const profileTitle = resume?.title || resume?.desired_position || null;
+        const profileTitle = resume?.field_title || resume?.title || resume?.desired_position || null;
         const titleTokens = this.tokenizeTitle(profileTitle);
         const hasTitleTokens = titleTokens.length > 0;
 
@@ -4940,7 +6549,8 @@ export class TelegramBot {
             education_level: profileEducation,
             experience_level: profileExperience,
             category_id: profileCategoryId,
-            category_ids: profileCategoryIds
+            category_ids: profileCategoryIds,
+            title: profileTitle
         };
 
         let matched = matchAndSortJobs(geoProfile, candidateJobs);
@@ -4962,8 +6572,12 @@ export class TelegramBot {
             }
 
             if (!fallbackPool.length) fallbackPool = broadNormalized;
-
-            matched = this.buildLooseMatches(geoProfile, fallbackPool, hasCoords ? { latitude: geo.latitude!, longitude: geo.longitude! } : undefined);
+            if (hasCoords) {
+                fallbackPool = this.sortJobsByDistance(fallbackPool, geo.latitude!, geo.longitude!);
+            } else {
+                fallbackPool = this.sortJobsByRegionProximity(fallbackPool, regionId);
+            }
+            matched = matchAndSortJobs(geoProfile, fallbackPool);
 
             if (!matched.length && fallbackPool !== broadNormalized) {
                 let broadPool = broadNormalized;
@@ -4976,7 +6590,7 @@ export class TelegramBot {
                 } else {
                     broadPool = this.sortJobsByRegionProximity(broadPool, regionId);
                 }
-                matched = this.buildLooseMatches(geoProfile, broadPool, hasCoords ? { latitude: geo.latitude!, longitude: geo.longitude! } : undefined);
+                matched = matchAndSortJobs(geoProfile, broadPool);
             }
         }
 
@@ -4986,7 +6600,7 @@ export class TelegramBot {
             return;
         }
 
-        const updatedData = { ...session.data, job_list: matched, currentJobIndex: 0, job_source: 'geo', clean_inputs: false };
+        const updatedData = { ...session.data, job_list: matched, currentJobIndex: 0, job_source: 'geo', clean_inputs: false, related_job_list: [] };
         await this.setSession(session, {
             state: BotState.BROWSING_JOBS,
             data: updatedData
@@ -5059,14 +6673,52 @@ export class TelegramBot {
         return primaryTokens.some(token => secondaryTokens.includes(token));
     }
 
+    private getTitleOverlapScore(primary: any, secondary: any): number {
+        const primaryTokens = this.tokenizeTitle(primary);
+        const secondaryTokens = this.tokenizeTitle(secondary);
+        if (!primaryTokens.length || !secondaryTokens.length) return 0;
+        const a = new Set(primaryTokens);
+        const b = new Set(secondaryTokens);
+        let shared = 0;
+        for (const token of Array.from(a)) {
+            if (b.has(token)) shared += 1;
+        }
+        if (!shared) return 0;
+        const overlap = shared / Math.max(a.size, b.size);
+        const contains = String(primary || '').toLowerCase().includes(String(secondary || '').toLowerCase())
+            || String(secondary || '').toLowerCase().includes(String(primary || '').toLowerCase());
+        return Math.max(0, Math.min(1, overlap + (contains ? 0.2 : 0)));
+    }
+
+    private extractJobTitle(job: any): string {
+        return String(
+            job?.title_uz
+            || job?.title_ru
+            || job?.title
+            || job?.field_title
+            || job?.raw_source_json?.position_name
+            || job?.raw_source_json?.title
+            || ''
+        ).trim();
+    }
+
     private filterJobsByDesiredTitle(jobs: any[], desiredTitle: string | null | undefined, strict: boolean = false): any[] {
         const titleTokens = this.tokenizeTitle(desiredTitle);
         if (!titleTokens.length) return jobs;
 
         const desiredText = titleTokens.join(' ');
         const filtered = jobs.filter(job => {
-            const jobTitle = job?.title_uz || job?.title_ru || '';
-            const jobTokens = this.tokenizeTitle(jobTitle);
+            const jobTitleParts = [
+                job?.title_uz,
+                job?.title_ru,
+                job?.title,
+                job?.field_title,
+                job?.raw_source_json?.title,
+                job?.raw_source_json?.position,
+                job?.raw_source_json?.position_name,
+                job?.raw_source_json?.job_title
+            ].filter(Boolean);
+            const jobTokens = this.tokenizeTitle(jobTitleParts.join(' '));
             if (!jobTokens.length) return false;
 
             const intersection = titleTokens.filter(token => jobTokens.includes(token));
@@ -5167,7 +6819,7 @@ export class TelegramBot {
             .replace(/\s+/g, ' ')
             .trim();
         if (!raw) return 0;
-        if (['any', 'ahamiyatsiz', 'не важно', 'любой'].includes(raw)) return 0;
+        if (['any', 'ahamiyatsiz', 'не важно', 'любой', 'done'].includes(raw)) return 0;
         if (raw.includes('magistr') || raw.includes('master') || raw.includes('магистр')) return 4;
         if (raw.includes('oliy') || raw.includes('higher') || raw.includes('высш')) return 3;
         const hasOrta =
@@ -5178,6 +6830,27 @@ export class TelegramBot {
         if (raw.includes('vocational') || raw.includes('средне специаль')) return 2;
         if (hasOrta || raw.includes('secondary') || raw.includes('средн')) return 1;
         return 0;
+    }
+
+    private normalizeEducationLevelKey(value: any): string | null {
+        if (value === null || value === undefined) return null;
+        const raw = String(value)
+            .toLowerCase()
+            .replace(/[\u2018\u2019\u02BC\u02BB`']/g, '')
+            .replace(/[-_]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+        if (!raw || ['done', 'undefined', 'null'].includes(raw) || raw.includes('done')) return null;
+        if (['any', 'ahamiyatsiz', 'не важно', 'любой'].includes(raw)) return 'any';
+        if (raw.includes('magistr') || raw.includes('master') || raw.includes('магистр')) return 'master';
+        if (raw.includes('oliy') || raw.includes('higher') || raw.includes('высш')) return 'higher';
+        if (raw.includes('incomplete') || raw.includes('tugallanmagan') || raw.includes('неокончен')) return 'incomplete_higher';
+        const hasOrta = raw.includes('orta') || raw.includes('o rta');
+        const hasMaxsus = raw.includes('maxsus') || raw.includes('специаль') || raw.includes('spets');
+        if (hasOrta && hasMaxsus) return 'vocational';
+        if (raw.includes('vocational') || raw.includes('средне специаль')) return 'vocational';
+        if (hasOrta || raw.includes('secondary') || raw.includes('средн')) return 'secondary';
+        return null;
     }
 
     private normalizeExperienceLevel(value: any): number | null {
@@ -5280,11 +6953,12 @@ export class TelegramBot {
 
     private parseYearInput(text: string): number | null {
         const raw = String(text || '').trim();
-        const match = raw.match(/(19\d{2}|20\d{2})/);
-        if (!match) return null;
-        const year = Number(match[1]);
+        const matches = raw.match(/\b(19\d{2}|20\d{2})\b/g) || [];
+        // Accept exactly one year token to avoid accidental ranges like 2020-2027.
+        if (matches.length !== 1) return null;
+        const year = Number(matches[0]);
         const nowYear = new Date().getFullYear();
-        if (!Number.isFinite(year) || year < 1950 || year > nowYear + 1) return null;
+        if (!Number.isFinite(year) || year < 1950 || year > nowYear) return null;
         return year;
     }
 
@@ -5308,6 +6982,14 @@ export class TelegramBot {
         return null;
     }
 
+    private formatEducationYears(entry: { start_year?: number; end_year?: number; is_current?: boolean } | null | undefined): string | null {
+        if (!entry) return null;
+        if (entry.start_year && entry.end_year) return `${entry.start_year}-${entry.end_year}`;
+        if (entry.start_year && entry.is_current) return `${entry.start_year}-hozir`;
+        if (entry.start_year && !entry.end_year) return `${entry.start_year}+`;
+        return null;
+    }
+
     private parseAgeRange(text: string): { min: number | null; max: number | null } | null {
         const raw = String(text || '').trim();
         if (!raw) return { min: null, max: null };
@@ -5323,14 +7005,20 @@ export class TelegramBot {
         const plusMatch = normalized.match(/(\d{1,2})\s*\+/);
         if (plusMatch) {
             const min = Number(plusMatch[1]);
-            if (Number.isFinite(min) && min > 0) return { min, max: null };
+            if (Number.isFinite(min) && min >= 14 && min <= 80) return { min, max: null };
         }
 
         const rangeMatch = normalized.match(/(\d{1,2})\s*[-–—]\s*(\d{1,2})/);
         if (rangeMatch) {
             const min = Number(rangeMatch[1]);
             const max = Number(rangeMatch[2]);
-            if (Number.isFinite(min) && Number.isFinite(max) && min > 0 && max >= min) {
+            if (
+                Number.isFinite(min)
+                && Number.isFinite(max)
+                && min >= 14
+                && max <= 80
+                && max >= min
+            ) {
                 return { min, max };
             }
         }
@@ -5338,7 +7026,7 @@ export class TelegramBot {
         const singleMatch = normalized.match(/(\d{1,2})/);
         if (singleMatch) {
             const min = Number(singleMatch[1]);
-            if (Number.isFinite(min) && min > 0) return { min, max: null };
+            if (Number.isFinite(min) && min >= 14 && min <= 80) return { min, max: null };
         }
 
         return null;
@@ -5852,6 +7540,13 @@ export class TelegramBot {
             } else {
                 await this.showResumeList(chatId, session);
             }
+        } else if (action === 'editresume') {
+            const resumeId = session.data?.active_resume_id;
+            if (resumeId) {
+                await this.showResumeById(chatId, resumeId, session);
+            } else {
+                await this.showResumeList(chatId, session);
+            }
         }
     }
 
@@ -5881,25 +7576,7 @@ export class TelegramBot {
         }
 
         if (action === 'my_vacancies') {
-            const { data: employer } = await this.supabase
-                .from('employer_profiles')
-                .select('id')
-                .eq('user_id', session.user_id)
-                .maybeSingle();
-            const employerId = employer?.id || null;
-            let query = this.supabase
-                .from('jobs')
-                .select('id, title_uz, title_ru')
-                .order('created_at', { ascending: false })
-                .limit(30);
-            if (employerId && session.user_id) {
-                query = query.or(`employer_id.eq.${employerId},created_by.eq.${session.user_id}`);
-            } else if (employerId) {
-                query = query.eq('employer_id', employerId);
-            } else if (session.user_id) {
-                query = query.eq('created_by', session.user_id);
-            }
-            const { data: jobs } = await query;
+            const jobs = await this.getEmployerJobs(session, 30);
             if (!jobs || jobs.length === 0) {
                 await sendMessage(chatId, lang === 'uz' ? "Hali vakansiya yo'q." : 'Вакансий пока нет.', { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
                 return;
@@ -5921,25 +7598,7 @@ export class TelegramBot {
             return;
         }
         if (action === 'find_worker') {
-            const { data: employer } = await this.supabase
-                .from('employer_profiles')
-                .select('id')
-                .eq('user_id', session.user_id)
-                .maybeSingle();
-            const employerId = employer?.id || null;
-            let query = this.supabase
-                .from('jobs')
-                .select('id, title_uz, title_ru')
-                .order('created_at', { ascending: false })
-                .limit(20);
-            if (employerId && session.user_id) {
-                query = query.or(`employer_id.eq.${employerId},created_by.eq.${session.user_id}`);
-            } else if (employerId) {
-                query = query.eq('employer_id', employerId);
-            } else if (session.user_id) {
-                query = query.eq('created_by', session.user_id);
-            }
-            const { data: jobs } = await query;
+            const jobs = await this.getEmployerJobs(session, 20);
             if (!jobs || jobs.length === 0) {
                 await sendMessage(chatId, lang === 'uz' ? "Hali vakansiya yo'q." : 'Вакансий пока нет.', { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
                 return;
@@ -5958,18 +7617,182 @@ export class TelegramBot {
         }
     }
 
-    private async showEmployerApplications(chatId: number, session: TelegramSession): Promise<void> {
-        const lang = session.lang;
+    private async getEmployerJobs(session: TelegramSession, limit: number = 30): Promise<Array<{ id: string; title_uz?: string; title_ru?: string; title?: string | null; employer_id?: string | null; user_id?: string | null; created_by?: string | null; contact_phone?: string | null; company_name?: string | null; created_at?: string | null }>> {
         const { data: employer } = await this.supabase
             .from('employer_profiles')
-            .select('id')
+            .select('id, company_name, phone')
             .eq('user_id', session.user_id)
             .maybeSingle();
         const employerId = employer?.id || null;
+        const userId = session.user_id || null;
+        const phone = employer?.phone || session.phone || null;
+        const normalizedPhone = this.normalizePhoneValue(phone);
+        const companyName = employer?.company_name || null;
+        const normalizedCompanyName = String(companyName || '').trim().toLowerCase();
+
+        const selectVariants = [
+            'id, title_uz, title_ru, title, employer_id, user_id, created_by, contact_phone, company_name, created_at',
+            'id, title_uz, title, employer_id, user_id, created_by, contact_phone, company_name, created_at',
+            'id, title_ru, title, employer_id, user_id, created_by, contact_phone, company_name, created_at',
+            'id, title, employer_id, user_id, created_by, contact_phone, company_name, created_at',
+            'id, title, employer_id, user_id, created_by, created_at'
+        ];
+        const jobsMap = new Map<string, any>();
+        const mergeRows = (rows: any[] | null | undefined) => {
+            for (const row of rows || []) {
+                if (!row?.id) continue;
+                const key = String(row.id);
+                if (!jobsMap.has(key)) {
+                    jobsMap.set(key, row);
+                }
+            }
+        };
+        const runQuery = async (label: string, queryBuilder: (selectClause: string) => PromiseLike<{ data: any[] | null; error: any }>) => {
+            let lastError: any = null;
+            for (const selectClause of selectVariants) {
+                const result: any = await queryBuilder(selectClause);
+                if (!result?.error) {
+                    mergeRows(result?.data || []);
+                    return;
+                }
+                lastError = result.error;
+                const msg = String(lastError?.message || '').toLowerCase();
+                if (msg.includes('does not exist') || msg.includes('schema cache') || msg.includes('column')) {
+                    continue;
+                }
+                break;
+            }
+            if (lastError) {
+                console.error(`[BOT] getEmployerJobs ${label} error:`, lastError);
+            }
+        };
+
+        if (userId) {
+            await runQuery(
+                'user_id',
+                (selectClause) => this.supabase
+                    .from('jobs')
+                    .select(selectClause)
+                    .eq('user_id', userId)
+                    .order('created_at', { ascending: false })
+                    .limit(Math.max(limit * 3, 50))
+            );
+        }
+
+        if (userId) {
+            await runQuery(
+                'created_by',
+                (selectClause) => this.supabase
+                    .from('jobs')
+                    .select(selectClause)
+                    .eq('created_by', userId)
+                    .order('created_at', { ascending: false })
+                    .limit(Math.max(limit * 3, 50))
+            );
+        }
+
+        if (employerId) {
+            await runQuery(
+                'employer_id',
+                (selectClause) => this.supabase
+                    .from('jobs')
+                    .select(selectClause)
+                    .eq('employer_id', employerId)
+                    .order('created_at', { ascending: false })
+                    .limit(Math.max(limit * 3, 50))
+            );
+        }
+
+        if (phone) {
+            await runQuery(
+                'phone_exact',
+                (selectClause) => this.supabase
+                    .from('jobs')
+                    .select(selectClause)
+                    .eq('contact_phone', phone)
+                    .order('created_at', { ascending: false })
+                    .limit(Math.max(limit * 2, 40))
+            );
+        }
+
+        if (companyName) {
+            await runQuery(
+                'company_ilike',
+                (selectClause) => this.supabase
+                    .from('jobs')
+                    .select(selectClause)
+                    .ilike('company_name', `%${companyName}%`)
+                    .order('created_at', { ascending: false })
+                    .limit(Math.max(limit * 2, 40))
+            );
+        }
+
+        let jobs = Array.from(jobsMap.values());
+
+        // Legacy catch-all: broaden selection and filter in memory by creator/phone/company.
+        if (!jobs.length) {
+            let broadRows: any[] = [];
+            for (const selectClause of selectVariants) {
+                const broad = await this.supabase
+                    .from('jobs')
+                    .select(selectClause)
+                    .order('created_at', { ascending: false })
+                    .limit(Math.max(limit * 30, 800));
+                if (!broad.error) {
+                    broadRows = broad.data || [];
+                    break;
+                }
+                const msg = String(broad.error?.message || '').toLowerCase();
+                if (!(msg.includes('does not exist') || msg.includes('schema cache') || msg.includes('column'))) {
+                    break;
+                }
+            }
+            const filtered = broadRows.filter((job: any) => {
+                const byEmployer = employerId && String(job?.employer_id || '') === String(employerId);
+                const byCreator = userId && String(job?.created_by || '') === String(userId);
+                const byPhone = normalizedPhone && this.normalizePhoneValue(job?.contact_phone) === normalizedPhone;
+                const byCompany = normalizedCompanyName
+                    && String(job?.company_name || '').trim().toLowerCase().includes(normalizedCompanyName);
+                return Boolean(byEmployer || byCreator || byPhone || byCompany);
+            });
+            jobs = filtered;
+        }
+
+        jobs = jobs
+            .sort((a: any, b: any) => {
+                const aTime = a?.created_at ? new Date(a.created_at).getTime() : 0;
+                const bTime = b?.created_at ? new Date(b.created_at).getTime() : 0;
+                return bTime - aTime;
+            })
+            .slice(0, limit);
+
+        const updatePayload: Record<string, any> = {};
+        if (employerId) updatePayload.employer_id = employerId;
+        if (userId) updatePayload.created_by = userId;
+        if (jobs.length && Object.keys(updatePayload).length > 0) {
+            const idsToUpdate = jobs
+                .filter(job => (employerId && !job.employer_id) || (userId && !job.created_by))
+                .map(job => job.id);
+            if (idsToUpdate.length) {
+                try {
+                    await this.supabase.from('jobs').update(updatePayload).in('id', idsToUpdate);
+                } catch {
+                    // ignore
+                }
+            }
+        }
+
+        return jobs;
+    }
+
+    private async showEmployerApplications(chatId: number, session: TelegramSession): Promise<void> {
+        const lang = session.lang;
+        const employerJobs = await this.getEmployerJobs(session, 200);
+        const employerJobIds = new Set((employerJobs || []).map(job => String(job.id)));
 
         const { data: apps, error } = await this.supabase
             .from('job_applications')
-            .select('id, created_at, status, full_name, resume_id, user_id, applicant_id, job:jobs(id,title_uz,title_ru,employer_id,created_by)')
+            .select('id, created_at, status, full_name, resume_id, user_id, applicant_id, job:jobs(id,title,employer_id,created_by)')
             .order('created_at', { ascending: false })
             .limit(100);
 
@@ -5980,10 +7803,10 @@ export class TelegramBot {
         }
 
         const filtered = (apps || []).filter((app: any) => {
-            const job = app?.job;
-            if (!job) return false;
-            if (employerId && String(job.employer_id || '') === String(employerId)) return true;
-            if (session.user_id && String(job.created_by || '') === String(session.user_id)) return true;
+            const jobRow = Array.isArray(app?.job) ? app.job[0] : app?.job;
+            if (!jobRow) return false;
+            if (employerJobIds.has(String(jobRow.id))) return true;
+            if (session.user_id && String(jobRow.created_by || '') === String(session.user_id)) return true;
             return false;
         });
 
@@ -5998,8 +7821,8 @@ export class TelegramBot {
                 id: app.id,
                 applicant: app.full_name || null,
                 jobTitle: lang === 'uz'
-                    ? (jobRow?.title_uz || jobRow?.title_ru || 'Vakansiya')
-                    : (jobRow?.title_ru || jobRow?.title_uz || 'Вакансия')
+                    ? (jobRow?.title || 'Vakansiya')
+                    : (jobRow?.title || 'Вакансия')
             };
         });
 
@@ -6016,7 +7839,7 @@ export class TelegramBot {
         const lang = session.lang;
         const { data: app, error } = await this.supabase
             .from('job_applications')
-            .select('id, resume_id, user_id, applicant_id, full_name, phone, job:jobs(id,title_uz,title_ru)')
+            .select('id, resume_id, user_id, applicant_id, full_name, phone, job:jobs(id,title)')
             .eq('id', applicationId)
             .maybeSingle();
 
@@ -6055,8 +7878,8 @@ export class TelegramBot {
 
         const jobRow = Array.isArray(app.job) ? app.job[0] : app.job;
         const jobTitle = lang === 'uz'
-            ? (jobRow?.title_uz || jobRow?.title_ru || 'Vakansiya')
-            : (jobRow?.title_ru || jobRow?.title_uz || 'Вакансия');
+            ? (jobRow?.title || 'Vakansiya')
+            : (jobRow?.title || 'Вакансия');
 
         if (!resume) {
             const fallback = `${lang === 'uz' ? 'Nomzod' : 'Кандидат'}: ${app.full_name || '—'}\n${lang === 'uz' ? 'Telefon' : 'Телефон'}: ${app.phone || '—'}\n${lang === 'uz' ? 'Vakansiya' : 'Вакансия'}: ${jobTitle}`;
@@ -6179,16 +8002,37 @@ export class TelegramBot {
             .eq('user_id', session.user_id)
             .maybeSingle();
 
-        if (!employer?.id) {
+        let employerProfile = employer;
+        if (!employerProfile?.id && session.user_id) {
+            const fallbackCompany = jobData?.company_name || 'Kompaniya';
+            const { data: createdEmployer, error: createError } = await this.supabase
+                .from('employer_profiles')
+                .upsert({
+                    user_id: session.user_id,
+                    company_name: fallbackCompany,
+                    phone: session.phone || null,
+                    director_name: jobData?.hr_name || null,
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
+                }, { onConflict: 'user_id' })
+                .select('id, company_name, director_name, phone, region_id, district_id, address, default_address')
+                .single();
+            if (!createError && createdEmployer) {
+                employerProfile = createdEmployer;
+            }
+        }
+
+        if (!employerProfile?.id) {
             await this.sendPrompt(chatId, session, botTexts.error[lang], { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
             return;
         }
 
-        const title = jobData?.title || (lang === 'uz' ? 'Vakansiya' : 'Вакансия');
+        const employerId = employerProfile.id;
+        const title = jobData?.title || jobData?.field_title || (lang === 'uz' ? 'Vakansiya' : 'Вакансия');
         const aiSections = jobData?.ai_sections || null;
         const description = jobData?.description || this.buildJobDescriptionFromSections(aiSections) || title;
-        const companyName = jobData?.company_name || employer.company_name || 'Kompaniya';
-        const address = jobData?.address || employer.address || employer.default_address || null;
+        const companyName = jobData?.company_name || employerProfile.company_name || 'Kompaniya';
+        const address = jobData?.address || employerProfile.address || employerProfile.default_address || null;
 
         const rawMeta = jobData?.ai_meta || {};
         const languages = Array.isArray(jobData?.languages)
@@ -6200,11 +8044,13 @@ export class TelegramBot {
         const special = Array.isArray(jobData?.special) ? jobData.special : [];
         const raw_source_json = {
             ...(jobData?.raw_source_json || {}),
+            description_text: description,
             working_days: jobData?.working_days || rawMeta?.working_days || null,
             working_hours: jobData?.working_hours || rawMeta?.working_hours || null,
             talablar: aiSections?.talablar || [],
             ish_vazifalari: aiSections?.ish_vazifalari || [],
-            qulayliklar: aiSections?.qulayliklar || []
+            qulayliklar: aiSections?.qulayliklar || (benefitsText ? [benefitsText] : []),
+            tillar: languages
         };
 
         const normalizedEmployment = jobData?.employment_type || 'full_time';
@@ -6213,23 +8059,27 @@ export class TelegramBot {
         const normalizedGender = jobData?.gender || 'any';
 
         const payload: Record<string, any> = {
-            employer_id: employer.id,
+            employer_id: employerId,
             created_by: session.user_id,
+            title,
             title_uz: title,
             title_ru: title,
+            description,
             description_uz: description,
             description_ru: description,
             company_name: companyName,
             category_id: jobData?.category_id || null,
-            region_id: jobData?.region_id || employer.region_id || null,
-            district_id: jobData?.district_id || employer.district_id || null,
+            field_id: jobData?.field_id || null,
+            field_title: jobData?.field_title || null,
+            region_id: jobData?.region_id || employerProfile.region_id || null,
+            district_id: jobData?.district_id || employerProfile.district_id || null,
             region_name: jobData?.region_name || null,
             district_name: jobData?.district_name || null,
             address,
             salary_min: Number.isFinite(jobData?.salary_min) ? jobData?.salary_min : (jobData?.salary_min ? Number(jobData.salary_min) : null),
             salary_max: Number.isFinite(jobData?.salary_max) ? jobData?.salary_max : (jobData?.salary_max ? Number(jobData.salary_max) : null),
-            contact_phone: jobData?.contact_phone || employer.phone || session.phone || null,
-            hr_name: jobData?.hr_name || employer.director_name || null,
+            contact_phone: jobData?.contact_phone || employerProfile.phone || session.phone || null,
+            hr_name: jobData?.hr_name || employerProfile.director_name || null,
             gender: normalizedGender,
             education_level: normalizedEducation,
             experience: normalizedExperience,
@@ -6237,6 +8087,7 @@ export class TelegramBot {
             age_max: jobData?.age_max || null,
             work_mode: jobData?.work_mode || null,
             employment_type: normalizedEmployment,
+            working_days: jobData?.working_days || null,
             working_hours: jobData?.working_hours || null,
             benefits: benefitsText,
             languages,
@@ -6251,14 +8102,28 @@ export class TelegramBot {
             created_at: new Date().toISOString()
         };
 
-        const { data: createdJob, error } = await this.supabase
-            .from('jobs')
-            .insert(payload)
-            .select('*')
-            .single();
+        let insertPayload: Record<string, any> = { ...payload };
+        let createdJob: any = null;
+        let insertError: any = null;
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+            const result = await this.supabase
+                .from('jobs')
+                .insert(insertPayload)
+                .select('*')
+                .single();
+            createdJob = result.data || null;
+            insertError = result.error || null;
+            if (!insertError) break;
+            const missingColumn = this.extractMissingColumn(insertError);
+            if (missingColumn && Object.prototype.hasOwnProperty.call(insertPayload, missingColumn)) {
+                delete insertPayload[missingColumn];
+                continue;
+            }
+            break;
+        }
 
-        if (error) {
-            console.error('Job publish error:', error);
+        if (insertError) {
+            console.error('Job publish error:', insertError);
             await this.sendPrompt(chatId, session, botTexts.error[lang], { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
             return;
         }
@@ -6274,26 +8139,52 @@ export class TelegramBot {
 
     private async showMatchingResumesForJob(chatId: number, session: TelegramSession, job: any): Promise<void> {
         const lang = session.lang;
-        const selectWithExperience = 'id, full_name, title, region_id, district_id, category_id, category_ids, expected_salary_min, experience, experience_level, education_level, gender, birth_date';
+        let selectClause = 'id, full_name, title, region_id, district_id, category_id, category_ids, expected_salary_min, experience, education_level, gender, birth_date';
         let resumes: any[] | null = null;
         let error: any = null;
-        const primary = await this.supabase
-            .from('resumes')
-            .select(selectWithExperience)
-            .eq('status', 'active')
-            .order('updated_at', { ascending: false })
-            .limit(50);
-        resumes = primary.data || null;
-        error = primary.error || null;
-        if (error && (error.code === '42703' || String(error.message || '').includes('experience_level'))) {
-            const fallback = await this.supabase
+        let useStatusFilter = true;
+
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+            let query = this.supabase
                 .from('resumes')
-                .select('id, full_name, title, region_id, district_id, category_id, category_ids, expected_salary_min, experience, education_level, gender, birth_date')
-                .eq('status', 'active')
+                .select(selectClause)
                 .order('updated_at', { ascending: false })
                 .limit(50);
-            resumes = fallback.data || null;
-            error = fallback.error || null;
+            if (useStatusFilter) {
+                query = query.eq('status', 'active');
+            }
+            const primary = await query;
+            resumes = primary.data || null;
+            error = primary.error || null;
+            if (!error) break;
+            const missingColumn = this.extractMissingColumn(error);
+            if (missingColumn) {
+                const nextSelect = this.stripColumnFromSelect(selectClause, missingColumn);
+                if (nextSelect === selectClause) break;
+                selectClause = nextSelect;
+                continue;
+            }
+            if (String(error.message || '').includes('experience_level')) {
+                selectClause = this.stripColumnFromSelect(selectClause, 'experience_level');
+                continue;
+            }
+            if (String(error.message || '').includes('education_level')) {
+                selectClause = this.stripColumnFromSelect(selectClause, 'education_level');
+                continue;
+            }
+            if (String(error.message || '').includes('experience')) {
+                selectClause = this.stripColumnFromSelect(selectClause, 'experience');
+                continue;
+            }
+            if (String(error.message || '').includes('category_ids')) {
+                selectClause = this.stripColumnFromSelect(selectClause, 'category_ids');
+                continue;
+            }
+            if (String(error.message || '').toLowerCase().includes('status')) {
+                useStatusFilter = false;
+                continue;
+            }
+            break;
         }
 
         if (error) {
@@ -6301,7 +8192,7 @@ export class TelegramBot {
             return;
         }
 
-        const jobTitle = job?.title_uz || job?.title_ru || job?.title || '';
+        const jobTitle = job?.field_title || job?.title_uz || job?.title_ru || job?.title || '';
         const requireTitleMatch = !this.isGenericTitle(jobTitle);
 
         const scored = (resumes || []).map(resume => {
@@ -6311,7 +8202,7 @@ export class TelegramBot {
                 category_id: resume.category_id,
                 category_ids: resume.category_ids,
                 expected_salary_min: resume.expected_salary_min,
-                experience: resume.experience ?? resume.experience_level,
+                experience: resume.experience ?? resume.experience_level ?? null,
                 gender: resume.gender,
                 birth_date: resume.birth_date,
                 education_level: resume.education_level
@@ -6323,20 +8214,88 @@ export class TelegramBot {
             .filter(item => item.score >= 90)
             .filter(item => {
                 if (!requireTitleMatch) return true;
-                const resumeTitle = item.resume?.title || '';
+                const resumeTitle = item.resume?.field_title || item.resume?.title || '';
                 const resumeTokens = this.tokenizeTitle(resumeTitle);
-                if (!resumeTokens.length) return true;
+                if (!resumeTokens.length) return false;
                 return this.hasTitleOverlap(jobTitle, resumeTitle);
             });
 
-        const top = filtered
-            .sort((a, b) => b.score - a.score)
+        const aiRanked = await this.applyAiRerankToResumeMatches(job, filtered, lang);
+        const top = aiRanked
+            .filter(item => Number(item.score || 0) >= 90)
             .slice(0, 5);
 
         if (!top.length) {
-            await sendMessage(chatId, lang === 'uz' ? "Mos rezyumelar topilmadi." : 'Подходящие резюме не найдены.');
+            const relatedCandidates = (resumes || [])
+                .map(resume => {
+                    const base = calculateMatchScore({
+                        region_id: resume.region_id,
+                        district_id: resume.district_id,
+                        category_id: resume.category_id,
+                        category_ids: resume.category_ids,
+                        expected_salary_min: resume.expected_salary_min,
+                        experience: resume.experience ?? resume.experience_level ?? null,
+                        gender: resume.gender,
+                        birth_date: resume.birth_date,
+                        education_level: resume.education_level,
+                        title: null
+                    }, job);
+                    const resumeTitle = resume?.field_title || resume?.title || '';
+                    const titleRel = this.getTitleOverlapScore(jobTitle, resumeTitle);
+                    const score = Math.max(1, Math.min(100, Math.round((base.matchScore * 0.75) + (titleRel * 25))));
+                    return { resume, score, strictScore: base.matchScore, titleRel };
+                })
+                .filter(item => Number(item.score || 0) >= 60 || Number(item.titleRel || 0) >= 0.2)
+                .sort((a, b) => Number(b.score || 0) - Number(a.score || 0))
+                .slice(0, 10);
+
+            if (!relatedCandidates.length) {
+                await sendMessage(chatId, lang === 'uz' ? "Mos rezyumelar topilmadi." : 'Подходящие резюме не найдены.');
+                return;
+            }
+
+            const relatedRanked = await this.applyAiRerankToResumeMatches(job, relatedCandidates, lang);
+            const relatedTop = relatedRanked
+                .filter(item => Number(item.score || 0) >= 60)
+                .slice(0, 5);
+
+            if (!relatedTop.length) {
+                await sendMessage(chatId, lang === 'uz' ? "Mos rezyumelar topilmadi." : 'Подходящие резюме не найдены.');
+                return;
+            }
+
+            await this.setSession(session, {
+                data: {
+                    ...session.data,
+                    related_resume_list: relatedTop.map(item => ({
+                        id: item.resume.id,
+                        full_name: item.resume.full_name,
+                        title: item.resume.title,
+                        score: Number(item.score || 0)
+                    }))
+                }
+            });
+            await this.sendPrompt(chatId, session, botTexts.noResumesByProfession[lang], {
+                replyMarkup: keyboards.relatedResumesKeyboard(lang)
+            });
             return;
         }
+
+        await this.saveMatchRecommendations(
+            'employer_to_resume',
+            String(job?.id || ''),
+            top.map(item => ({
+                targetId: String(item.resume?.id || ''),
+                score: Number(item.score || 0),
+                strictScore: Number(item.strictScore || item.score || 0),
+                aiScore: Number(item.aiScore || 0),
+                reason: lang === 'uz' ? 'Lavozim va mezonlar mosligi' : 'Совпадение по должности и критериям'
+            }))
+        );
+
+        await this.setSession(session, {
+            data: { ...session.data, related_resume_list: [] }
+        });
 
         const lines = top.map((item, idx) => {
             const name = item.resume.full_name || (lang === 'uz' ? 'Nomzod' : 'Кандидат');

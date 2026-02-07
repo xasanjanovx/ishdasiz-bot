@@ -128,6 +128,7 @@ export interface VacancyMeta {
     working_days?: string;        // Dushanba-Juma, haftasiga 6 kun
     working_hours?: string;       // 09:00-18:00
     probation_period?: string;    // 3 oy, yo'q
+    education?: string;           // Alternative key for education level
     education_level?: string;     // Filter: secondary, vocational, higher, master
     gender?: string;              // Filter: male, female, any
     age_min?: number;
