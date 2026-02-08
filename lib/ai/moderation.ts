@@ -68,6 +68,23 @@ const BANNED_PATTERNS_UZ = [
     /\bdayus\b/i,
     /\bo['']?ldiraman\b/i,
     /\bqotil\b/i,
+    // Russian profanity written in Uzbek/Latin transliteration
+    /\bbl(y|i)a(t|d)?\b/i,
+    /\bbl[yi]ad\b/i,
+    /\bsu(k|q)a\b/i,
+    /\bsyka\b/i,
+    /\bxu(y|i|j)\b/i,
+    /\bhu(y|i|j)\b/i,
+    /\bna(x|h)u(y|i)\b/i,
+    /\bna(x|h)er\b/i,
+    /\bpi(z|s)d(a|e|ec|ets)?\b/i,
+    /\bpid(ar|or|oras)\b/i,
+    /\beb(la|at|lan|nut|an)\b/i,
+    /\byobann?i(y|y)?\b/i,
+    /\bgandon\b/i,
+    /\bdolbo(y|e)b\b/i,
+    /\bmudak\b/i,
+    /\blox\b/i,
 ];
 
 // Prompt injection patterns
@@ -161,7 +178,7 @@ export function checkForAbuse(message: string): ModerationResult {
 // Warning messages in both languages
 export const WARNING_MESSAGES = {
     profanity: {
-        uz: "Hurmatli foydalanuvchi, iltimos, odob doirasida muloqot qiling. Qoidalarni buzish akkauntingiz bloklanishiga olib kelishi mumkin.",
+        uz: "❗ Hurmatli foydalanuvchi, iltimos, odob doirasida muloqot qiling, aks holda biz sizga qonuniy chora ko'rishimizni ma'lum qilamiz!",
         ru: "Уважаемый пользователь, пожалуйста, соблюдайте правила общения. Нарушение правил может привести к блокировке аккаунта."
     },
     threat: {

@@ -250,9 +250,8 @@ export function districtKeyboard(
     backAction: string = 'region',
     showCounts: boolean = true
 ): object {
-    const perPage = 8;
-    const start = page * perPage;
-    const pageDistricts = districts.slice(start, start + perPage);
+    void page;
+    const pageDistricts = districts;
     const buttons: InlineButton[][] = [];
 
     // 2 columns
@@ -277,16 +276,7 @@ export function districtKeyboard(
         buttons.push(row);
     }
 
-    // Pagination
-    const navRow: InlineButton[] = [];
-    if (page > 0) {
-        navRow.push({ text: lang === 'uz' ? 'Oldingi sahifa' : 'Предыдущая страница', callback_data: `distpage:${page - 1}` });
-    }
-    navRow.push({ text: lang === 'uz' ? '⬅️ Orqaga' : '⬅️ Назад', callback_data: `back:${backAction}` });
-    if (start + perPage < districts.length) {
-        navRow.push({ text: lang === 'uz' ? 'Keyingi sahifa' : 'Следующая страница', callback_data: `distpage:${page + 1}` });
-    }
-    buttons.push(navRow);
+    buttons.push([{ text: lang === 'uz' ? '⬅️ Orqaga' : '⬅️ Назад', callback_data: `back:${backAction}` }]);
     return createInlineKeyboard(buttons);
 }
 
@@ -614,7 +604,7 @@ export function employerVacanciesKeyboard(
             : (job.title_ru || job.title_uz || job.title || 'Вакансия');
         return [
             { text: title, callback_data: `jobview:${job.id}` },
-            { text: lang === 'uz' ? '✅ Xodim topildi' : '✅ Сотрудник найден', callback_data: `jobclose:${job.id}` }
+            { text: lang === 'uz' ? '✅ Xodim topildi' : '✅ Сотрудник найден', callback_data: `jobclose:confirm:${job.id}` }
         ];
     });
     rows.push([{ text: lang === 'uz' ? '⬅️ Orqaga' : '⬅️ Назад', callback_data: 'menu:main' }]);
@@ -624,8 +614,17 @@ export function employerVacanciesKeyboard(
 export function employerJobViewKeyboard(lang: BotLang, jobId: string): object {
     return createInlineKeyboard([
         [{ text: lang === 'uz' ? '🧑‍💼 Ishchi topish' : '🧑‍💼 Найти кандидатов', callback_data: `matchjob:${jobId}` }],
-        [{ text: lang === 'uz' ? '✅ Xodim topildi' : '✅ Сотрудник найден', callback_data: `jobclose:${jobId}` }],
+        [{ text: lang === 'uz' ? '✅ Xodim topildi' : '✅ Сотрудник найден', callback_data: `jobclose:confirm:${jobId}` }],
         [{ text: lang === 'uz' ? '🏠 Menyu' : '🏠 Меню', callback_data: 'menu:main' }]
+    ]);
+}
+
+export function confirmJobCloseKeyboard(lang: BotLang, jobId: string): object {
+    return createInlineKeyboard([
+        [
+            { text: lang === 'uz' ? '✅ Ha, yopish' : '✅ Да, закрыть', callback_data: `jobclose:yes:${jobId}` },
+            { text: lang === 'uz' ? "❌ Yo'q" : '❌ Нет', callback_data: `jobclose:no:${jobId}` }
+        ]
     ]);
 }
 
@@ -873,7 +872,7 @@ export function resumeAboutKeyboard(lang: BotLang): object {
 export function searchModeKeyboard(lang: BotLang): object {
     return createInlineKeyboard([
         [{ text: lang === 'uz' ? "🧾 Rezyume bo'yicha" : '🧾 По резюме', callback_data: 'searchmode:resume' }],
-        [{ text: lang === 'uz' ? 'Bekor qilish' : 'Отмена', callback_data: 'cancel' }]
+        [{ text: lang === 'uz' ? '🏠 Bosh menyu' : '🏠 Главное меню', callback_data: 'menu:main' }]
     ]);
 }
 
@@ -889,7 +888,7 @@ export function resumeSelectKeyboard(
         return [{ text: title, callback_data: `resume_search:${r.id}` }];
     });
     rows.push([{ text: lang === 'uz' ? '⬅️ Orqaga' : '⬅️ Назад', callback_data: 'menu:main' }]);
-    rows.push([{ text: lang === 'uz' ? 'Bekor qilish' : 'Отмена', callback_data: 'cancel' }]);
+    rows.push([{ text: lang === 'uz' ? '🏠 Bosh menyu' : '🏠 Главное меню', callback_data: 'menu:main' }]);
     return createInlineKeyboard(rows);
 }
 
@@ -1177,7 +1176,7 @@ export function resumeListKeyboard(
         return [{ text: title, callback_data: `resume_view:${r.id}` }];
     });
     rows.push([{ text: lang === 'uz' ? "Yangi rezyume qo'shish" : 'Добавить новое резюме', callback_data: 'resume_new' }]);
-    rows.push([{ text: lang === 'uz' ? 'Bekor qilish' : 'Отмена', callback_data: 'cancel' }]);
+    rows.push([{ text: lang === 'uz' ? '🏠 Bosh menyu' : '🏠 Главное меню', callback_data: 'menu:main' }]);
     return createInlineKeyboard(rows);
 }
 
@@ -1185,8 +1184,17 @@ export function resumeOptionsKeyboard(lang: BotLang): object {
     return createInlineKeyboard([
         [{ text: lang === 'uz' ? '🔎 Ish qidirish' : '🔎 Найти работу', callback_data: 'action:search' }],
         [{ text: lang === 'uz' ? "✏️ Ma'lumotlarni yangilash" : '✏️ Обновить данные', callback_data: 'resume:update' }],
-        [{ text: lang === 'uz' ? "🗑️ O'chirish" : '🗑️ Удалить', callback_data: 'resume:delete' }],
+        [{ text: lang === 'uz' ? "🗑️ O'chirish" : '🗑️ Удалить', callback_data: 'resume:delete_confirm' }],
         [{ text: lang === 'uz' ? '🏠 Bosh menyu' : '🏠 Главное меню', callback_data: 'menu:main' }]
+    ]);
+}
+
+export function confirmResumeDeleteKeyboard(lang: BotLang): object {
+    return createInlineKeyboard([
+        [
+            { text: lang === 'uz' ? "🗑️ Ha, o'chirish" : '🗑️ Да, удалить', callback_data: 'resume:confirm_delete' },
+            { text: lang === 'uz' ? "❌ Yo'q" : '❌ Нет', callback_data: 'resume:cancel_delete' }
+        ]
     ]);
 }
 
@@ -1211,6 +1219,39 @@ export function regionFallbackKeyboard(lang: BotLang): object {
             }
         ]
     ]);
+}
+
+export function districtJobsFallbackKeyboard(
+    lang: BotLang,
+    districts: Array<{ id: string | number; name: string; count: number }>,
+    options: { includeRelated?: boolean } = {}
+): object {
+    const rows: InlineButton[][] = [];
+    for (const item of districts) {
+        const text = `${item.name} (${item.count})`;
+        rows.push([{ text, callback_data: `searchdist:${String(item.id)}` }]);
+    }
+    rows.push([
+        {
+            text: lang === 'uz' ? "🌐 Viloyat bo'yicha barchasi" : '🌐 Вся область',
+            callback_data: 'searchdist:all'
+        }
+    ]);
+    if (options.includeRelated) {
+        rows.push([
+            {
+                text: lang === 'uz' ? "🧠 Sizga mos kelishi mumkin bo'lgan vakansiyalar" : '🧠 Возможные подходящие вакансии',
+                callback_data: 'searchmode:related'
+            }
+        ]);
+    }
+    rows.push([
+        {
+            text: lang === 'uz' ? '🏠 Menyu' : '🏠 Меню',
+            callback_data: 'menu:main'
+        }
+    ]);
+    return createInlineKeyboard(rows);
 }
 
 export function relatedJobsKeyboard(lang: BotLang): object {

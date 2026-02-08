@@ -199,24 +199,28 @@ export const botTexts = {
         ru: '🔔 | Частота уведомлений:'
     },
     askTitle: {
-        uz: '<b>🧾 | Qaysi lavozimda ishlamoqchisiz?</b>\n<i>Masalan: Bosh hisobchi, Marketing direktori, Operatsion menejer, Loyiha menejeri, IT Team Lead</i>',
-        ru: '<b>🧾 | На какой должности хотите работать?</b>\n<i>Например: Главный бухгалтер, Директор по маркетингу, Операционный менеджер, Руководитель проектов, Team Lead</i>'
+        uz: '<b>🧾 | Qaysi lavozimda ishlamoqchisiz?</b>\n<i>Masalan: Ingliz tili o\'qituvchisi, Shifokor, Operator, Dasturchi</i>',
+        ru: '<b>🧾 | На какой должности хотите работать?</b>\n<i>Например: Учитель, Бухгалтер, Продавец, Оператор, Водитель</i>'
     },
     askName: {
         uz: '<b>🪪 | To‘liq ismingizni kiriting (F.I.O)</b>',
         ru: '<b>🪪 | Введите полное имя (Ф.И.О)</b>'
+    },
+    nameTooShort: {
+        uz: '<b>🪪 | Ism-familiya juda qisqa</b>\n<i>Kamida 3 ta harf kiriting.</i>',
+        ru: '<b>🪪 | Слишком короткое Ф.И.О.</b>\n<i>Введите минимум 3 буквы.</i>'
     },
     askAbout: {
         uz: '<b>📝 | O‘zingiz haqingizda qo‘shimcha ma’lumot (qisqacha) — ixtiyoriy.</b>\n<i>Eslatma: Qancha ko‘p ma’lumot yozsangiz, ish beruvchilar sizni shuncha tez topadi.</i>',
         ru: '<b>📝 | Дополнительная информация о себе (кратко) — необязательно.</b>\n<i>Совет: Чем больше информации, тем быстрее работодатель вас найдёт.</i>'
     },
     askSkills: {
-        uz: '<b>🧠 | Asosiy ko‘nikmalaringizni kiriting:</b>\n<i>Masalan: Excel, 1C, CRM, Sotuv, Photoshop, Teamwork</i>\n<i>Har birini alohida xabar yoki vergul orqali yozishingiz mumkin.</i>\n\n<i>Ko‘nikma yuborgach “Tayyor” tugmasi paydo bo‘ladi.</i>\n<i>Agar ko‘nikma bo‘lmasa, “O‘tkazib yuborish”ni bosing.</i>',
+        uz: '<b>🧠 | Asosiy ko‘nikmalaringizni kiriting:</b>\n<i>Masalan: Word, Excel, Telegram, Mijozlar bilan muloqot, Savdo, Jamoada ishlash</i>\n<i>Har birini alohida xabar yoki vergul orqali yozishingiz mumkin.</i>\n\n<i>Ko‘nikma yuborgach “Tayyor” tugmasi paydo bo‘ladi.</i>\n<i>Agar ko‘nikma bo‘lmasa, “O‘tkazib yuborish”ni bosing.</i>',
         ru: '<b>🧠 | Введите основные навыки:</b>\n<i>Например: Excel, 1C, CRM, Продажи, Photoshop, Teamwork</i>\n<i>Можно отправлять по одному или через запятую.</i>\n\n<i>Кнопка “Готово” появится после первого навыка.</i>\n<i>Если навыков нет — нажмите “Пропустить”.</i>'
     },
     askWorkplace: {
-        uz: '<b>🏢 | Ishlagan joyingiz.</b>\n<i>Masalan: “ABC MChJ — SMM menejer”</i>',
-        ru: '<b>🏢 | Где вы работали.</b>\n<i>Например: “ABC ООО — SMM менеджер”</i>'
+        uz: '<b>🏢 | Ishlagan joyingiz.</b>\n<i>Masalan: “24-maktab — Ingliz tili o‘qituvchisi”</i>',
+        ru: '<b>🏢 | Где вы работали.</b>\n<i>Например: “Школа №24 — учитель английского”</i>'
     },
     askWorkStartYear: {
         uz: '<b>📅 | Ish boshlagan yilni kiriting.</b>\n<i>Masalan: 2019</i>',
@@ -299,12 +303,24 @@ export const botTexts = {
         ru: '❌ Подходящих вакансий пока нет.'
     },
     noJobsByProfession: {
-        uz: 'ℹ️ Tanlangan kasb bo‘yicha aniq vakansiya topilmadi. Yaqin vakansiyalarni ko‘rishingiz mumkin.',
-        ru: 'ℹ️ Точных вакансий по выбранной профессии не найдено. Можно посмотреть близкие варианты.'
+        uz: "ℹ️ Tanlangan kasb bo'yicha aniq vakansiya topilmadi. Sizga mos kelishi mumkin bo'lgan vakansiyalarni ko'rishingiz mumkin.",
+        ru: 'ℹ️ Точных вакансий по выбранной профессии не найдено. Можно посмотреть вакансии, которые могут вам подойти.'
     },
     noDistrictJobs: {
         uz: 'ℹ️ Bu tumanda mos vakansiyalar topilmadi. Viloyat bo‘yicha qidirishni xohlaysizmi?',
         ru: 'ℹ️ В этом районе подходящих вакансий нет. Хотите искать по области?'
+    },
+    conditionalMatchWarning: {
+        uz: (reason: 'education' | 'experience' | 'both') => {
+            if (reason === 'both') return '⚠️ <i>shartli ravishda mos kelishi mumkin: ma’lumot va tajriba mos emas.</i>';
+            if (reason === 'education') return '⚠️ <i>shartli ravishda mos kelishi mumkin: ma’lumot mos emas.</i>';
+            return '⚠️ <i>shartli ravishda mos kelishi mumkin: tajriba mos emas.</i>';
+        },
+        ru: (reason: 'education' | 'experience' | 'both') => {
+            if (reason === 'both') return '⚠️ <i>условно может подойти: образование и опыт не совпадают.</i>';
+            if (reason === 'education') return '⚠️ <i>условно может подойти: образование не совпадает.</i>';
+            return '⚠️ <i>условно может подойти: опыт не совпадает.</i>';
+        }
     },
     noResumesByProfession: {
         uz: 'ℹ️ Bu lavozimga aniq mos rezyume topilmadi. Yaqin rezyumelarni ko‘rishingiz mumkin.',

@@ -8,6 +8,8 @@ export interface UserProfile {
     district_id?: number | string | null;
     category_id?: string | null;
     category_ids?: string[];
+    field_id?: string | number | null;
+    field_title?: string | null;
     expected_salary_min?: number | null;
     expected_salary_max?: number | null;
     experience_level?: string | null;
@@ -24,6 +26,9 @@ export interface JobVacancy {
     id: string;
     title_uz?: string;
     title_ru?: string;
+    title?: string | null;
+    field_id?: string | number | null;
+    field_title?: string | null;
     region_id?: number | string;
     district_id?: number | string;
     category_id?: string | null;
@@ -47,6 +52,7 @@ export interface MatchExplanation {
 
 export interface MatchCriteria {
     location: boolean;
+    profession: boolean;
     category: boolean;
     gender: boolean;
     age: boolean;
@@ -61,6 +67,8 @@ export interface MatchedJob extends JobVacancy {
     matchCriteria: MatchCriteria;
     ageKnown?: boolean;
     titleRelevance?: number;
+    conditionallySuitable?: boolean;
+    conditionalReason?: 'education' | 'experience' | 'both' | null;
 }
 
 const EXPERIENCE_YEARS: Record<string, number> = {
@@ -82,15 +90,17 @@ const EDUCATION_ORDER: Record<string, number> = {
     master: 4
 };
 
-// Match weights (priority order: location → category → gender → age → education → salary → experience)
+// Match weights (priority order: profession anchor/title -> location -> category -> other criteria)
 const WEIGHTS: Record<keyof MatchCriteria, number> = {
-    location: 60,
-    category: 15,
-    gender: 10,
-    age: 5,
-    education: 5,
-    salary: 3,
-    experience: 2
+    profession: 44,
+    location: 36,
+    category: 10,
+    gender: 6,
+    age: 2,
+    education: 4,
+    // Salary is supportive, not primary.
+    salary: 1,
+    experience: 3
 };
 
 function toNumber(value: number | string | undefined | null): number | null {
@@ -230,10 +240,24 @@ function hasGenderRequirement(job: JobVacancy): boolean {
     return jobGender !== null && jobGender !== 'any';
 }
 
+function normalizeFieldId(value?: string | number | null): string | null {
+    if (value === null || value === undefined) return null;
+    const raw = String(value).trim();
+    return raw.length > 0 ? raw : null;
+}
+
+function getJobFieldId(job: JobVacancy): string | null {
+    const direct = normalizeFieldId(job.field_id);
+    if (direct) return direct;
+    const rawMmkId = job.raw_source_json?.mmk_position?.id ?? job.raw_source_json?.mmk_position_id ?? null;
+    return normalizeFieldId(rawMmkId);
+}
+
 function tokenizeTitle(value?: string | null): string[] {
     if (!value) return [];
     return String(value)
         .toLowerCase()
+        .replace(/[\u2018\u2019\u02BC\u02BB`']/g, '')
         .replace(/[^a-z\u0400-\u04FF0-9\s]/g, ' ')
         .split(/\s+/)
         .filter(token => token.length >= 3);
@@ -252,6 +276,19 @@ const TITLE_STOPWORDS = new Set([
     'uchun', 'boyicha', 'boyicha', 'bilan', 'va', 'ish', 'lavozim', 'xodim',
     'mutaxassis', 'specialist', 'worker', 'employee', 'vakansiya', 'vacancy',
     'bo', 'yicha'
+]);
+
+const TITLE_GENERIC_TOKENS = new Set([
+    'teacher', 'oqituvchi', 'ustoz', 'pedagog', 'maktab',
+    'manager', 'director', 'operator', 'driver', 'developer',
+    'accountant', 'sales', 'marketing', 'hr', 'support', 'doctor', 'nurse',
+    'mutaxassis', 'xodim', 'ishchi', 'specialist', 'employee', 'worker',
+    'language', 'subject', 'fan'
+]);
+
+const LANGUAGE_TOKENS = new Set([
+    'foreign_language', 'language', 'english', 'german', 'russian',
+    'french', 'arabic', 'turkish', 'korean', 'chinese', 'japanese'
 ]);
 
 const TITLE_SYNONYMS: Record<string, string> = {
@@ -289,7 +326,59 @@ const TITLE_SYNONYMS: Record<string, string> = {
     hamshira: 'nurse',
     nurse: 'nurse',
     oqituvchi: 'teacher',
+    oqituvchisi: 'teacher',
+    oqituvchilar: 'teacher',
+    qituvchi: 'teacher',
+    qituvchisi: 'teacher',
+    qituvchilar: 'teacher',
+    pedagog: 'teacher',
+    prepodavatel: 'teacher',
+    uchitel: 'teacher',
+    учитель: 'teacher',
+    преподаватель: 'teacher',
+    tarbiyachi: 'teacher',
     teacher: 'teacher',
+    ustoz: 'teacher',
+    english: 'english',
+    ingiliz: 'english',
+    inglis: 'english',
+    ingliz: 'english',
+    nemis: 'german',
+    german: 'german',
+    rus: 'russian',
+    rusch: 'russian',
+    russian: 'russian',
+    fransuz: 'french',
+    french: 'french',
+    turk: 'turkish',
+    turkcha: 'turkish',
+    turkish: 'turkish',
+    arab: 'arabic',
+    arabic: 'arabic',
+    koreys: 'korean',
+    korean: 'korean',
+    xitoy: 'chinese',
+    chinese: 'chinese',
+    yapon: 'japanese',
+    japanese: 'japanese',
+    til: 'language',
+    tili: 'language',
+    jazyk: 'language',
+    язык: 'language',
+    chet: 'foreign_language',
+    xorijiy: 'foreign_language',
+    biologiya: 'biology',
+    biology: 'biology',
+    kimyo: 'chemistry',
+    chemistry: 'chemistry',
+    fizika: 'physics',
+    physics: 'physics',
+    matematika: 'math',
+    math: 'math',
+    tarix: 'history',
+    history: 'history',
+    geografiya: 'geography',
+    geography: 'geography',
     yurist: 'lawyer',
     lawyer: 'lawyer',
     tozalovchi: 'cleaner',
@@ -297,13 +386,56 @@ const TITLE_SYNONYMS: Record<string, string> = {
     cleaner: 'cleaner'
 };
 
+function canonicalizeTitleToken(token: string): string {
+    let normalized = token.trim().toLowerCase();
+    if (!normalized) return normalized;
+    if (normalized.endsWith('si') && normalized.includes('qituvch')) {
+        normalized = normalized.slice(0, -2);
+    }
+    if (normalized.endsWith('lar') && normalized.includes('qituvch')) {
+        normalized = normalized.slice(0, -3);
+    }
+    return TITLE_SYNONYMS[normalized] || normalized;
+}
+
 function normalizeTitleTokens(value?: string | null): string[] {
     const tokens = tokenizeTitle(value)
         .map(token => token.trim())
         .filter(token => token.length >= 3)
         .filter(token => !TITLE_STOPWORDS.has(token));
 
-    return tokens.map(token => TITLE_SYNONYMS[token] || token);
+    return tokens.map(canonicalizeTitleToken);
+}
+
+function toSpecificTokens(tokens: string[]): string[] {
+    return tokens.filter(token => token && !TITLE_GENERIC_TOKENS.has(token));
+}
+
+function tokensNearEqual(a: string, b: string): boolean {
+    if (a === b) return true;
+    if (!a || !b) return false;
+    if (a.length < 3 || b.length < 3) return false;
+    return a.startsWith(b) || b.startsWith(a);
+}
+
+function hasAnyNearIntersection(a: string[], b: string[]): boolean {
+    if (!a.length || !b.length) return false;
+    return a.some(tokenA => b.some(tokenB => tokensNearEqual(tokenA, tokenB)));
+}
+
+function hasLanguageCompatibility(profileSpecific: string[], jobSpecific: string[]): boolean {
+    const profileHasLang = profileSpecific.some(token => LANGUAGE_TOKENS.has(token));
+    const jobHasLang = jobSpecific.some(token => LANGUAGE_TOKENS.has(token));
+    if (!profileHasLang || !jobHasLang) return false;
+
+    const profileHasExactLanguage = profileSpecific.some(token => LANGUAGE_TOKENS.has(token) && token !== 'language' && token !== 'foreign_language');
+    const jobHasExactLanguage = jobSpecific.some(token => LANGUAGE_TOKENS.has(token) && token !== 'language' && token !== 'foreign_language');
+
+    if (!profileHasExactLanguage || !jobHasExactLanguage) {
+        return true;
+    }
+
+    return hasAnyNearIntersection(profileSpecific, jobSpecific);
 }
 
 function titleSimilarity(profileTitle?: string | null, jobTitle?: string | null): number {
@@ -312,23 +444,35 @@ function titleSimilarity(profileTitle?: string | null, jobTitle?: string | null)
     if (!a.length || !b.length) return 0;
 
     const setA = new Set(a);
-    const setB = new Set(b);
     let intersection = 0;
-    for (const token of Array.from(setA)) {
-        if (setB.has(token)) intersection += 1;
+    for (const tokenA of Array.from(setA)) {
+        const found = b.some(tokenB => tokensNearEqual(tokenA, tokenB));
+        if (found) intersection += 1;
     }
 
-    const overlap = intersection / Math.max(setA.size, setB.size);
+    const overlap = intersection / Math.max(setA.size, b.length);
+    const specificA = toSpecificTokens(a);
+    const specificB = toSpecificTokens(b);
+    const specificOverlap = hasAnyNearIntersection(specificA, specificB);
+    const languageCompatible = hasLanguageCompatibility(specificA, specificB);
+
+    if (specificA.length > 0 && !specificOverlap && !languageCompatible) {
+        const genericOverlap = hasAnyNearIntersection(a, b);
+        return genericOverlap ? 0.08 : 0;
+    }
+
     const contains = String(jobTitle || '').toLowerCase().includes(String(profileTitle || '').toLowerCase())
         || String(profileTitle || '').toLowerCase().includes(String(jobTitle || '').toLowerCase());
     const containsBoost = contains ? 0.2 : 0;
 
-    return Math.max(0, Math.min(1, overlap + containsBoost));
+    const specificBoost = specificOverlap ? 0.2 : (languageCompatible ? 0.1 : 0);
+    return Math.max(0, Math.min(1, overlap + containsBoost + specificBoost));
 }
 
 export function calculateMatchScore(profile: UserProfile, job: JobVacancy): MatchedJob {
     const criteria: MatchCriteria = {
         location: false,
+        profession: false,
         category: false,
         gender: false,
         age: false,
@@ -340,13 +484,50 @@ export function calculateMatchScore(profile: UserProfile, job: JobVacancy): Matc
     let totalWeight = 0;
     let matchedWeight = 0;
 
-    const add = (key: keyof MatchCriteria, matched: boolean, ratio: number = 1): void => {
+    const add = (key: keyof MatchCriteria, matched: boolean, ratio?: number): void => {
         totalWeight += WEIGHTS[key];
-        if (matched) {
-            matchedWeight += WEIGHTS[key] * ratio;
-        }
+        const normalizedRatio = typeof ratio === 'number'
+            ? Math.max(0, Math.min(1, ratio))
+            : (matched ? 1 : 0);
+        matchedWeight += WEIGHTS[key] * normalizedRatio;
         criteria[key] = matched;
     };
+
+    // Profession anchor + title relevance
+    const profileFieldId = normalizeFieldId(profile.field_id);
+    const jobFieldId = getJobFieldId(job);
+    const profileTitle = profile.field_title || profile.title || null;
+    const jobTitle = job.field_title || job.title_uz || job.title_ru || job.title || job.raw_source_json?.position_name || null;
+    const professionTitleRel = titleSimilarity(profileTitle, jobTitle);
+
+    if (profileFieldId && jobFieldId) {
+        const exactField = profileFieldId === jobFieldId;
+        if (exactField) {
+            add('profession', true, 1);
+        } else if (professionTitleRel >= 0.7) {
+            add('profession', true, 0.6);
+        } else if (professionTitleRel >= 0.5) {
+            add('profession', false, 0.25);
+        } else {
+            add('profession', false, 0);
+        }
+    } else if (profileFieldId && !jobFieldId) {
+        if (professionTitleRel >= 0.6) {
+            add('profession', true, 0.5);
+        } else if (professionTitleRel >= 0.4) {
+            add('profession', false, 0.2);
+        } else {
+            add('profession', false, 0);
+        }
+    } else if (!profileFieldId && profileTitle) {
+        if (professionTitleRel >= 0.5) {
+            add('profession', true, Math.min(1, 0.5 + professionTitleRel * 0.5));
+        } else {
+            add('profession', false, Math.max(0, professionTitleRel * 0.5));
+        }
+    } else {
+        add('profession', true, 0.2);
+    }
 
     // Location
     const pRegion = toNumber(profile.region_id);
@@ -357,23 +538,27 @@ export function calculateMatchScore(profile: UserProfile, job: JobVacancy): Matc
     const hasJobLocation = Boolean(jRegion || jDist);
 
     if (isRemote) {
-        // Remote vacancies are location-agnostic but very low priority for "nearby" logic.
-        add('location', true, 0.08);
-    } else if (pRegion && jRegion) {
-        if (pDist && jDist && pDist === jDist) {
+        // Remote can be considered, but not as "location match".
+        add('location', false, 0.08);
+    } else if (pDist && jDist) {
+        if (pDist === jDist) {
+            // Only exact district/city is treated as location match.
             add('location', true, 1);
-        } else if (pRegion === jRegion) {
-            // Same region but different district should be much lower.
-            add('location', true, (pDist && jDist) ? 0.1 : 0.25);
+        } else if (pRegion && jRegion && pRegion === jRegion) {
+            // Same region, different district: no checkmark, reduced contribution.
+            add('location', false, 0.2);
         } else {
-            add('location', false);
+            add('location', false, 0);
         }
+    } else if (pRegion && jRegion && pRegion === jRegion) {
+        // Region-only fallback still should not be marked as exact location.
+        add('location', false, 0.15);
     } else if (!hasJobLocation) {
-        // Job didn't specify location – very weak match
-        add('location', true, 0.05);
+        // Job didn't specify location – very weak.
+        add('location', false, 0.05);
     } else {
-        // Job has location but profile doesn't – weak match
-        add('location', true, 0.1);
+        // Location mismatch or insufficient location data.
+        add('location', false, 0);
     }
 
     // Category
@@ -396,7 +581,8 @@ export function calculateMatchScore(profile: UserProfile, job: JobVacancy): Matc
     const userGender = normalizeGender(profile.gender) || 'any';
     const jobGender = normalizeGender(job.gender);
     if (jobGender === null || jobGender === 'any') {
-        add('gender', true);
+        // "Ahamiyatsiz" is neutral, not a full-strength match.
+        add('gender', true, 0.5);
     } else if (jobGender === 'male' || jobGender === 'female') {
         if (userGender === 'any') {
             add('gender', true);
@@ -422,16 +608,19 @@ export function calculateMatchScore(profile: UserProfile, job: JobVacancy): Matc
             add('age', minOk && maxOk);
         }
     } else {
-        add('age', true);
+        // No age requirement: neutral.
+        add('age', true, 0.5);
     }
 
     // Education
     const jobEdu = normalizeEducation(job.education_level);
     const userEdu = normalizeEducation(profile.education_level);
+    const educationMismatch = jobEdu > 0 && userEdu < jobEdu;
     if (jobEdu > 0) {
-        add('education', userEdu >= jobEdu);
+        add('education', !educationMismatch);
     } else {
-        add('education', true);
+        // No education requirement: neutral.
+        add('education', true, 0.5);
     }
 
     // Salary
@@ -447,23 +636,34 @@ export function calculateMatchScore(profile: UserProfile, job: JobVacancy): Matc
             add('salary', false);
         }
     } else {
-        add('salary', true);
+        // Salary not specified by seeker profile: neutral.
+        add('salary', true, 0.5);
     }
 
     // Experience
     const jobExp = getJobExperienceYears(job);
     const userExp = getResumeExperienceYears(profile);
+    const experienceMismatch = jobExp !== null && userExp < jobExp;
     if (jobExp !== null) {
-        add('experience', userExp >= jobExp);
+        add('experience', !experienceMismatch);
     } else {
-        add('experience', true);
+        // No experience requirement: neutral.
+        add('experience', true, 0.5);
     }
 
-    const score = totalWeight > 0 ? Math.round((matchedWeight / totalWeight) * 100) : 0;
+    let score = totalWeight > 0 ? Math.round((matchedWeight / totalWeight) * 100) : 0;
+    let conditionalReason: MatchedJob['conditionalReason'] = null;
+    if (educationMismatch && experienceMismatch) conditionalReason = 'both';
+    else if (educationMismatch) conditionalReason = 'education';
+    else if (experienceMismatch) conditionalReason = 'experience';
+
+    if (conditionalReason === 'both') score = Math.round(score * 0.6);
+    else if (conditionalReason) score = Math.round(score * 0.75);
 
     const reasonsUz: string[] = [];
     const reasonsRu: string[] = [];
     if (criteria.location) { reasonsUz.push('Joylashuv mos'); reasonsRu.push('Локация подходит'); }
+    if (criteria.profession) { reasonsUz.push('Lavozim mos'); reasonsRu.push('Должность подходит'); }
     if (criteria.category) { reasonsUz.push('Soha mos'); reasonsRu.push('Сфера подходит'); }
     if (criteria.gender) { reasonsUz.push('Jins mos'); reasonsRu.push('Пол подходит'); }
     if (criteria.age) { reasonsUz.push('Yosh mos'); reasonsRu.push('Возраст подходит'); }
@@ -479,7 +679,9 @@ export function calculateMatchScore(profile: UserProfile, job: JobVacancy): Matc
             ru: reasonsRu.join(', ')
         },
         matchCriteria: criteria,
-        ageKnown
+        ageKnown,
+        conditionallySuitable: Boolean(conditionalReason),
+        conditionalReason
     };
 }
 
@@ -489,18 +691,29 @@ export function matchAndSortJobs(profile: UserProfile, jobs: JobVacancy[]): Matc
         ? profile.category_ids
         : profile.category_id ? [profile.category_id] : [];
     const hasProfileCategory = profileCategories.length > 0;
+    const profileFieldId = normalizeFieldId(profile.field_id);
     const profileTitle = profile.title || '';
-    const profileTitleTokens = tokenizeTitle(profileTitle);
+    const profileTitleTokens = normalizeTitleTokens(profileTitle);
+    const profileSpecificTokens = toSpecificTokens(profileTitleTokens);
     const profileTitleGeneric = isGenericTitle(profileTitle);
 
     const enriched = matched.map(item => {
         const job: JobVacancy = item;
         const rawJobTitle = job.title_uz || job.title_ru || job.title || job.field_title || job.raw_source_json?.position_name || '';
         const relevance = titleSimilarity(profileTitle, rawJobTitle);
+        const jobFieldId = getJobFieldId(job);
+        const isExactField = Boolean(profileFieldId && jobFieldId && profileFieldId === jobFieldId);
+        const jobSpecificTokens = toSpecificTokens(normalizeTitleTokens(rawJobTitle));
+        const specificOverlap = hasAnyNearIntersection(profileSpecificTokens, jobSpecificTokens);
+        const languageCompatible = hasLanguageCompatibility(profileSpecificTokens, jobSpecificTokens);
+        const hardTitleMismatch = profileSpecificTokens.length > 0 && !specificOverlap && !languageCompatible;
+        const mismatchPenalty = hardTitleMismatch ? 0.4 : 1;
         return {
             ...item,
             titleRelevance: relevance,
-            matchScore: Math.max(0, Math.min(100, Math.round(item.matchScore + relevance * 12)))
+            fieldExact: isExactField,
+            // Keep title influence moderate to avoid inflated 90%+ scores.
+            matchScore: Math.max(0, Math.min(100, Math.round((item.matchScore * mismatchPenalty) + relevance * 6)))
         };
     });
 
@@ -510,28 +723,50 @@ export function matchAndSortJobs(profile: UserProfile, jobs: JobVacancy[]): Matc
         const hasAge = Boolean(job.age_min || job.age_max);
         const hasEducation = Boolean(job.education_level || job.raw_source_json?.min_education);
         const hasExperience = getJobExperienceYears(job) !== null;
+        const jobFieldId = getJobFieldId(job);
         const jobTitle = job.title_uz || job.title_ru || job.title || job.field_title || job.raw_source_json?.position_name || '';
-        const jobTitleTokens = tokenizeTitle(jobTitle);
+        const jobTitleTokens = normalizeTitleTokens(jobTitle);
+        const specificJobTokens = toSpecificTokens(jobTitleTokens);
+        const specificTitleOverlap = profileSpecificTokens.length > 0 && specificJobTokens.length > 0
+            ? profileSpecificTokens.some(token => specificJobTokens.some(jobToken => tokensNearEqual(token, jobToken)))
+            : false;
+        const languageCompatible = hasLanguageCompatibility(profileSpecificTokens, specificJobTokens);
         const titleOverlap = profileTitleTokens.length > 0 && jobTitleTokens.length > 0
-            ? profileTitleTokens.some(token => jobTitleTokens.includes(token))
+            ? profileTitleTokens.some(token => jobTitleTokens.some(jobToken => tokensNearEqual(token, jobToken)))
             : true;
         const jobTitleGeneric = isGenericTitle(jobTitle);
         const shouldCheckTitle = (!profileTitleGeneric || !jobTitleGeneric) && profileTitleTokens.length > 0;
         const strictTitleMode = profileTitleTokens.length > 0 && !profileTitleGeneric;
         const titleRel = item.titleRelevance ?? 0;
+        const requiredTitleMatch = profileSpecificTokens.length > 0
+            ? (specificTitleOverlap || languageCompatible)
+            : titleOverlap;
+        const hasProfileField = Boolean(profileFieldId);
+        const exactField = Boolean(hasProfileField && jobFieldId && profileFieldId === jobFieldId);
+        const fieldMismatch = Boolean(hasProfileField && jobFieldId && profileFieldId !== jobFieldId);
 
         if (hasGender && !item.matchCriteria.gender) return false;
         if (hasAge && !item.matchCriteria.age) return false;
-        if (hasEducation && !item.matchCriteria.education) return false;
-        if (hasExperience && !item.matchCriteria.experience) return false;
-        if (shouldCheckTitle && (!titleOverlap || titleRel < 0.3)) return false;
-        if (strictTitleMode && titleRel < 0.35) return false;
+        if (fieldMismatch && titleRel < 0.72) return false;
+        if (hasProfileField && !exactField && !item.matchCriteria.profession && titleRel < 0.45) return false;
+        const mismatchedByRequirement = (!item.matchCriteria.education && hasEducation) || (!item.matchCriteria.experience && hasExperience);
+        if (shouldCheckTitle && (!requiredTitleMatch || titleRel < 0.2)) return false;
+        if (strictTitleMode && profileSpecificTokens.length > 0 && titleRel < 0.45) return false;
+        if (strictTitleMode && profileSpecificTokens.length === 0 && titleRel < 0.22) return false;
+        if (mismatchedByRequirement && titleRel < 0.35 && !item.matchCriteria.category) return false;
         if (!shouldCheckTitle && !titleOverlap && !item.matchCriteria.category) return false;
-        if (hasProfileCategory && !item.matchCriteria.category && titleRel < 0.45) return false;
+        if (hasProfileCategory && !item.matchCriteria.category && titleRel < 0.25) return false;
         return true;
     });
 
     return filtered.sort((a, b) => {
+        // Highest overall relevance first.
+        if (b.matchScore !== a.matchScore) return b.matchScore - a.matchScore;
+
+        const professionA = a.matchCriteria?.profession ? 1 : 0;
+        const professionB = b.matchCriteria?.profession ? 1 : 0;
+        if (professionB !== professionA) return professionB - professionA;
+
         const locationA = a.matchCriteria?.location ? 1 : 0;
         const locationB = b.matchCriteria?.location ? 1 : 0;
         if (locationB !== locationA) return locationB - locationA;
@@ -540,11 +775,13 @@ export function matchAndSortJobs(profile: UserProfile, jobs: JobVacancy[]): Matc
         const titleB = b.titleRelevance ?? 0;
         if (titleB !== titleA) return titleB - titleA;
 
-        if (b.matchScore !== a.matchScore) return b.matchScore - a.matchScore;
-
         const categoryA = a.matchCriteria?.category ? 1 : 0;
         const categoryB = b.matchCriteria?.category ? 1 : 0;
         if (categoryB !== categoryA) return categoryB - categoryA;
+
+        const conditionalA = a.conditionallySuitable ? 1 : 0;
+        const conditionalB = b.conditionallySuitable ? 1 : 0;
+        if (conditionalA !== conditionalB) return conditionalA - conditionalB;
 
         return 0;
     });
