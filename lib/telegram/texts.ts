@@ -307,8 +307,16 @@ export const botTexts = {
         ru: 'ℹ️ Точных вакансий по выбранной профессии не найдено. Можно посмотреть вакансии, которые могут вам подойти.'
     },
     noDistrictJobs: {
-        uz: 'ℹ️ Bu tumanda mos vakansiyalar topilmadi. Viloyat bo‘yicha qidirishni xohlaysizmi?',
-        ru: 'ℹ️ В этом районе подходящих вакансий нет. Хотите искать по области?'
+        uz: 'ℹ️ Bu tumanda mos vakansiyalar topilmadi. Viloyatingizdagi boshqa tuman/shaharlarda vakansiyalar mavjud:',
+        ru: 'ℹ️ В этом районе подходящих вакансий нет. Вот районы/города вашей области с вакансиями:'
+    },
+    noRegionJobs: {
+        uz: 'ℹ️ Bu viloyatda mos vakansiyalar topilmadi. Boshqa viloyatlarda vakansiyalar mavjud:',
+        ru: 'ℹ️ В этой области подходящих вакансий нет. Вот другие области с вакансиями:'
+    },
+    otherDistrictsHint: {
+        uz: '📍 Boshqa tuman/shaharlarda ham vakansiyalar mavjud:',
+        ru: '📍 В других районах/городах также есть вакансии:'
     },
     conditionalMatchWarning: {
         uz: (reason: 'education' | 'experience' | 'both') => {

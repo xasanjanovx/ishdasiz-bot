@@ -537,7 +537,15 @@ export function mainMenuKeyboard(lang: BotLang, role?: 'seeker' | 'employer'): o
 // ============================================
 // Job Navigation Keyboard
 // ============================================
-export function jobNavigationKeyboard(lang: BotLang, current: number, total: number, jobId: string, source?: string, isFavorite: boolean = false): object {
+export function jobNavigationKeyboard(
+    lang: BotLang,
+    current: number,
+    total: number,
+    jobId: string,
+    source?: string,
+    isFavorite: boolean = false,
+    regionVacancyCount?: number
+): object {
     const buttons: InlineButton[][] = [];
 
     const navRow: InlineButton[] = [];
@@ -559,12 +567,23 @@ export function jobNavigationKeyboard(lang: BotLang, current: number, total: num
         }
     ]);
 
+    // Add single button to search by region (shows region vacancies on click)
+    if (typeof regionVacancyCount === 'number' && regionVacancyCount > 0) {
+        buttons.push([{
+            text: lang === 'uz'
+                ? `📍 Viloyat bo'yicha qidirish (${regionVacancyCount})`
+                : `📍 Поиск по области (${regionVacancyCount})`,
+            callback_data: 'search:region'
+        }]);
+    }
+
     buttons.push([
         { text: lang === 'uz' ? '🏠 Menyu' : '🏠 Меню', callback_data: 'menu:main' }
     ]);
 
     return createInlineKeyboard(buttons);
 }
+
 
 // ============================================
 // Profile View/Edit Keyboard
@@ -1253,6 +1272,35 @@ export function districtJobsFallbackKeyboard(
     ]);
     return createInlineKeyboard(rows);
 }
+
+export function regionJobsFallbackKeyboard(
+    lang: BotLang,
+    regions: Array<{ id: string | number; name: string; count: number }>,
+    options: { includeRelated?: boolean } = {}
+): object {
+    const rows: InlineButton[][] = [];
+    for (const item of regions) {
+        const text = `${item.name} (${item.count})`;
+        rows.push([{ text, callback_data: `searchregion:${String(item.id)}` }]);
+    }
+    if (options.includeRelated) {
+        rows.push([
+            {
+                text: lang === 'uz' ? "🧠 Sizga mos kelishi mumkin bo'lgan vakansiyalar" : '🧠 Возможные подходящие вакансии',
+                callback_data: 'searchmode:related'
+            }
+        ]);
+    }
+    rows.push([
+        {
+            text: lang === 'uz' ? '🏠 Menyu' : '🏠 Меню',
+            callback_data: 'menu:main'
+        }
+    ]);
+    return createInlineKeyboard(rows);
+}
+
+
 
 export function relatedJobsKeyboard(lang: BotLang): object {
     return createInlineKeyboard([

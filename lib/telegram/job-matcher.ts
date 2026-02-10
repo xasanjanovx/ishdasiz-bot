@@ -273,9 +273,17 @@ function isGenericTitle(value?: string | null): boolean {
 }
 
 const TITLE_STOPWORDS = new Set([
+    // Generic job words
     'uchun', 'boyicha', 'boyicha', 'bilan', 'va', 'ish', 'lavozim', 'xodim',
     'mutaxassis', 'specialist', 'worker', 'employee', 'vakansiya', 'vacancy',
-    'bo', 'yicha'
+    'bo', 'yicha', 'malaka', 'toifali', 'toifa',
+    // Medical/profession modifiers - these are NOT the main profession word
+    'shifokori', 'shifokor', 'doctor', 'vrach', 'doktor',
+    'umumiy', 'amaliyot', 'amaliyotchi', 'klinik', 'bolalar', 'kattalar',
+    'kichik', 'katta', 'bosh', 'yordamchi', 'assistent',
+    'malakali', 'tajribali', 'yosh', 'senior', 'junior',
+    // Job type modifiers
+    'ishchi', 'xizmati', 'xizmat', 'soha', 'sohasi'
 ]);
 
 const TITLE_GENERIC_TOKENS = new Set([
@@ -745,22 +753,33 @@ export function matchAndSortJobs(profile: UserProfile, jobs: JobVacancy[]): Matc
         const exactField = Boolean(hasProfileField && jobFieldId && profileFieldId === jobFieldId);
         const fieldMismatch = Boolean(hasProfileField && jobFieldId && profileFieldId !== jobFieldId);
 
-        if (hasGender && !item.matchCriteria.gender) return false;
-        if (hasAge && !item.matchCriteria.age) return false;
-        if (fieldMismatch && titleRel < 0.72) return false;
-        if (hasProfileField && !exactField && !item.matchCriteria.profession && titleRel < 0.45) return false;
-        const mismatchedByRequirement = (!item.matchCriteria.education && hasEducation) || (!item.matchCriteria.experience && hasExperience);
-        if (shouldCheckTitle && (!requiredTitleMatch || titleRel < 0.2)) return false;
-        if (strictTitleMode && profileSpecificTokens.length > 0 && titleRel < 0.45) return false;
-        if (strictTitleMode && profileSpecificTokens.length === 0 && titleRel < 0.22) return false;
-        if (mismatchedByRequirement && titleRel < 0.35 && !item.matchCriteria.category) return false;
-        if (!shouldCheckTitle && !titleOverlap && !item.matchCriteria.category) return false;
-        if (hasProfileCategory && !item.matchCriteria.category && titleRel < 0.25) return false;
+        // If exact field match or title overlap - always show (core requirement)
+        if (exactField) return true;
+        if (titleOverlap && titleRel >= 0.15) return true;
+        if (specificTitleOverlap) return true;
+
+        // Relaxed filters - don't reject harshly, prefer to show more results
+        if (fieldMismatch && titleRel < 0.35 && !titleOverlap) return false;
+        if (hasProfileField && !exactField && !item.matchCriteria.profession && titleRel < 0.15 && !titleOverlap) return false;
+        if (shouldCheckTitle && !requiredTitleMatch && titleRel < 0.1) return false;
+        if (!shouldCheckTitle && !titleOverlap && !item.matchCriteria.category && !item.matchCriteria.profession) return false;
         return true;
     });
 
+    // Get profile district for priority sorting
+    const profileDistrictId = profile.district_id ? String(profile.district_id) : null;
+
     return filtered.sort((a, b) => {
-        // Highest overall relevance first.
+        // FIRST: Prioritize jobs from user's selected district/city
+        if (profileDistrictId) {
+            const aDistrictId = String((a as any).district_id || '');
+            const bDistrictId = String((b as any).district_id || '');
+            const aInDistrict = aDistrictId === profileDistrictId ? 1 : 0;
+            const bInDistrict = bDistrictId === profileDistrictId ? 1 : 0;
+            if (bInDistrict !== aInDistrict) return bInDistrict - aInDistrict;
+        }
+
+        // THEN: Highest overall relevance first
         if (b.matchScore !== a.matchScore) return b.matchScore - a.matchScore;
 
         const professionA = a.matchCriteria?.profession ? 1 : 0;

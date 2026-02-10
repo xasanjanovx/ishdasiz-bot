@@ -1913,8 +1913,17 @@ export class TelegramBot {
                     }
                     break;
                 case 'mcat': await this.handleMultiCategory(chatId, value, session, message.message_id); break;
+                case 'search':
+                    if (value === 'region') {
+                        await this.showRegionDistrictSearch(chatId, session, message?.message_id);
+                    }
+                    break;
+                case 'searchdist':
+                    await this.handleDistrictSearch(chatId, value, session);
+                    break;
                 case 'noop': break;
                 default: console.log('Unknown callback:', data);
+
             }
         } catch (err) {
             console.error('Callback error:', err);
@@ -3722,12 +3731,12 @@ export class TelegramBot {
         const updatedData = { ...session.data, resume: { ...session.data?.resume, special: currentSpecial } };
         await this.setSession(session, { data: updatedData });
 
-            const options = { replyMarkup: keyboards.specialCriteriaKeyboard(lang, currentSpecial, 'education') };
-            if (messageId) {
-                await editMessage(chatId, messageId, botTexts.askSpecialCriteria[lang], options);
-            } else {
-                await this.sendPrompt(chatId, session, botTexts.askSpecialCriteria[lang], options);
-            }
+        const options = { replyMarkup: keyboards.specialCriteriaKeyboard(lang, currentSpecial, 'education') };
+        if (messageId) {
+            await editMessage(chatId, messageId, botTexts.askSpecialCriteria[lang], options);
+        } else {
+            await this.sendPrompt(chatId, session, botTexts.askSpecialCriteria[lang], options);
+        }
     }
 
     private async handleSalarySelect(chatId: number, value: string, session: TelegramSession, messageId?: number): Promise<void> {
@@ -6531,11 +6540,12 @@ export class TelegramBot {
                 clean_inputs: false
             };
             await this.setSession(session, { state: BotState.BROWSING_JOBS, data: pendingData });
-            const districtFallbackHint = this.buildDistrictFallbackHint(lang, regionNormalized, seekerGeo);
-            await this.sendPrompt(chatId, session, `${botTexts.noDistrictJobs[lang]}${districtFallbackHint}`, {
-                replyMarkup: keyboards.regionFallbackKeyboard(lang)
+            const districtButtons = this.buildDistrictButtonsList(regionNormalized, lang, seekerGeo);
+            await this.sendPrompt(chatId, session, botTexts.noDistrictJobs[lang], {
+                replyMarkup: keyboards.districtJobsFallbackKeyboard(lang, districtButtons, { includeRelated: true })
             });
             return;
+
         }
         const desiredTitle = resume?.field_title || resume?.title || resume?.desired_position || null;
         const titleTokens = this.tokenizeTitle(desiredTitle);
@@ -6544,7 +6554,7 @@ export class TelegramBot {
         let scopedByTitle = localPool;
         if (hasTitleTokens) {
             const strictTitle = !this.isGenericTitle(desiredTitle);
-            const preferred = this.filterJobsByDesiredTitle(localPool, desiredTitle, strictTitle);
+            const preferred = this.filterJobsByDesiredTitle(localPool, desiredTitle, strictTitle, resume.field_id);
             if (preferred.length >= 5) {
                 scopedByTitle = preferred;
             } else if (strictTitle && preferred.length) {
@@ -6582,7 +6592,7 @@ export class TelegramBot {
             }
 
             if (hasTitleTokens) {
-                const preferredFallback = this.filterJobsByDesiredTitle(fallbackPool, desiredTitle, false);
+                const preferredFallback = this.filterJobsByDesiredTitle(fallbackPool, desiredTitle, false, resume.field_id);
                 if (preferredFallback.length) fallbackPool = preferredFallback;
             }
 
@@ -6597,7 +6607,7 @@ export class TelegramBot {
             if (!matched.length && !hasLocalContext && fallbackPool !== broadNormalized) {
                 let broadPool = broadNormalized;
                 if (hasTitleTokens) {
-                    const preferredBroad = this.filterJobsByDesiredTitle(broadNormalized, desiredTitle, false);
+                    const preferredBroad = this.filterJobsByDesiredTitle(broadNormalized, desiredTitle, false, resume.field_id);
                     if (preferredBroad.length) broadPool = preferredBroad;
                 }
                 if (seekerGeo) {
@@ -6612,7 +6622,7 @@ export class TelegramBot {
         if (!matched.length && districtId !== null && regionNormalized.length > 0) {
             let regionFallback = regionNormalized;
             if (hasTitleTokens) {
-                const preferredRegion = this.filterJobsByDesiredTitle(regionFallback, desiredTitle, false);
+                const preferredRegion = this.filterJobsByDesiredTitle(regionFallback, desiredTitle, false, resume.field_id);
                 if (preferredRegion.length) regionFallback = preferredRegion;
             }
             if (seekerGeo) {
@@ -6631,11 +6641,12 @@ export class TelegramBot {
                     clean_inputs: false
                 };
                 await this.setSession(session, { state: BotState.BROWSING_JOBS, data: pendingData });
-                const districtFallbackHint = this.buildDistrictFallbackHint(lang, regionNormalized, seekerGeo);
-                await this.sendPrompt(chatId, session, `${botTexts.noDistrictJobs[lang]}${districtFallbackHint}`, {
-                    replyMarkup: keyboards.regionFallbackKeyboard(lang)
+                const districtButtons = this.buildDistrictButtonsList(regionNormalized, lang, seekerGeo);
+                await this.sendPrompt(chatId, session, botTexts.noDistrictJobs[lang], {
+                    replyMarkup: keyboards.districtJobsFallbackKeyboard(lang, districtButtons, { includeRelated: true })
                 });
                 return;
+
             }
         }
 
@@ -6697,11 +6708,21 @@ export class TelegramBot {
                     replyMarkup: keyboards.relatedJobsKeyboard(lang)
                 });
                 return;
-            }
+            } else {
+                // If no related jobs, check if there are jobs in other regions
+                const broadJobsForFallback = await this.fetchActiveJobs(1200);
+                const regionButtons = this.buildRegionButtonsList(broadJobsForFallback, lang, regionId);
+                if (regionButtons.length > 0) {
+                    await this.sendPrompt(chatId, session, botTexts.noRegionJobs[lang], {
+                        replyMarkup: keyboards.regionJobsFallbackKeyboard(lang, regionButtons, { includeRelated: false })
+                    });
+                    return;
+                }
 
-            await this.clearLastJobArtifacts(chatId, session);
-            await this.sendPrompt(chatId, session, botTexts.noJobsFound[lang], { replyMarkup: keyboards.mainMenuKeyboard(lang, 'seeker') });
-            return;
+                await this.clearLastJobArtifacts(chatId, session);
+                await this.sendPrompt(chatId, session, botTexts.noJobsFound[lang], { replyMarkup: keyboards.mainMenuKeyboard(lang, 'seeker') });
+                return;
+            }
         }
 
         const updatedData = {
@@ -6720,6 +6741,7 @@ export class TelegramBot {
 
         await this.showJob(chatId, session, 0);
     }
+
 
     private async searchJobsByLocation(
         chatId: number,
@@ -6756,17 +6778,15 @@ export class TelegramBot {
         }
 
         if (districtId !== null && !hasDistrict && hasRegion) {
-            const districtFallbackHint = this.buildDistrictFallbackHint(
-                lang,
-                regionNormalized,
-                (typeof geo.latitude === 'number' && typeof geo.longitude === 'number')
-                    ? { latitude: geo.latitude, longitude: geo.longitude }
-                    : null
-            );
-            await this.sendPrompt(chatId, session, `${botTexts.noDistrictJobs[lang]}${districtFallbackHint}`, {
-                replyMarkup: keyboards.regionFallbackKeyboard(lang)
+            const seekerGeoLocal = (typeof geo.latitude === 'number' && typeof geo.longitude === 'number')
+                ? { latitude: geo.latitude, longitude: geo.longitude }
+                : null;
+            const districtButtons = this.buildDistrictButtonsList(regionNormalized, lang, seekerGeoLocal);
+            await this.sendPrompt(chatId, session, botTexts.noDistrictJobs[lang], {
+                replyMarkup: keyboards.districtJobsFallbackKeyboard(lang, districtButtons, { includeRelated: true })
             });
         }
+
 
         const resume = await this.getActiveOrLatestResume(session);
         const resumeDistrict = this.toCoordinate(resume?.district_id ?? null);
@@ -6978,12 +6998,24 @@ export class TelegramBot {
         ).trim();
     }
 
-    private filterJobsByDesiredTitle(jobs: any[], desiredTitle: string | null | undefined, strict: boolean = false): any[] {
+    private filterJobsByDesiredTitle(jobs: any[], desiredTitle: string | null | undefined, strict: boolean = false, fieldId?: string | number | null): any[] {
         const titleTokens = this.tokenizeTitle(desiredTitle);
-        if (!titleTokens.length) return jobs;
+        // If no tokens and no fieldId, return all jobs
+        if (!titleTokens.length && !fieldId) return jobs;
 
         const desiredText = titleTokens.join(' ');
+        const normalizedFieldId = fieldId ? String(fieldId) : null;
+
         const filtered = jobs.filter(job => {
+            // Check exact field_id match first (highest priority for profession matching)
+            if (normalizedFieldId) {
+                const jobFieldId = job?.field_id || job?.raw_source_json?.mmk_position?.id || job?.raw_source_json?.mmk_position_id;
+                if (jobFieldId && String(jobFieldId) === normalizedFieldId) return true;
+            }
+
+            // If no title tokens, skip title matching
+            if (!titleTokens.length) return false;
+
             const jobTitleParts = [
                 job?.title_uz,
                 job?.title_ru,
@@ -7007,6 +7039,7 @@ export class TelegramBot {
         if (filtered.length > 0) return filtered;
         return strict ? [] : jobs;
     }
+
 
     private async fetchActiveJobs(
         limit: number = 1200,
@@ -7603,6 +7636,289 @@ export class TelegramBot {
         if (!value) return null;
         return String(value).trim() || null;
     }
+
+    private buildDistrictButtonsList(
+        jobs: any[],
+        lang: BotLang,
+        seekerGeo?: { latitude: number; longitude: number } | null
+    ): Array<{ id: string | number; name: string; count: number }> {
+        if (!Array.isArray(jobs) || jobs.length === 0) return [];
+
+        const grouped = new Map<string, { id: string | number; name: string; count: number; nearestKm: number | null }>();
+        for (const job of jobs) {
+            const districtName = this.getDistrictDisplayName(job, lang);
+            if (!districtName) continue;
+            const districtId = job?.district_id ?? districtName;
+            const districtKey = String(districtId);
+            const current = grouped.get(districtKey) || { id: districtId, name: districtName, count: 0, nearestKm: null };
+            current.count += 1;
+            if (seekerGeo) {
+                const km = this.getDistanceToJob(job, seekerGeo.latitude, seekerGeo.longitude);
+                if (km !== null) {
+                    current.nearestKm = current.nearestKm === null ? km : Math.min(current.nearestKm, km);
+                }
+            }
+            grouped.set(districtKey, current);
+        }
+
+        const ranked = Array.from(grouped.values())
+            .filter(item => item.count > 0)
+            .sort((a, b) => {
+                if (a.nearestKm !== null && b.nearestKm !== null && a.nearestKm !== b.nearestKm) {
+                    return a.nearestKm - b.nearestKm;
+                }
+                if (a.nearestKm !== null && b.nearestKm === null) return -1;
+                if (a.nearestKm === null && b.nearestKm !== null) return 1;
+                if (b.count !== a.count) return b.count - a.count;
+                return a.name.localeCompare(b.name);
+            })
+            .slice(0, 10);
+
+        return ranked.map(item => ({ id: item.id, name: item.name, count: item.count }));
+    }
+
+    private buildRegionButtonsList(
+        jobs: any[],
+        lang: BotLang,
+        excludeRegionId?: number | null
+    ): Array<{ id: string | number; name: string; count: number }> {
+        if (!Array.isArray(jobs) || jobs.length === 0) return [];
+
+        const grouped = new Map<string, { id: string | number; name: string; count: number }>();
+        for (const job of jobs) {
+            const regionId = job?.region_id;
+            if (!regionId || (excludeRegionId && regionId === excludeRegionId)) continue;
+            const regionName = lang === 'uz'
+                ? (job?.regions?.name_uz || job?.region_name || job?.raw_source_json?.region_name_uz)
+                : (job?.regions?.name_ru || job?.region_name || job?.raw_source_json?.region_name_ru);
+            if (!regionName) continue;
+            const regionKey = String(regionId);
+            const current = grouped.get(regionKey) || { id: regionId, name: regionName, count: 0 };
+            current.count += 1;
+            grouped.set(regionKey, current);
+        }
+
+        const ranked = Array.from(grouped.values())
+            .filter(item => item.count > 0)
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 10);
+
+        return ranked.map(item => ({ id: item.id, name: item.name, count: item.count }));
+    }
+
+    /**
+     * Show region search: displays matching vacancies in region and district buttons with counts
+     */
+    private async showRegionDistrictSearch(chatId: number, session: TelegramSession, messageId?: number): Promise<void> {
+        const lang = session.lang;
+        const jobList: any[] = Array.isArray(session.data?.job_list) ? session.data.job_list : [];
+        const currentIndex = Number.isFinite(session.data?.currentJobIndex) ? session.data.currentJobIndex : 0;
+        const currentJob = jobList[currentIndex];
+
+        const regionId = currentJob?.region_id || session.data?.search_region_id;
+        if (!regionId) {
+            await this.sendPrompt(chatId, session, lang === 'uz'
+                ? "Viloyat aniqlanmadi."
+                : "Регион не определён.", {
+                replyMarkup: keyboards.mainMenuKeyboard(lang, 'seeker')
+            });
+            return;
+        }
+
+        // Build user profile for accurate matching
+        const resume = session.data?.resume || {};
+        const desiredTitle = resume.desired_title || resume.field_title;
+        const fieldId = resume.field_id;
+        const userProfile = {
+            region_id: regionId,
+            district_id: resume.district_id || session.data?.search_district_id,
+            field_id: fieldId,
+            field_title: resume.field_title,
+            title: desiredTitle,
+            category_id: resume.category_id,
+            salary_min: resume.salary_min,
+            salary_max: resume.salary_max,
+            experience: resume.experience,
+            gender: resume.gender,
+            birth_date: resume.birth_date,
+            education_level: resume.education_level
+        };
+
+        // Fetch all jobs in this region
+        const regionJobs = await this.fetchActiveJobs(500, { regionId });
+
+        // Score ALL jobs, then filter by minimum relevance threshold
+        const allScored = matchAndSortJobs(userProfile, regionJobs);
+        const matchingJobs = allScored.filter((j: any) =>
+            j.matchScore >= 20 || j.matchCriteria?.profession || j.fieldExact
+        );
+        const totalJobs = matchingJobs.length;
+
+        // Get region name
+        const regionName = await this.getRegionNameById(regionId, lang) || (lang === 'uz' ? 'Viloyat' : 'Область');
+
+        // Build district buttons with MATCHING job counts (only districts with jobs)
+        const districtButtons = this.buildDistrictButtonsList(matchingJobs, lang);
+
+        // Create message text
+        const headerText = lang === 'uz'
+            ? `📍 <b>${regionName}</b> bo'yicha ${totalJobs} ta mos vakansiya topildi:\n\nQuyidagi tuman/shaharlarni tanlang:`
+            : `📍 В <b>${regionName}</b> найдено ${totalJobs} подходящих вакансий:\n\nВыберите район/город:`;
+
+        // Delete previous job card message if exists
+        if (messageId) {
+            try {
+                await deleteMessage(chatId, messageId);
+            } catch { /* ignore */ }
+        }
+
+        // Delete the last prompt message if exists
+        if (session.data?.lastPromptMessageId) {
+            try {
+                await deleteMessage(chatId, session.data.lastPromptMessageId);
+            } catch { /* ignore */ }
+        }
+
+        // Delete map (location) message if exists
+        if (session.data?.last_job_location_message_id) {
+            try {
+                await deleteMessage(chatId, session.data.last_job_location_message_id);
+            } catch { /* ignore */ }
+        }
+
+        // Delete address text message if exists
+        if (session.data?.last_job_location_text_message_id) {
+            try {
+                await deleteMessage(chatId, session.data.last_job_location_text_message_id);
+            } catch { /* ignore */ }
+        }
+
+        // Delete last job card message if exists (in case it wasn't deleted by messageId)
+        if (session.data?.last_job_message_id && session.data.last_job_message_id !== messageId) {
+            try {
+                await deleteMessage(chatId, session.data.last_job_message_id);
+            } catch { /* ignore */ }
+        }
+
+        await this.sendPrompt(chatId, session, headerText, {
+            parseMode: 'HTML',
+            replyMarkup: keyboards.districtJobsFallbackKeyboard(lang, districtButtons)
+        });
+    }
+
+    /**
+     * Handle district search: search for matching jobs in selected district
+     */
+    private async handleDistrictSearch(chatId: number, districtValue: string, session: TelegramSession): Promise<void> {
+        const lang = session.lang;
+
+        // Get search criteria from session
+        const resume = session.data?.resume || {};
+        const desiredTitle = resume.desired_title || resume.field_title;
+        const fieldId = resume.field_id;
+        const jobList: any[] = Array.isArray(session.data?.job_list) ? session.data.job_list : [];
+        const currentIndex = Number.isFinite(session.data?.currentJobIndex) ? session.data.currentJobIndex : 0;
+        const currentJob = jobList[currentIndex];
+        const regionId = currentJob?.region_id || session.data?.search_region_id;
+
+        // Build user profile for matching
+        const userProfile = {
+            region_id: regionId,
+            district_id: districtValue !== 'all' ? parseInt(districtValue) : null,
+            field_id: fieldId,
+            field_title: resume.field_title,
+            title: desiredTitle,
+            category_id: resume.category_id,
+            salary_min: resume.salary_min,
+            salary_max: resume.salary_max,
+            experience: resume.experience,
+            gender: resume.gender,
+            birth_date: resume.birth_date,
+            education_level: resume.education_level
+        };
+
+        if (districtValue === 'all') {
+            // Search all vacancies in the region
+            if (!regionId) {
+                await this.sendPrompt(chatId, session, lang === 'uz'
+                    ? "Viloyat aniqlanmadi."
+                    : "Регион не определён.", {
+                    replyMarkup: keyboards.mainMenuKeyboard(lang, 'seeker')
+                });
+                return;
+            }
+
+            const regionJobs = await this.fetchActiveJobs(500, { regionId });
+            // Score ALL jobs, then filter by minimum relevance threshold
+            const allScored = matchAndSortJobs(userProfile, regionJobs);
+            const matchedJobs = allScored.filter((j: any) =>
+                j.matchScore >= 20 || j.matchCriteria?.profession || j.fieldExact
+            );
+
+            if (matchedJobs.length === 0) {
+                await this.sendPrompt(chatId, session, lang === 'uz'
+                    ? "Mos vakansiyalar topilmadi."
+                    : "Подходящие вакансии не найдены.", {
+                    replyMarkup: keyboards.mainMenuKeyboard(lang, 'seeker')
+                });
+                return;
+            }
+
+            // Update session with matched jobs (with scores) and start browsing
+            await this.setSession(session, {
+                state: BotState.BROWSING_JOBS,
+                data: {
+                    ...session.data,
+                    job_list: matchedJobs,
+                    currentJobIndex: 0,
+                    search_region_id: regionId
+                }
+            });
+            await this.showJob(chatId, session, 0);
+            return;
+        }
+
+        // Search in specific district
+        const districtId = parseInt(districtValue);
+        if (isNaN(districtId)) {
+            await this.sendPrompt(chatId, session, lang === 'uz'
+                ? "Noto'g'ri tuman."
+                : "Неверный район.", {
+                replyMarkup: keyboards.mainMenuKeyboard(lang, 'seeker')
+            });
+            return;
+        }
+
+        const districtJobs = await this.fetchActiveJobs(500, { districtId });
+        // Score ALL jobs, then filter by minimum relevance threshold
+        const allScored = matchAndSortJobs(userProfile, districtJobs);
+        const matchedJobs = allScored.filter((j: any) =>
+            j.matchScore >= 20 || j.matchCriteria?.profession || j.fieldExact
+        );
+
+        if (matchedJobs.length === 0) {
+            await this.sendPrompt(chatId, session, lang === 'uz'
+                ? "Bu tumanda mos vakansiyalar topilmadi."
+                : "В этом районе подходящие вакансии не найдены.", {
+                replyMarkup: keyboards.mainMenuKeyboard(lang, 'seeker')
+            });
+            return;
+        }
+
+        // Update session with matched jobs (with scores) and start browsing
+        await this.setSession(session, {
+            state: BotState.BROWSING_JOBS,
+            data: {
+                ...session.data,
+                job_list: matchedJobs,
+                currentJobIndex: 0,
+                search_district_id: districtId,
+                search_region_id: regionId
+            }
+        });
+        await this.showJob(chatId, session, 0);
+    }
+
 
     private async handleFavorite(chatId: number, jobId: string, session: TelegramSession): Promise<void> {
         const lang = session.lang;
@@ -8748,9 +9064,43 @@ export class TelegramBot {
             }
         }
 
+        // Count region vacancies for "search by region" button (only matching vacancies)
+        let regionVacancyCount = 0;
+        const regionId = job.region_id || session.data?.search_region_id;
+        if (regionId) {
+            try {
+                const resume = session.data?.resume || {};
+                const desiredTitle = resume.desired_title || resume.field_title;
+                const fieldId = resume.field_id;
+                const userProfile = {
+                    region_id: regionId,
+                    district_id: resume.district_id || session.data?.search_district_id,
+                    field_id: fieldId,
+                    field_title: resume.field_title,
+                    title: desiredTitle,
+                    category_id: resume.category_id,
+                    salary_min: resume.salary_min,
+                    salary_max: resume.salary_max,
+                    experience: resume.experience,
+                    gender: resume.gender,
+                    birth_date: resume.birth_date,
+                    education_level: resume.education_level
+                };
+                const regionJobs = await this.fetchActiveJobs(500, { regionId });
+                // Score ALL jobs, then filter by minimum relevance threshold
+                const allScored = matchAndSortJobs(userProfile, regionJobs);
+                const matchedJobs = allScored.filter((j: any) =>
+                    j.matchScore >= 20 || j.matchCriteria?.profession || j.fieldExact
+                );
+                regionVacancyCount = matchedJobs.length;
+            } catch {
+                // ignore errors
+            }
+        }
+
         const sent = await sendMessage(chatId, text, {
             parseMode: 'HTML',
-            replyMarkup: keyboards.jobNavigationKeyboard(lang, safeIndex, jobList.length, jobId, session.data?.job_source, isFavorite)
+            replyMarkup: keyboards.jobNavigationKeyboard(lang, safeIndex, jobList.length, jobId, session.data?.job_source, isFavorite, regionVacancyCount)
         });
 
         let lastLocationMessageId = session.data?.last_job_location_message_id;
