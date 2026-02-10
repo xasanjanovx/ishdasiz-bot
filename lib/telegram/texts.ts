@@ -391,8 +391,8 @@ export const botTexts = {
 
     // Roles / employer
     selectRole: {
-        uz: '👥 Kim sifatida kirmoqchisiz?',
-        ru: '👥 Войти как:'
+        uz: '👥 Rolni tanlang:\n\n🧾 Ish qidiruvchi — rezyume yaratish va ish topish\n🏢 Ish beruvchi — vakansiya joylash va nomzod topish',
+        ru: '👥 Выберите роль:\n\n🧾 Соискатель — создать резюме и найти работу\n🏢 Работодатель — разместить вакансию и найти кандидатов'
     },
     roleSeeker: {
         uz: 'Ish qidiruvchi',
@@ -403,24 +403,24 @@ export const botTexts = {
         ru: 'Работодатель'
     },
     employerWelcome: {
-        uz: 'Ish beruvchi bo‘limiga xush kelibsiz!',
-        ru: 'Добро пожаловать в раздел работодателя!'
+        uz: '🏢 Ish beruvchi kabinetiga xush kelibsiz.\n\n📢 «Vakansiya joylash» orqali yangi vakansiya yarating.\n📋 «Mening vakansiyalarim» bo‘limida e’lonlarni boshqaring.\n🧑‍💼 «Ishchi qidirish» orqali mos nomzodlarni toping.',
+        ru: '🏢 Добро пожаловать в кабинет работодателя.\n\n📢 Через «Разместить вакансию» создайте новую вакансию.\n📋 В «Мои вакансии» управляйте опубликованными вакансиями.\n🧑‍💼 Через «Найти сотрудника» подберите подходящих кандидатов.'
     },
     employerMainMenu: {
         uz: 'Ish beruvchi menyusi:',
         ru: 'Меню работодателя:'
     },
     employerProfileIntro: {
-        uz: "🏢 | Ish beruvchi profili\n| Faqat kompaniya nomini kiriting.",
-        ru: '🏢 | Профиль работодателя\n| Введите только название компании.'
+        uz: '🏢 | Ish beruvchi profili',
+        ru: '🏢 | Профиль работодателя'
     },
     companyNamePrompt: {
-        uz: '🏢 Kompaniya nomini kiriting:',
-        ru: '🏢 Введите название компании:'
+        uz: '<b>🏢 Kompaniya nomini kiriting</b>\n<i>Masalan: “Andijon Textile MCHJ”</i>',
+        ru: '<b>🏢 Введите название компании</b>\n<i>Например: “Andijon Textile LLC”</i>'
     },
     employerDirectorPrompt: {
-        uz: '<b>👤 Mas’ul shaxs</b>',
-        ru: '<b>👤 Ответственное лицо</b>'
+        uz: '<b>👤 Mas’ul shaxs (HR menejeri)</b>\n<i>Masalan: Azizbek Mamadiyev</i>',
+        ru: '<b>👤 Ответственное лицо (HR менеджер)</b>\n<i>Например: Азизбек Мамадиев</i>'
     },
     employerIndustryPrompt: {
         uz: '<b>🏭 Faoliyat sohasi</b>',
@@ -431,20 +431,20 @@ export const botTexts = {
         ru: '<b>👥 Размер компании</b>'
     },
     employerRegionPrompt: {
-        uz: '<b>📍 Kompaniya joylashuvi (viloyat)</b>',
-        ru: '<b>📍 Регион компании</b>'
+        uz: '<b>📍 Kompaniya joylashuvi (viloyat)</b>\n<i>Masalan: Andijon viloyati</i>',
+        ru: '<b>📍 Регион компании</b>\n<i>Например: Андижанская область</i>'
     },
     employerDistrictPrompt: {
-        uz: '<b>🏙️ Tuman/Shaharni tanlang</b>',
-        ru: '<b>🏙️ Выберите район/город</b>'
+        uz: '<b>🏙️ Tuman/Shaharni tanlang</b>\n<i>Masalan: Andijon shahri yoki Asaka tumani</i>',
+        ru: '<b>🏙️ Выберите район/город</b>\n<i>Например: г. Андижан или Асакинский район</i>'
     },
     employerAddressPrompt: {
-        uz: '<b>📌 Ish joy manzili</b>',
-        ru: '<b>📌 Адрес работы</b>'
+        uz: '<b>📌 Ish joy manzili</b>\n<i>Masalan: Andijon sh., Bobur ko‘chasi 12</i>',
+        ru: '<b>📌 Адрес работы</b>\n<i>Например: г. Андижан, ул. Бобур, 12</i>'
     },
     employerDescriptionPrompt: {
-        uz: '<b>📝 Kompaniya haqida qisqacha</b>',
-        ru: '<b>📝 Коротко о компании</b>'
+        uz: '<b>📝 Kompaniya haqida qisqacha</b>\n<i>Masalan: “To‘qimachilik korxonasi, 120+ xodim”</i>',
+        ru: '<b>📝 Коротко о компании</b>\n<i>Например: “Текстильная компания, 120+ сотрудников”</i>'
     },
     jobCreateMode: {
         uz: '📢 Vakansiya yaratish usulini tanlang:',
@@ -459,32 +459,32 @@ export const botTexts = {
         ru: '<b>📌 Укажите адрес работы</b>\n<i>Например: г. Андижан, ул. Бобур 12</i>'
     },
     jobWorkModePrompt: {
-        uz: '<b>🏷️ Ish usuli</b>',
-        ru: '<b>🏷️ Формат работы</b>'
+        uz: '<b>🏷️ Ish usuli</b>\n<i>Masalan: Ofis / Masofaviy / Gibrid</i>',
+        ru: '<b>🏷️ Формат работы</b>\n<i>Например: Офис / Удалённо / Гибрид</i>'
     },
     jobEmploymentPrompt: {
-        uz: '<b>💼 Bandlik turi</b>',
-        ru: '<b>💼 Тип занятости</b>'
+        uz: '<b>💼 Bandlik turi</b>\n<i>Masalan: To‘liq stavka yoki Qisman</i>',
+        ru: '<b>💼 Тип занятости</b>\n<i>Например: Полная ставка или Неполная</i>'
     },
     jobWorkingDaysPrompt: {
-        uz: '<b>📅 Ish kunlari</b>',
-        ru: '<b>📅 График</b>'
+        uz: '<b>📅 Ish kunlari</b>\n<i>Masalan: 5 kunlik yoki 6 kunlik</i>',
+        ru: '<b>📅 График</b>\n<i>Например: 5-дневка или 6-дневка</i>'
     },
     jobWorkingHoursPrompt: {
         uz: '<b>⏰ Ish vaqti</b>\n<i>Masalan: 09:00-18:00</i>',
         ru: '<b>⏰ Время работы</b>\n<i>Например: 09:00-18:00</i>'
     },
     jobExperiencePrompt: {
-        uz: '<b>🧠 Tajriba talabi</b>',
-        ru: '<b>🧠 Требуемый опыт</b>'
+        uz: '<b>🧠 Tajriba talabi</b>\n<i>Masalan: 1-3 yil yoki 3+ yil</i>',
+        ru: '<b>🧠 Требуемый опыт</b>\n<i>Например: 1-3 года или 3+ лет</i>'
     },
     jobEducationPrompt: {
-        uz: "<b>🎓 Ma'lumot talabi</b>",
-        ru: '<b>🎓 Требуемое образование</b>'
+        uz: "<b>🎓 Ma'lumot talabi</b>\n<i>Masalan: O'rta maxsus yoki Oliy</i>",
+        ru: '<b>🎓 Требуемое образование</b>\n<i>Например: Среднее специальное или Высшее</i>'
     },
     jobGenderPrompt: {
-        uz: '<b>🚻 Jins talabi</b>',
-        ru: '<b>🚻 Требование по полу</b>'
+        uz: '<b>🚻 Jins talabi</b>\n<i>Ahamiyatsiz bo‘lsa “Ahamiyatsiz”ni tanlang</i>',
+        ru: '<b>🚻 Требование по полу</b>\n<i>Если не важно, выберите “Не важно”</i>'
     },
     jobAgePrompt: {
         uz: '<b>🎂 Yosh oralig‘i</b>\n<i>Masalan: 18-35 yoki 18+</i>',
@@ -513,8 +513,8 @@ export const botTexts = {
 
     // Employer posting
     postJobTitle: {
-        uz: "<b>📝 Qanday ishchi qidiryapsiz? (lavozim)</b>\n<i>Masalan: Boshqaruvchi, Bosh buxgalter, HR menejer, SMM menejer, Dasturchi</i>",
-        ru: '<b>📝 Какого сотрудника вы ищете? (должность)</b>\n<i>Например: Руководитель, Главный бухгалтер, HR-менеджер, SMM-менеджер, Разработчик</i>'
+        uz: "<b>📝 Qanday ishchi qidiryapsiz? (lavozim)</b>\n<i>Kamida 3 ta harf kiriting.</i>\n<i>Masalan: Boshqaruvchi, Bosh buxgalter, HR menejer, SMM menejer, Dasturchi</i>",
+        ru: '<b>📝 Какого сотрудника вы ищете? (должность)</b>\n<i>Введите минимум 3 буквы.</i>\n<i>Например: Руководитель, Главный бухгалтер, HR-менеджер, SMM-менеджер, Разработчик</i>'
     },
     postJobCategory: {
         uz: '🧭 Vakansiya sohasini tanlang:',
@@ -529,8 +529,8 @@ export const botTexts = {
         ru: '<b>💰 Максимальная зарплата (необязательно)</b>\n<i>Например: 8 000 000. Если максимума нет — нажмите “Продолжить”.</i>'
     },
     postJobRegion: {
-        uz: '<b>📍 Ish joyi qayerda?</b>',
-        ru: '<b>📍 Где находится работа?</b>'
+        uz: '<b>📍 Ish joyi qayerda?</b>\n<i>Masalan: Andijon viloyati</i>\n<i>Viloyatni tanlang</i>',
+        ru: '<b>📍 Где находится работа?</b>\n<i>Например: Андижанская область</i>\n<i>Выберите область</i>'
     },
     postJobDescription: {
         uz: '<b>📌 Vakansiya haqida batafsil yozing</b>\n<i>Talablar va vazifalar:</i>\n- ...\n- ...\n- ...',
@@ -551,6 +551,14 @@ export const botTexts = {
     noVacancies: {
         uz: 'Sizda hali vakansiyalar yo‘q.',
         ru: 'У вас пока нет вакансий.'
+    },
+    employerNoVacanciesHint: {
+        uz: "ℹ️ Hali vakansiya yo'q.\n\n📢 «Vakansiya joylash» orqali birinchi vakansiyani yarating.",
+        ru: "ℹ️ Пока нет вакансий.\n\n📢 Создайте первую вакансию через «Разместить вакансию»."
+    },
+    minThreeChars: {
+        uz: '❗ Kamida 3 ta harf kiriting.',
+        ru: '❗ Введите минимум 3 буквы.'
     },
 
     // Subscriptions

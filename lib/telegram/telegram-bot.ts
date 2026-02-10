@@ -859,7 +859,7 @@ export class TelegramBot {
             BotState.POSTING_JOB_DESCRIPTION,
             BotState.EMPLOYER_PROFILE_COMPANY,
             BotState.EMPLOYER_PROFILE_DIRECTOR,
-            BotState.EMPLOYER_PROFILE_INDUSTRY,
+            BotState.EMPLOYER_PROFILE_ADDRESS,
             BotState.EMPLOYER_PROFILE_DESCRIPTION
         ].includes(state);
     }
@@ -914,8 +914,8 @@ export class TelegramBot {
                 return { text: botTexts.companyNamePrompt[lang], replyMarkup: backMarkup };
             case BotState.EMPLOYER_PROFILE_DIRECTOR:
                 return { text: botTexts.employerDirectorPrompt[lang], replyMarkup: backMarkup };
-            case BotState.EMPLOYER_PROFILE_INDUSTRY:
-                return { text: botTexts.employerIndustryPrompt[lang], replyMarkup: backMarkup };
+            case BotState.EMPLOYER_PROFILE_ADDRESS:
+                return { text: botTexts.employerAddressPrompt[lang], replyMarkup: backMarkup };
             case BotState.EMPLOYER_PROFILE_DESCRIPTION:
                 return { text: botTexts.employerDescriptionPrompt[lang], replyMarkup: backMarkup };
             default:
@@ -1405,7 +1405,21 @@ export class TelegramBot {
         options: { replyMarkup?: any; parseMode?: 'HTML' | 'Markdown' | 'MarkdownV2' } = {}
     ): Promise<void> {
         const safeText = text && String(text).trim().length > 0 ? text : botTexts.error[session.lang || 'uz'];
-        const lastPromptId = session.data?.last_prompt_message_id;
+        let latestData = (session.data && typeof session.data === 'object') ? session.data : {};
+        try {
+            const { data: latest } = await this.supabase
+                .from('telegram_sessions')
+                .select('data')
+                .eq('telegram_user_id', session.telegram_user_id)
+                .maybeSingle();
+            if (latest?.data && typeof latest.data === 'object') {
+                latestData = latest.data;
+            }
+        } catch {
+            // ignore fetch errors and continue with in-memory session data
+        }
+
+        const lastPromptId = latestData?.last_prompt_message_id || session.data?.last_prompt_message_id;
         if (lastPromptId) {
             try {
                 await deleteMessage(chatId, lastPromptId);
@@ -1428,7 +1442,7 @@ export class TelegramBot {
         }
         const messageId = result?.message_id;
         if (messageId) {
-            const updatedData = { ...session.data, last_prompt_message_id: messageId };
+            const updatedData = { ...(session.data || {}), ...(latestData || {}), last_prompt_message_id: messageId };
             session.data = updatedData;
             await this.updateSession(session.telegram_user_id, { data: updatedData });
         }
@@ -1736,9 +1750,23 @@ export class TelegramBot {
                 case 'distpage': await this.showDistrictPage(chatId, parseInt(value), session, message.message_id); break;
                 case 'category': await this.handleCategorySelect(chatId, value, session, message.message_id); break;
                 case 'field': await this.handleFieldSelect(chatId, value, session, message.message_id); break;
-                case 'fieldpage': await this.showFieldPage(chatId, parseInt(value), session, message.message_id); break;
-                case 'experience': await this.handleExperienceSelect(chatId, value, session, message.message_id); break;
+                case 'fieldpage': await this.showFieldPage(chatId, Number.parseInt(value, 10), session, message.message_id); break;
+                case 'jobexperience': await this.handleExperienceSelect(chatId, value, session, message.message_id); break;
+                case 'experience':
+                    if (session.data?.active_role === 'employer' && session.state !== BotState.POSTING_JOB_EXPERIENCE) {
+                        await this.setSession(session, { state: BotState.POSTING_JOB_EXPERIENCE });
+                    }
+                    await this.handleExperienceSelect(chatId, value, session, message.message_id);
+                    break;
+                case 'jobeducation': await this.handleEducationSelect(chatId, value, session, message.message_id); break;
                 case 'education':
+                    if (session.data?.active_role === 'employer') {
+                        if (session.state !== BotState.POSTING_JOB_EDUCATION) {
+                            await this.setSession(session, { state: BotState.POSTING_JOB_EDUCATION });
+                        }
+                        await this.handleEducationSelect(chatId, value, session, message.message_id);
+                        break;
+                    }
                     if (value === 'add') {
                         await this.setSession(session, { state: BotState.ENTERING_EDUCATION_PLACE, data: { ...session.data, education_pending: null } });
                         await this.setFlowCancelKeyboard(chatId, session, 'back');
@@ -1762,7 +1790,13 @@ export class TelegramBot {
                         await this.finishEducationStep(chatId, session);
                     }
                     break;
-                case 'gender': await this.handleGenderSelect(chatId, value, session, message.message_id); break;
+                case 'jobgender': await this.handleGenderSelect(chatId, value, session, message.message_id); break;
+                case 'gender':
+                    if (session.data?.active_role === 'employer' && session.state !== BotState.POSTING_JOB_GENDER) {
+                        await this.setSession(session, { state: BotState.POSTING_JOB_GENDER });
+                    }
+                    await this.handleGenderSelect(chatId, value, session, message.message_id);
+                    break;
                 case 'special': await this.handleSpecialCriteria(chatId, value, session, message.message_id); break;
                 case 'salary': await this.handleSalarySelect(chatId, value, session, message.message_id); break;
                 case 'jobsalary': await this.handleJobSalaryQuick(chatId, value, session, message.message_id); break;
@@ -1918,6 +1952,9 @@ export class TelegramBot {
                         await this.showRegionDistrictSearch(chatId, session, message?.message_id);
                     }
                     break;
+                case 'searchregion':
+                    await this.handleSearchRegionSelect(chatId, value, session, message.message_id);
+                    break;
                 case 'searchdist':
                     await this.handleDistrictSearch(chatId, value, session);
                     break;
@@ -1992,7 +2029,7 @@ export class TelegramBot {
             if (resume) {
                 await this.showResumeList(chatId, session);
             } else {
-                await this.startResumeFlow(chatId, session);
+                await this.startResumeFlow(chatId, session, 'role_pick');
             }
         }
     }
@@ -2011,7 +2048,7 @@ export class TelegramBot {
         });
 
         await this.sendPrompt(chatId, session, `${botTexts.employerProfileIntro[lang]}\n\n${botTexts.companyNamePrompt[lang]}`, {
-            replyMarkup: keyboards.cancelReplyKeyboard(lang)
+            replyMarkup: keyboards.backKeyboard(lang, 'role_pick')
         });
     }
 
@@ -2455,7 +2492,7 @@ export class TelegramBot {
                 return;
             }
             await this.setSession(session, { data: { ...session.data, password_flow: null } });
-            await sendMessage(chatId, botTexts.passwordCreated[lang]);
+            await this.sendPrompt(chatId, session, botTexts.passwordCreated[lang]);
             await this.finalizeLogin(chatId, phone, session);
             return;
         }
@@ -2510,7 +2547,7 @@ export class TelegramBot {
             .update({ login_attempts: 0, locked_until: null })
             .eq('id', user.id);
 
-        await sendMessage(chatId, botTexts.loginSuccess[lang]);
+        await this.sendPrompt(chatId, session, botTexts.loginSuccess[lang]);
         await this.setSession(session, { data: { ...session.data, password_flow: null } });
         await this.finalizeLogin(chatId, phone, session);
     }
@@ -2519,7 +2556,7 @@ export class TelegramBot {
         const lang = session.lang;
         const userId = await this.findOrCreateUser(phone, session.telegram_user_id);
         if (!userId) {
-            await sendMessage(chatId, botTexts.error[lang]);
+            await this.sendPrompt(chatId, session, botTexts.error[lang]);
             return;
         }
 
@@ -3100,7 +3137,11 @@ export class TelegramBot {
                 : `${botTexts.fieldMinChars[lang]}\n\n${botTexts.askField[lang]}`;
             const options = { replyMarkup: keyboards.backKeyboard(lang, backAction) };
             if (messageId) {
-                await editMessage(chatId, messageId, text, options);
+                try {
+                    await editMessage(chatId, messageId, text, options);
+                } catch {
+                    await this.sendPrompt(chatId, session, text, options);
+                }
             } else {
                 await sendMessage(chatId, text, options);
             }
@@ -3119,7 +3160,11 @@ export class TelegramBot {
             replyMarkup: keyboards.fieldsKeyboard(lang, fields, backAction, safePage, perPage)
         };
         if (messageId) {
-            await editMessage(chatId, messageId, promptText, options);
+            try {
+                await editMessage(chatId, messageId, promptText, options);
+            } catch {
+                await this.sendPrompt(chatId, session, promptText, options);
+            }
         } else {
             await sendMessage(chatId, promptText, options);
         }
@@ -4433,45 +4478,63 @@ export class TelegramBot {
 
         // EMPLOYER PROFILE FLOW
         if (state === BotState.EMPLOYER_PROFILE_COMPANY) {
+            const companyName = text.trim();
+            if (companyName.length < 3) {
+                await this.sendPrompt(chatId, session, `${botTexts.minThreeChars[lang]}\n\n${botTexts.companyNamePrompt[lang]}`, {
+                    replyMarkup: keyboards.backKeyboard(lang, 'employer_menu')
+                });
+                return;
+            }
             const draft = { ...(session.data?.employer_profile || {}) };
-            draft.company_name = text.trim();
+            draft.company_name = companyName;
             await this.setSession(session, { state: BotState.EMPLOYER_PROFILE_DIRECTOR, data: { ...session.data, employer_profile: draft } });
             await this.sendPrompt(chatId, session, botTexts.employerDirectorPrompt[lang], { replyMarkup: keyboards.backKeyboard(lang, 'employer_company') });
             return;
         }
 
         if (state === BotState.EMPLOYER_PROFILE_DIRECTOR) {
+            const directorName = text.trim();
+            if (directorName.length < 3) {
+                await this.sendPrompt(chatId, session, `${botTexts.minThreeChars[lang]}\n\n${botTexts.employerDirectorPrompt[lang]}`, {
+                    replyMarkup: keyboards.backKeyboard(lang, 'employer_company')
+                });
+                return;
+            }
             const draft = { ...(session.data?.employer_profile || {}) };
-            draft.director_name = text.trim();
-            await this.setSession(session, { state: BotState.EMPLOYER_PROFILE_INDUSTRY, data: { ...session.data, employer_profile: draft } });
-            await this.sendPrompt(chatId, session, botTexts.employerIndustryPrompt[lang], { replyMarkup: keyboards.backKeyboard(lang, 'employer_director') });
+            draft.director_name = directorName;
+            await this.finalizeEmployerProfile(chatId, session, draft);
             return;
         }
 
         if (state === BotState.EMPLOYER_PROFILE_INDUSTRY) {
             const draft = { ...(session.data?.employer_profile || {}) };
-            draft.industry = text.trim();
-            await this.setSession(session, { state: BotState.EMPLOYER_PROFILE_SIZE, data: { ...session.data, employer_profile: draft } });
-            await this.sendPrompt(chatId, session, botTexts.employerSizePrompt[lang], { replyMarkup: keyboards.backKeyboard(lang, 'employer_industry') });
+            if (!draft.director_name && text.trim().length >= 3) {
+                draft.director_name = text.trim();
+            }
+            await this.finalizeEmployerProfile(chatId, session, draft);
             return;
         }
 
         if (state === BotState.EMPLOYER_PROFILE_SIZE) {
             const draft = { ...(session.data?.employer_profile || {}) };
-            draft.company_size = text.trim();
-            await this.setSession(session, { state: BotState.EMPLOYER_PROFILE_REGION, data: { ...session.data, employer_profile: draft } });
-            const regions = await this.getRegions();
-            await this.sendPrompt(chatId, session, botTexts.employerRegionPrompt[lang], {
-                replyMarkup: keyboards.regionKeyboard(lang, regions, 'employer_size')
-            });
+            if (!draft.director_name && text.trim().length >= 3) {
+                draft.director_name = text.trim();
+            }
+            await this.finalizeEmployerProfile(chatId, session, draft);
             return;
         }
 
         if (state === BotState.EMPLOYER_PROFILE_ADDRESS) {
+            const address = text.trim();
+            if (address.length < 3) {
+                await this.sendPrompt(chatId, session, `${botTexts.minThreeChars[lang]}\n\n${botTexts.employerAddressPrompt[lang]}`, {
+                    replyMarkup: keyboards.backKeyboard(lang, 'employer_region')
+                });
+                return;
+            }
             const draft = { ...(session.data?.employer_profile || {}) };
-            draft.address = text.trim();
-            await this.setSession(session, { state: BotState.EMPLOYER_PROFILE_DESCRIPTION, data: { ...session.data, employer_profile: draft } });
-            await this.sendPrompt(chatId, session, botTexts.employerDescriptionPrompt[lang], { replyMarkup: keyboards.backKeyboard(lang, 'employer_address') });
+            draft.address = address;
+            await this.finalizeEmployerProfile(chatId, session, draft);
             return;
         }
 
@@ -4484,6 +4547,12 @@ export class TelegramBot {
 
         if (state === BotState.POSTING_JOB_TITLE) {
             const title = text.trim();
+            if (title.length < 3) {
+                await this.sendPrompt(chatId, session, `${botTexts.fieldMinChars[lang]}\n\n${botTexts.postJobTitle[lang]}`, {
+                    replyMarkup: keyboards.backKeyboard(lang, 'employer_menu')
+                });
+                return;
+            }
             const fields = await this.getOsonishFields(title);
             const matches = fields.length ? this.pickFieldMatches(fields, title, 300) : [];
             await this.updateSession(session.telegram_user_id, {
@@ -4549,7 +4618,14 @@ export class TelegramBot {
         }
 
         if (state === BotState.POSTING_JOB_ADDRESS) {
-            const updatedJob = { ...session.data?.temp_job, address: text.trim() };
+            const address = text.trim();
+            if (address.length < 3) {
+                await this.sendPrompt(chatId, session, `${botTexts.minThreeChars[lang]}\n\n${botTexts.jobAddressPrompt[lang]}`, {
+                    replyMarkup: keyboards.backKeyboard(lang, 'job_district')
+                });
+                return;
+            }
+            const updatedJob = { ...session.data?.temp_job, address };
             await this.updateSession(session.telegram_user_id, {
                 state: BotState.POSTING_JOB_WORK_MODE,
                 data: { ...session.data, temp_job: updatedJob }
@@ -4611,7 +4687,14 @@ export class TelegramBot {
         }
 
         if (state === BotState.POSTING_JOB_HR_NAME) {
-            const updatedJob = { ...session.data?.temp_job, hr_name: text.trim() || null };
+            const hrName = text.trim();
+            if (hrName.length < 3) {
+                await this.sendPrompt(chatId, session, `${botTexts.minThreeChars[lang]}\n\n${botTexts.jobHrPrompt[lang]}`, {
+                    replyMarkup: keyboards.backKeyboard(lang, 'job_benefits')
+                });
+                return;
+            }
+            const updatedJob = { ...session.data?.temp_job, hr_name: hrName };
             await this.updateSession(session.telegram_user_id, {
                 state: BotState.POSTING_JOB_CONTACT_PHONE,
                 data: { ...session.data, temp_job: updatedJob }
@@ -4632,7 +4715,14 @@ export class TelegramBot {
         }
 
         if (state === BotState.POSTING_JOB_DESCRIPTION) {
-            const updatedJob = { ...session.data?.temp_job, description: text.trim() };
+            const description = text.trim();
+            if (description.length < 3) {
+                await this.sendPrompt(chatId, session, `${botTexts.minThreeChars[lang]}\n\n${botTexts.postJobDescription[lang]}`, {
+                    replyMarkup: keyboards.backKeyboard(lang, 'job_contact')
+                });
+                return;
+            }
+            const updatedJob = { ...session.data?.temp_job, description };
             await this.updateSession(session.telegram_user_id, {
                 state: BotState.POSTING_JOB_CONFIRM,
                 data: { ...session.data, temp_job: updatedJob }
@@ -5222,6 +5312,14 @@ export class TelegramBot {
             return;
         }
 
+        if (target === 'role_pick') {
+            await this.setSession(session, { state: BotState.SELECTING_ROLE });
+            await this.sendPrompt(chatId, session, botTexts.selectRole[lang], {
+                replyMarkup: keyboards.roleSelectionKeyboard(lang)
+            });
+            return;
+        }
+
         if (target === 'employer_menu') {
             await this.setSession(session, { state: BotState.EMPLOYER_MAIN_MENU });
             await this.sendPrompt(chatId, session, botTexts.employerMainMenu[lang], {
@@ -5341,14 +5439,14 @@ export class TelegramBot {
         }
 
         if (target === 'employer_size') {
-            await this.setSession(session, { state: BotState.EMPLOYER_PROFILE_SIZE });
-            await this.sendPrompt(chatId, session, botTexts.employerSizePrompt[lang], { replyMarkup: keyboards.backKeyboard(lang, 'employer_industry') });
+            await this.setSession(session, { state: BotState.EMPLOYER_PROFILE_DIRECTOR });
+            await this.sendPrompt(chatId, session, botTexts.employerDirectorPrompt[lang], { replyMarkup: keyboards.backKeyboard(lang, 'employer_company') });
             return;
         }
 
         if (target === 'employer_industry') {
-            await this.setSession(session, { state: BotState.EMPLOYER_PROFILE_INDUSTRY });
-            await this.sendPrompt(chatId, session, botTexts.employerIndustryPrompt[lang], { replyMarkup: keyboards.backKeyboard(lang, 'employer_director') });
+            await this.setSession(session, { state: BotState.EMPLOYER_PROFILE_DIRECTOR });
+            await this.sendPrompt(chatId, session, botTexts.employerDirectorPrompt[lang], { replyMarkup: keyboards.backKeyboard(lang, 'employer_company') });
             return;
         }
 
@@ -5377,7 +5475,7 @@ export class TelegramBot {
             const regions = await this.getRegions();
             await this.setSession(session, { state: BotState.EMPLOYER_PROFILE_REGION });
             await this.sendPrompt(chatId, session, botTexts.employerRegionPrompt[lang], {
-                replyMarkup: keyboards.regionKeyboard(lang, regions, 'employer_size')
+                replyMarkup: keyboards.regionKeyboard(lang, regions, 'employer_director')
             });
             return;
         }
@@ -5679,7 +5777,7 @@ export class TelegramBot {
         );
     }
 
-    private async startResumeFlow(chatId: number, session: TelegramSession): Promise<void> {
+    private async startResumeFlow(chatId: number, session: TelegramSession, backTarget: string = 'main_menu'): Promise<void> {
         const lang = session.lang;
         const updatedData = {
             ...session.data,
@@ -5719,7 +5817,7 @@ export class TelegramBot {
         });
         await this.setFlowCancelKeyboard(chatId, session, 'back');
         await this.sendPrompt(chatId, session, botTexts.askName[lang], {
-            replyMarkup: keyboards.backKeyboard(lang, 'main_menu')
+            replyMarkup: keyboards.backKeyboard(lang, backTarget)
         });
     }
 
@@ -7706,17 +7804,133 @@ export class TelegramBot {
         return ranked.map(item => ({ id: item.id, name: item.name, count: item.count }));
     }
 
+    private async getMergedResumeForSearch(session: TelegramSession): Promise<any> {
+        const sessionResume = session.data?.resume && typeof session.data.resume === 'object'
+            ? session.data.resume
+            : {};
+        const persistedResume = await this.getActiveOrLatestResume(session);
+        if (persistedResume && sessionResume && Object.keys(sessionResume).length > 0) {
+            return { ...persistedResume, ...sessionResume };
+        }
+        return persistedResume || sessionResume || {};
+    }
+
+    private async getRegionMatchedJobsForResume(
+        session: TelegramSession,
+        lang: BotLang,
+        regionIdInput: number | string
+    ): Promise<MatchedJob[]> {
+        const regionId = this.toCoordinate(regionIdInput);
+        if (regionId === null) return [];
+
+        const resume = await this.getMergedResumeForSearch(session);
+        const desiredTitle = resume?.field_title || resume?.title || resume?.desired_position || null;
+        const hasProfileSignals = Boolean(
+            desiredTitle
+            || resume?.field_id
+            || resume?.category_id
+            || (Array.isArray(resume?.category_ids) && resume.category_ids.length > 0)
+            || resume?.education_level
+            || resume?.experience
+            || resume?.experience_level
+            || resume?.gender
+            || resume?.expected_salary_min
+            || resume?.salary_min
+        );
+
+        if (!hasProfileSignals) {
+            const fallbackList: any[] = Array.isArray(session.data?.job_list) ? session.data.job_list : [];
+            const sameRegion = fallbackList.filter(job => this.toCoordinate(job?.region_id) === regionId);
+            if (sameRegion.length > 0) {
+                return sameRegion as MatchedJob[];
+            }
+        }
+
+        const regionJobsRaw = await this.fetchActiveJobs(1400, { regionId });
+        const regionJobs = regionJobsRaw.map(job => this.normalizeJob(job, lang));
+        if (!regionJobs.length) return [];
+
+        let candidateJobs = regionJobs;
+        const titleTokens = this.tokenizeTitle(desiredTitle);
+        if (titleTokens.length > 0) {
+            const strictTitle = !this.isGenericTitle(desiredTitle);
+            const preferred = this.filterJobsByDesiredTitle(regionJobs, desiredTitle, strictTitle, resume?.field_id);
+            if (preferred.length > 0) {
+                candidateJobs = preferred;
+            }
+        }
+
+        const profile = {
+            region_id: regionId,
+            district_id: this.toCoordinate(resume?.district_id),
+            category_id: resume?.category_id ?? null,
+            category_ids: Array.isArray(resume?.category_ids) ? resume.category_ids : [],
+            field_id: resume?.field_id ?? null,
+            field_title: resume?.field_title ?? desiredTitle ?? null,
+            expected_salary_min: this.toCoordinate(resume?.expected_salary_min ?? resume?.salary_min),
+            experience_level: resume?.experience || resume?.experience_level || null,
+            gender: resume?.gender ?? null,
+            birth_date: resume?.birth_date ?? null,
+            education_level: resume?.education_level ?? null,
+            title: desiredTitle
+        };
+
+        let matched = matchAndSortJobs(profile, candidateJobs);
+        if (!matched.length && candidateJobs !== regionJobs) {
+            matched = matchAndSortJobs(profile, regionJobs);
+        }
+
+        return matched;
+    }
+
+    private async handleSearchRegionSelect(
+        chatId: number,
+        regionValue: string,
+        session: TelegramSession,
+        messageId?: number
+    ): Promise<void> {
+        const lang = session.lang;
+        const regionId = this.toCoordinate(regionValue);
+
+        if (regionId === null) {
+            await this.sendPrompt(chatId, session, lang === 'uz' ? "Noto'g'ri viloyat." : 'Неверная область.', {
+                replyMarkup: keyboards.mainMenuKeyboard(lang, 'seeker')
+            });
+            return;
+        }
+
+        const updatedData = {
+            ...session.data,
+            search_region_id: regionId,
+            search_district_id: null
+        };
+        await this.setSession(session, { data: updatedData });
+
+        await this.showRegionDistrictSearch(chatId, { ...session, data: updatedData }, messageId, regionId);
+    }
+
     /**
      * Show region search: displays matching vacancies in region and district buttons with counts
      */
-    private async showRegionDistrictSearch(chatId: number, session: TelegramSession, messageId?: number): Promise<void> {
+    private async showRegionDistrictSearch(
+        chatId: number,
+        session: TelegramSession,
+        messageId?: number,
+        forcedRegionId?: number
+    ): Promise<void> {
         const lang = session.lang;
         const jobList: any[] = Array.isArray(session.data?.job_list) ? session.data.job_list : [];
         const currentIndex = Number.isFinite(session.data?.currentJobIndex) ? session.data.currentJobIndex : 0;
         const currentJob = jobList[currentIndex];
 
-        const regionId = currentJob?.region_id || session.data?.search_region_id;
-        if (!regionId) {
+        const rawRegionId = forcedRegionId
+            ?? currentJob?.region_id
+            ?? session.data?.search_region_id
+            ?? (Array.isArray(session.data?.region_job_list) && session.data.region_job_list.length > 0
+                ? session.data.region_job_list[0]?.region_id
+                : null);
+        const regionId = this.toCoordinate(rawRegionId);
+        if (regionId === null) {
             await this.sendPrompt(chatId, session, lang === 'uz'
                 ? "Viloyat aniqlanmadi."
                 : "Регион не определён.", {
@@ -7725,34 +7939,17 @@ export class TelegramBot {
             return;
         }
 
-        // Build user profile for accurate matching
-        const resume = session.data?.resume || {};
-        const desiredTitle = resume.desired_title || resume.field_title;
-        const fieldId = resume.field_id;
-        const userProfile = {
-            region_id: regionId,
-            district_id: resume.district_id || session.data?.search_district_id,
-            field_id: fieldId,
-            field_title: resume.field_title,
-            title: desiredTitle,
-            category_id: resume.category_id,
-            salary_min: resume.salary_min,
-            salary_max: resume.salary_max,
-            experience: resume.experience,
-            gender: resume.gender,
-            birth_date: resume.birth_date,
-            education_level: resume.education_level
-        };
+        const updatedSearchData = { ...session.data, search_region_id: regionId, search_district_id: null };
+        await this.setSession(session, { data: updatedSearchData });
 
-        // Fetch all jobs in this region
-        const regionJobs = await this.fetchActiveJobs(500, { regionId });
-
-        // Score ALL jobs, then filter by minimum relevance threshold
-        const allScored = matchAndSortJobs(userProfile, regionJobs);
-        const matchingJobs = allScored.filter((j: any) =>
-            j.matchScore >= 20 || j.matchCriteria?.profession || j.fieldExact
-        );
+        const matchingJobs = await this.getRegionMatchedJobsForResume(session, lang, regionId);
         const totalJobs = matchingJobs.length;
+        if (totalJobs === 0) {
+            await this.sendPrompt(chatId, session, botTexts.noJobsFound[lang], {
+                replyMarkup: keyboards.mainMenuKeyboard(lang, 'seeker')
+            });
+            return;
+        }
 
         // Get region name
         const regionName = await this.getRegionNameById(regionId, lang) || (lang === 'uz' ? 'Viloyat' : 'Область');
@@ -7811,109 +8008,69 @@ export class TelegramBot {
      */
     private async handleDistrictSearch(chatId: number, districtValue: string, session: TelegramSession): Promise<void> {
         const lang = session.lang;
-
-        // Get search criteria from session
-        const resume = session.data?.resume || {};
-        const desiredTitle = resume.desired_title || resume.field_title;
-        const fieldId = resume.field_id;
         const jobList: any[] = Array.isArray(session.data?.job_list) ? session.data.job_list : [];
         const currentIndex = Number.isFinite(session.data?.currentJobIndex) ? session.data.currentJobIndex : 0;
         const currentJob = jobList[currentIndex];
-        const regionId = currentJob?.region_id || session.data?.search_region_id;
-
-        // Build user profile for matching
-        const userProfile = {
-            region_id: regionId,
-            district_id: districtValue !== 'all' ? parseInt(districtValue) : null,
-            field_id: fieldId,
-            field_title: resume.field_title,
-            title: desiredTitle,
-            category_id: resume.category_id,
-            salary_min: resume.salary_min,
-            salary_max: resume.salary_max,
-            experience: resume.experience,
-            gender: resume.gender,
-            birth_date: resume.birth_date,
-            education_level: resume.education_level
-        };
-
-        if (districtValue === 'all') {
-            // Search all vacancies in the region
-            if (!regionId) {
-                await this.sendPrompt(chatId, session, lang === 'uz'
-                    ? "Viloyat aniqlanmadi."
-                    : "Регион не определён.", {
-                    replyMarkup: keyboards.mainMenuKeyboard(lang, 'seeker')
-                });
-                return;
-            }
-
-            const regionJobs = await this.fetchActiveJobs(500, { regionId });
-            // Score ALL jobs, then filter by minimum relevance threshold
-            const allScored = matchAndSortJobs(userProfile, regionJobs);
-            const matchedJobs = allScored.filter((j: any) =>
-                j.matchScore >= 20 || j.matchCriteria?.profession || j.fieldExact
-            );
-
-            if (matchedJobs.length === 0) {
-                await this.sendPrompt(chatId, session, lang === 'uz'
-                    ? "Mos vakansiyalar topilmadi."
-                    : "Подходящие вакансии не найдены.", {
-                    replyMarkup: keyboards.mainMenuKeyboard(lang, 'seeker')
-                });
-                return;
-            }
-
-            // Update session with matched jobs (with scores) and start browsing
-            await this.setSession(session, {
-                state: BotState.BROWSING_JOBS,
-                data: {
-                    ...session.data,
-                    job_list: matchedJobs,
-                    currentJobIndex: 0,
-                    search_region_id: regionId
-                }
-            });
-            await this.showJob(chatId, session, 0);
-            return;
-        }
-
-        // Search in specific district
-        const districtId = parseInt(districtValue);
-        if (isNaN(districtId)) {
-            await this.sendPrompt(chatId, session, lang === 'uz'
-                ? "Noto'g'ri tuman."
-                : "Неверный район.", {
-                replyMarkup: keyboards.mainMenuKeyboard(lang, 'seeker')
-            });
-            return;
-        }
-
-        const districtJobs = await this.fetchActiveJobs(500, { districtId });
-        // Score ALL jobs, then filter by minimum relevance threshold
-        const allScored = matchAndSortJobs(userProfile, districtJobs);
-        const matchedJobs = allScored.filter((j: any) =>
-            j.matchScore >= 20 || j.matchCriteria?.profession || j.fieldExact
+        const regionId = this.toCoordinate(
+            session.data?.search_region_id
+            ?? currentJob?.region_id
+            ?? (Array.isArray(session.data?.region_job_list) && session.data.region_job_list.length > 0
+                ? session.data.region_job_list[0]?.region_id
+                : null)
         );
-
-        if (matchedJobs.length === 0) {
+        if (regionId === null) {
             await this.sendPrompt(chatId, session, lang === 'uz'
-                ? "Bu tumanda mos vakansiyalar topilmadi."
-                : "В этом районе подходящие вакансии не найдены.", {
+                ? "Viloyat aniqlanmadi."
+                : "Регион не определён.", {
                 replyMarkup: keyboards.mainMenuKeyboard(lang, 'seeker')
             });
             return;
         }
 
-        // Update session with matched jobs (with scores) and start browsing
+        const regionMatchedJobs = await this.getRegionMatchedJobsForResume(session, lang, regionId);
+        if (!regionMatchedJobs.length) {
+            await this.sendPrompt(chatId, session, botTexts.noJobsFound[lang], {
+                replyMarkup: keyboards.mainMenuKeyboard(lang, 'seeker')
+            });
+            return;
+        }
+
+        let matchedJobs: MatchedJob[] = regionMatchedJobs;
+        let selectedDistrictId: number | null = null;
+
+        if (districtValue !== 'all') {
+            const districtNum = this.toCoordinate(districtValue);
+            const districtKey = String(districtValue || '').trim().toLowerCase();
+            selectedDistrictId = districtNum;
+
+            matchedJobs = regionMatchedJobs.filter(job => {
+                if (districtNum !== null) {
+                    return this.toCoordinate((job as any)?.district_id) === districtNum;
+                }
+                const byId = String((job as any)?.district_id || '').trim().toLowerCase() === districtKey;
+                if (byId) return true;
+                const name = this.getDistrictDisplayName(job, lang);
+                return Boolean(name && name.trim().toLowerCase() === districtKey);
+            });
+
+            if (!matchedJobs.length) {
+                await this.sendPrompt(chatId, session, lang === 'uz'
+                    ? "Bu tumanda mos vakansiyalar topilmadi."
+                    : "В этом районе подходящие вакансии не найдены.", {
+                    replyMarkup: keyboards.mainMenuKeyboard(lang, 'seeker')
+                });
+                return;
+            }
+        }
+
         await this.setSession(session, {
             state: BotState.BROWSING_JOBS,
             data: {
                 ...session.data,
                 job_list: matchedJobs,
                 currentJobIndex: 0,
-                search_district_id: districtId,
-                search_region_id: regionId
+                search_region_id: regionId,
+                search_district_id: districtValue === 'all' ? null : selectedDistrictId
             }
         });
         await this.showJob(chatId, session, 0);
@@ -8032,15 +8189,15 @@ export class TelegramBot {
                 return 'main_menu';
             }
             case BotState.EMPLOYER_PROFILE_COMPANY:
-                return 'employer_menu';
+                return 'role_pick';
             case BotState.EMPLOYER_PROFILE_DIRECTOR:
                 return 'employer_company';
             case BotState.EMPLOYER_PROFILE_INDUSTRY:
                 return 'employer_director';
             case BotState.EMPLOYER_PROFILE_SIZE:
-                return 'employer_industry';
+                return 'employer_director';
             case BotState.EMPLOYER_PROFILE_REGION:
-                return 'employer_size';
+                return 'employer_director';
             case BotState.EMPLOYER_PROFILE_ADDRESS:
                 return 'employer_region';
             case BotState.EMPLOYER_PROFILE_DESCRIPTION:
@@ -8082,9 +8239,9 @@ export class TelegramBot {
             case BotState.POSTING_JOB_HR_NAME:
                 return 'job_benefits';
             case BotState.POSTING_JOB_CONTACT_PHONE:
-                return 'job_hr_name';
+                return 'job_hr';
             case BotState.POSTING_JOB_DESCRIPTION:
-                return 'job_contact_phone';
+                return 'job_contact';
             case BotState.POSTING_JOB_CONFIRM:
                 return 'job_description';
             default:
@@ -8230,7 +8387,9 @@ export class TelegramBot {
         if (action === 'my_vacancies') {
             const jobs = await this.getEmployerJobs(session, 30);
             if (!jobs || jobs.length === 0) {
-                await sendMessage(chatId, lang === 'uz' ? "Hali vakansiya yo'q." : 'Вакансий пока нет.', { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
+                await this.sendPrompt(chatId, session, botTexts.employerNoVacanciesHint[lang], {
+                    replyMarkup: keyboards.employerMainMenuKeyboard(lang)
+                });
                 return;
             }
             if (jobs.length === 1) {
@@ -8252,7 +8411,9 @@ export class TelegramBot {
         if (action === 'find_worker') {
             const jobs = await this.getEmployerJobs(session, 20);
             if (!jobs || jobs.length === 0) {
-                await sendMessage(chatId, lang === 'uz' ? "Hali vakansiya yo'q." : 'Вакансий пока нет.', { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
+                await this.sendPrompt(chatId, session, botTexts.employerNoVacanciesHint[lang], {
+                    replyMarkup: keyboards.employerMainMenuKeyboard(lang)
+                });
                 return;
             }
             if (jobs.length === 1) {
@@ -8783,10 +8944,6 @@ export class TelegramBot {
         await sendMessage(chatId, botTexts.jobPublished[lang], { replyMarkup: keyboards.jobPublishedKeyboard(lang, createdJob?.id) });
         await this.clearFlowCancelKeyboard(chatId, session);
         await this.setSession(session, { state: BotState.EMPLOYER_MAIN_MENU, data: { ...session.data, temp_job: null, clean_inputs: false } });
-
-        if (createdJob) {
-            await this.showMatchingResumesForJob(chatId, session, createdJob);
-        }
     }
 
     private async showMatchingResumesForJob(chatId: number, session: TelegramSession, job: any): Promise<void> {
@@ -9066,32 +9223,10 @@ export class TelegramBot {
 
         // Count region vacancies for "search by region" button (only matching vacancies)
         let regionVacancyCount = 0;
-        const regionId = job.region_id || session.data?.search_region_id;
-        if (regionId) {
+        const regionId = this.toCoordinate(job.region_id ?? session.data?.search_region_id);
+        if (regionId !== null) {
             try {
-                const resume = session.data?.resume || {};
-                const desiredTitle = resume.desired_title || resume.field_title;
-                const fieldId = resume.field_id;
-                const userProfile = {
-                    region_id: regionId,
-                    district_id: resume.district_id || session.data?.search_district_id,
-                    field_id: fieldId,
-                    field_title: resume.field_title,
-                    title: desiredTitle,
-                    category_id: resume.category_id,
-                    salary_min: resume.salary_min,
-                    salary_max: resume.salary_max,
-                    experience: resume.experience,
-                    gender: resume.gender,
-                    birth_date: resume.birth_date,
-                    education_level: resume.education_level
-                };
-                const regionJobs = await this.fetchActiveJobs(500, { regionId });
-                // Score ALL jobs, then filter by minimum relevance threshold
-                const allScored = matchAndSortJobs(userProfile, regionJobs);
-                const matchedJobs = allScored.filter((j: any) =>
-                    j.matchScore >= 20 || j.matchCriteria?.profession || j.fieldExact
-                );
+                const matchedJobs = await this.getRegionMatchedJobsForResume(session, lang, regionId);
                 regionVacancyCount = matchedJobs.length;
             } catch {
                 // ignore errors

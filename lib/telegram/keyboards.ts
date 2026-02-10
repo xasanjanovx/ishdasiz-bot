@@ -770,7 +770,7 @@ export function jobWorkingDaysKeyboard(lang: BotLang): object {
 export function jobExperienceKeyboard(lang: BotLang): object {
     const rows: InlineButton[][] = JOB_EXPERIENCE_LEVELS.map(exp => [{
         text: lang === 'uz' ? exp.label_uz : exp.label_ru,
-        callback_data: `experience:${exp.value}`
+        callback_data: `jobexperience:${exp.value}`
     }]);
     rows.push([{ text: lang === 'uz' ? '⬅️ Orqaga' : '⬅️ Назад', callback_data: 'back:job_work_hours' }]);
     return createInlineKeyboard(rows);
@@ -793,7 +793,7 @@ export function jobSalaryMaxKeyboard(lang: BotLang): object {
 export function jobEducationKeyboard(lang: BotLang): object {
     const rows: InlineButton[][] = EDUCATION_LEVELS.map(edu => [{
         text: lang === 'uz' ? edu.label_uz : edu.label_ru,
-        callback_data: `education:${edu.value}`
+        callback_data: `jobeducation:${edu.value}`
     }]);
     rows.push([{ text: lang === 'uz' ? '⬅️ Orqaga' : '⬅️ Назад', callback_data: 'back:job_experience' }]);
     return createInlineKeyboard(rows);
@@ -802,10 +802,10 @@ export function jobEducationKeyboard(lang: BotLang): object {
 export function jobGenderKeyboard(lang: BotLang): object {
     return createInlineKeyboard([
         [
-            { text: lang === 'uz' ? 'Erkak' : 'Мужской', callback_data: 'gender:male' },
-            { text: lang === 'uz' ? 'Ayol' : 'Женский', callback_data: 'gender:female' }
+            { text: lang === 'uz' ? 'Erkak' : 'Мужской', callback_data: 'jobgender:male' },
+            { text: lang === 'uz' ? 'Ayol' : 'Женский', callback_data: 'jobgender:female' }
         ],
-        [{ text: lang === 'uz' ? 'Ahamiyatsiz' : 'Не важно', callback_data: 'gender:any' }],
+        [{ text: lang === 'uz' ? 'Ahamiyatsiz' : 'Не важно', callback_data: 'jobgender:any' }],
         [{ text: lang === 'uz' ? '⬅️ Orqaga' : '⬅️ Назад', callback_data: 'back:job_education' }]
     ]);
 }

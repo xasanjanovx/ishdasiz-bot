@@ -9,6 +9,9 @@ require('dotenv').config({ path: '.env.local' });
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN!;
 const API_BASE = `https://api.telegram.org/bot${BOT_TOKEN}`;
+const POLL_TIMEOUT_SECONDS = 30;
+const REQUEST_TIMEOUT_MS = 35000;
+const DELETE_WEBHOOK_RETRIES = 3;
 
 if (!BOT_TOKEN) {
     console.error('TELEGRAM_BOT_TOKEN not set');
@@ -17,19 +20,86 @@ if (!BOT_TOKEN) {
 
 let lastUpdateId = 0;
 
+function sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function formatNetworkError(err: unknown): string {
+    if (err instanceof Error) {
+        const cause = (err as any).cause;
+        const code = cause?.code || (err as any).code;
+        const hostname = cause?.hostname;
+        if (code === 'ENOTFOUND') {
+            return `DNS resolve failed for ${hostname || 'api.telegram.org'} (ENOTFOUND). Check internet/VPN/DNS.`;
+        }
+        if (code === 'ECONNREFUSED') {
+            return 'Connection refused by Telegram API endpoint.';
+        }
+        if (code === 'ETIMEDOUT' || err.name === 'AbortError') {
+            return 'Telegram API request timed out.';
+        }
+        return err.message;
+    }
+    return String(err);
+}
+
+async function fetchJson(url: string): Promise<any> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+    try {
+        const res = await fetch(url, { signal: controller.signal });
+        const raw = await res.text();
+
+        let data: any = null;
+        try {
+            data = raw ? JSON.parse(raw) : {};
+        } catch {
+            throw new Error(`Non-JSON response (${res.status}) from Telegram API`);
+        }
+
+        if (!res.ok) {
+            throw new Error(data?.description || `HTTP ${res.status}`);
+        }
+
+        return data;
+    } finally {
+        clearTimeout(timeout);
+    }
+}
+
 async function deleteWebhook(): Promise<void> {
-    const res = await fetch(`${API_BASE}/deleteWebhook`);
-    const data = await res.json() as any;
-    console.log('Webhook deleted:', data.ok ? 'success' : data.description);
+    for (let attempt = 1; attempt <= DELETE_WEBHOOK_RETRIES; attempt++) {
+        try {
+            const data = await fetchJson(`${API_BASE}/deleteWebhook?drop_pending_updates=true`);
+            console.log('Webhook deleted:', data.ok ? 'success' : data.description);
+            return;
+        } catch (err) {
+            const reason = formatNetworkError(err);
+            console.error(`deleteWebhook attempt ${attempt}/${DELETE_WEBHOOK_RETRIES} failed: ${reason}`);
+
+            if (attempt < DELETE_WEBHOOK_RETRIES) {
+                await sleep(1200 * attempt);
+                continue;
+            }
+
+            console.warn('Continuing startup; polling will retry on next loop.');
+            return;
+        }
+    }
 }
 
 async function getUpdates(): Promise<any[]> {
     try {
-        const res = await fetch(`${API_BASE}/getUpdates?offset=${lastUpdateId + 1}&timeout=30`);
-        const data = await res.json() as any;
+        const data = await fetchJson(`${API_BASE}/getUpdates?offset=${lastUpdateId + 1}&timeout=${POLL_TIMEOUT_SECONDS}`);
+        if (!data?.ok) {
+            console.error('Telegram getUpdates error:', data?.description || data);
+            return [];
+        }
         return data.ok ? data.result : [];
     } catch (err) {
-        console.error('Fetch error:', err);
+        console.error('Fetch error:', formatNetworkError(err));
+        await sleep(1500);
         return [];
     }
 }
