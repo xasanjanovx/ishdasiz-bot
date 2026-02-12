@@ -22,7 +22,7 @@ import {
 } from '../mappings';
 import { mapOsonishCategory } from '../mappers/osonish-mapper';
 import { matchAndSortJobs, MatchedJob, calculateMatchScore } from './job-matcher';
-import { extractVacancyData } from '../ai/deepseek';
+import { callDeepSeekText, extractVacancyData } from '../ai/deepseek';
 import { rerankJobsForResumeAI, rerankResumesForJobAI } from '../ai/job-recommender';
 import { checkForAbuse } from '../ai/moderation';
 import { REGION_COORDINATES } from '../constants';
@@ -69,6 +69,7 @@ export enum BotState {
     POSTING_JOB_EDUCATION = 'posting_job_education',
     POSTING_JOB_GENDER = 'posting_job_gender',
     POSTING_JOB_AGE = 'posting_job_age',
+    POSTING_JOB_SPECIAL = 'posting_job_special',
     POSTING_JOB_LANGUAGES = 'posting_job_languages',
     POSTING_JOB_BENEFITS = 'posting_job_benefits',
     POSTING_JOB_HR_NAME = 'posting_job_hr_name',
@@ -97,6 +98,7 @@ export enum BotState {
     ENTERING_TITLE = 'entering_title',
     ENTERING_NAME = 'entering_name',
     ENTERING_ABOUT = 'entering_about',
+    SELECTING_RESUME_LANGUAGES = 'selecting_resume_languages',
     ADDING_SKILLS = 'adding_skills',
     ENTERING_WORKPLACE = 'entering_workplace',
     ENTERING_WORKPLACE_YEARS = 'entering_workplace_years',
@@ -857,6 +859,7 @@ export class TelegramBot {
             BotState.ENTERING_TITLE,
             BotState.SELECTING_FIELD,
             BotState.ENTERING_ABOUT,
+            BotState.SELECTING_RESUME_LANGUAGES,
             BotState.ADDING_SKILLS,
             BotState.ENTERING_WORKPLACE,
             BotState.ENTERING_EDUCATION_PLACE,
@@ -898,10 +901,29 @@ export class TelegramBot {
             case BotState.ENTERING_NAME:
                 return { text: botTexts.askName[lang], replyMarkup: backMarkup };
             case BotState.ENTERING_ABOUT:
-                return { text: botTexts.askAbout[lang], replyMarkup: keyboards.aboutSkipInlineKeyboard(lang, 'name') };
+                return {
+                    text: botTexts.askAbout[lang],
+                    replyMarkup: keyboards.aiResumeAboutPreviewKeyboard(lang, session.data?.edit_mode ? 'resume_view' : 'salary')
+                };
+            case BotState.SELECTING_RESUME_LANGUAGES: {
+                const selected = Array.isArray(session.data?.resume?.language_keys)
+                    ? session.data.resume.language_keys
+                    : this.getDefaultJobLanguageKeys(lang);
+                return {
+                    text: botTexts.resumeLanguagesPrompt[lang],
+                    replyMarkup: keyboards.resumeLanguagesKeyboard(lang, selected)
+                };
+            }
             case BotState.ADDING_SKILLS: {
                 const skills = Array.isArray(session.data?.resume?.skills) ? session.data.resume.skills : [];
-                return { text: botTexts.askSkills[lang], replyMarkup: keyboards.skillsInlineKeyboard(lang, skills.length > 0, 'about') };
+                return {
+                    text: botTexts.askSkills[lang],
+                    replyMarkup: keyboards.skillsInlineKeyboard(
+                        lang,
+                        skills.length > 0,
+                        session.data?.edit_mode ? 'resume_view' : 'resume_languages'
+                    )
+                };
             }
             case BotState.ENTERING_WORKPLACE:
                 return { text: botTexts.askWorkplace[lang], replyMarkup: backMarkup };
@@ -912,13 +934,19 @@ export class TelegramBot {
             case BotState.POSTING_JOB_ADDRESS:
                 return { text: botTexts.jobAddressPrompt[lang], replyMarkup: backMarkup };
             case BotState.POSTING_JOB_LANGUAGES:
-                return { text: botTexts.jobLanguagesPrompt[lang], replyMarkup: backMarkup };
+                return {
+                    text: botTexts.jobLanguagesPrompt[lang],
+                    replyMarkup: keyboards.jobLanguagesKeyboard(lang, Array.isArray(session.data?.temp_job?.language_keys) ? session.data.temp_job.language_keys : [])
+                };
             case BotState.POSTING_JOB_BENEFITS:
-                return { text: botTexts.jobBenefitsPrompt[lang], replyMarkup: backMarkup };
+                return {
+                    text: botTexts.jobBenefitsPrompt[lang],
+                    replyMarkup: keyboards.jobBenefitsKeyboard(lang, Array.isArray(session.data?.temp_job?.benefit_keys) ? session.data.temp_job.benefit_keys : [])
+                };
             case BotState.POSTING_JOB_HR_NAME:
                 return { text: botTexts.jobHrPrompt[lang], replyMarkup: backMarkup };
             case BotState.POSTING_JOB_DESCRIPTION:
-                return { text: botTexts.postJobDescription[lang], replyMarkup: backMarkup };
+                return { text: botTexts.postJobDescription[lang], replyMarkup: keyboards.jobDescriptionKeyboard(lang) };
             case BotState.EMPLOYER_PROFILE_COMPANY:
                 return { text: botTexts.companyNamePrompt[lang], replyMarkup: backMarkup };
             case BotState.EMPLOYER_PROFILE_DIRECTOR:
@@ -1832,13 +1860,21 @@ export class TelegramBot {
                 case 'matchjob': await this.handleMatchJob(chatId, value, session, message.message_id); break;
                 case 'jobage':
                     if (value === 'any') {
-                        const updatedJob = { ...session.data?.temp_job, age_min: null, age_max: null };
+                        const currentSpecial = Array.isArray(session.data?.temp_job?.special)
+                            ? session.data.temp_job.special
+                            : [];
+                        const updatedJob = {
+                            ...session.data?.temp_job,
+                            age_min: null,
+                            age_max: null,
+                            special: currentSpecial
+                        };
                         await this.updateSession(session.telegram_user_id, {
-                            state: BotState.POSTING_JOB_LANGUAGES,
+                            state: BotState.POSTING_JOB_SPECIAL,
                             data: { ...session.data, temp_job: updatedJob }
                         });
-                        await this.sendPrompt(chatId, session, botTexts.jobLanguagesPrompt[session.lang], {
-                            replyMarkup: keyboards.aboutSkipInlineKeyboard(session.lang, 'job_age')
+                        await this.sendPrompt(chatId, session, botTexts.jobSpecialCriteriaPrompt[session.lang], {
+                            replyMarkup: keyboards.specialCriteriaKeyboard(session.lang, currentSpecial, 'job_age')
                         });
                     }
                     break;
@@ -1858,7 +1894,30 @@ export class TelegramBot {
                         });
                     }
                     break;
-                case 'jobview': await this.handleEmployerJobView(chatId, value, session); break;
+                case 'jobview': await this.handleEmployerJobView(chatId, value, session, message.message_id); break;
+                case 'jobactivate': await this.handleEmployerJobActivate(chatId, value, session, message.message_id); break;
+                case 'jobdelete':
+                    if (value === 'confirm') {
+                        const jobId = String(extra || '').trim();
+                        await this.sendPrompt(
+                            chatId,
+                            session,
+                            session.lang === 'uz'
+                                ? "📌 Ushbu vakansiyani o'chirishni tasdiqlaysizmi?"
+                                : '📌 Подтверждаете удаление этой вакансии?',
+                            { replyMarkup: keyboards.jobDeleteConfirmKeyboard(session.lang, jobId) }
+                        );
+                    } else if (value === 'yes') {
+                        await this.handleEmployerJobDelete(chatId, String(extra || '').trim(), session);
+                    } else if (value === 'back' || value === 'no') {
+                        const jobId = String(extra || '').trim();
+                        if (jobId) {
+                            await this.handleEmployerJobView(chatId, jobId, session, message.message_id);
+                        } else {
+                            await this.showMainMenu(chatId, session);
+                        }
+                    }
+                    break;
                 case 'jobclose':
                     if (value === 'confirm') {
                         const jobId = String(extra || '').trim();
@@ -1889,6 +1948,13 @@ export class TelegramBot {
                         const [jobId, reasonRaw] = raw.split(':');
                         const reason = reasonRaw === 'paused' ? 'paused' : 'hired';
                         await this.handleEmployerJobClose(chatId, jobId || raw, session, reason);
+                    } else if (value === 'back') {
+                        const jobId = String(extra || '').trim();
+                        if (jobId) {
+                            await this.handleEmployerJobView(chatId, jobId, session, message.message_id);
+                        } else {
+                            await this.showMainMenu(chatId, session);
+                        }
                     } else if (value === 'no') {
                         await this.sendPrompt(chatId, session, session.lang === 'uz' ? 'Bekor qilindi.' : 'Отменено.', {
                             replyMarkup: keyboards.employerMainMenuKeyboard(session.lang)
@@ -1928,10 +1994,22 @@ export class TelegramBot {
                 case 'apps':
                     if (value === 'back') await this.showEmployerApplications(chatId, session);
                     break;
+                case 'offer':
+                    await this.handleOfferAction(chatId, value, extra, session);
+                    break;
+                case 'offerjob':
+                    await this.handleOfferJobView(chatId, value, session);
+                    break;
                 case 'salarymax': await this.handleSalaryMaxSelect(chatId, value, session, message.message_id); break;
                 case 'employment': await this.handleEmploymentSelect(chatId, value, session, message.message_id); break;
                 case 'workmode': await this.handleWorkModeSelect(chatId, value, session, message.message_id); break;
                 case 'workingdays': await this.handleWorkingDaysSelect(chatId, value, session, message.message_id); break;
+                case 'workinghours': await this.handleJobWorkingHoursSelect(chatId, value, session, message.message_id); break;
+                case 'joblang': await this.handleJobLanguageAction(chatId, value, session, message.message_id); break;
+                case 'reslang': await this.handleResumeLanguageAction(chatId, value, session, message.message_id); break;
+                case 'jobbenefit': await this.handleJobBenefitAction(chatId, value, session, message.message_id); break;
+                case 'aboutai': await this.handleResumeAboutAiAction(chatId, value, session, message.message_id); break;
+                case 'jobdescai': await this.handleJobDescriptionAiAction(chatId, value, session, message.message_id); break;
                 case 'skip': await this.handleSkip(chatId, session); break;
                 case 'skills': if (value === 'done') await this.finishSkills(chatId, session); break;
                 case 'workend':
@@ -2064,7 +2142,9 @@ export class TelegramBot {
                 .eq('user_id', session.user_id)
                 .maybeSingle();
 
-            if (!profile || !profile.company_name || !profile.region_id || !profile.district_id) {
+            const companyOk = String(profile?.company_name || '').trim().length >= 3;
+            const directorOk = String(profile?.director_name || '').trim().length >= 3;
+            if (!profile || !companyOk || !directorOk) {
                 await this.startEmployerProfileFlow(chatId, session, profile || null);
                 return;
             }
@@ -2133,14 +2213,7 @@ export class TelegramBot {
             return;
         }
 
-        const regions = await this.getRegions();
-        await this.setSession(session, {
-            state: BotState.EMPLOYER_PROFILE_REGION,
-            data: { ...session.data, active_role: 'employer', employer_profile: draft }
-        });
-        await this.sendPrompt(chatId, session, `${botTexts.employerProfileIntro[lang]}\n\n${botTexts.employerRegionPrompt[lang]}`, {
-            replyMarkup: keyboards.regionKeyboard(lang, regions, 'employer_director')
-        });
+        await this.finalizeEmployerProfile(chatId, session, draft);
     }
 
     private async finalizeEmployerProfile(chatId: number, session: TelegramSession, draft: any): Promise<void> {
@@ -2228,6 +2301,10 @@ export class TelegramBot {
             gender: jobData?.gender,
             age_min: jobData?.age_min,
             age_max: jobData?.age_max,
+            special: jobData?.special,
+            is_for_students: Array.isArray(jobData?.special) ? jobData.special.includes('students') : false,
+            is_for_graduates: Array.isArray(jobData?.special) ? jobData.special.includes('graduates') : false,
+            is_for_disabled: Array.isArray(jobData?.special) ? jobData.special.includes('disabled') : false,
             languages: jobData?.languages,
             benefits: jobData?.benefits,
             address: jobData?.address,
@@ -2329,7 +2406,7 @@ export class TelegramBot {
         const lang = session.lang;
         const locationIntent = session.data?.location_intent || null;
 
-        if (session.user_id) {
+        if (session.user_id && locationIntent !== 'job_post_location') {
             const { error } = await this.supabase
                 .from('job_seeker_profiles')
                 .update({
@@ -2358,6 +2435,26 @@ export class TelegramBot {
             const updatedData = { ...session.data, location_intent: null, search_geo: searchGeo };
             await this.setSession(session, { data: updatedData });
             await this.searchJobsByLocation(chatId, session, searchGeo);
+            return;
+        }
+
+        if (locationIntent === 'job_post_location') {
+            const resolved = await this.resolveLocationToRegionDistrict(location.latitude, location.longitude);
+            const currentJob = { ...(session.data?.temp_job || {}) };
+            const updatedJob = {
+                ...currentJob,
+                latitude: location.latitude,
+                longitude: location.longitude,
+                region_id: currentJob?.region_id || resolved?.region_id || null,
+                district_id: currentJob?.district_id || resolved?.district_id || null
+            };
+            await this.setSession(session, {
+                state: BotState.POSTING_JOB_WORK_MODE,
+                data: { ...session.data, location_intent: null, temp_job: updatedJob }
+            });
+            await this.sendPrompt(chatId, session, botTexts.jobWorkModePrompt[lang], {
+                replyMarkup: keyboards.jobWorkModeKeyboard(lang)
+            });
             return;
         }
 
@@ -2438,20 +2535,8 @@ export class TelegramBot {
 
     private async handleStart(chatId: number, session: TelegramSession): Promise<void> {
         const lang = session.lang || 'uz';
-        if (!session.lang) {
-            await this.setSession(session, { state: BotState.AWAITING_LANG });
-            await this.sendPrompt(chatId, session, botTexts.selectLanguage.uz, { replyMarkup: keyboards.languageKeyboard() });
-            return;
-        }
-        if (session.user_id) {
-            await this.showMainMenu(chatId, session);
-            return;
-        }
-        await this.setSession(session, { state: BotState.START });
-        await this.sendPrompt(chatId, session, botTexts.startWelcome[lang], {
-            replyMarkup: keyboards.startKeyboard(lang),
-            parseMode: 'HTML'
-        });
+        await this.setSession(session, { state: BotState.AWAITING_LANG });
+        await this.sendPrompt(chatId, session, botTexts.selectLanguage[lang], { replyMarkup: keyboards.languageKeyboard() });
     }
 
     private async handleLangSelect(chatId: number, lang: BotLang, session: TelegramSession): Promise<void> {
@@ -2568,7 +2653,28 @@ export class TelegramBot {
                 await sendMessage(chatId, botTexts.passwordTooShort[lang]);
                 return;
             }
-            const passwordHash = await bcrypt.hash(password, 10);
+            const firstEntry = String(session.data?.password_create_first || '').trim();
+            if (!firstEntry) {
+                await this.setSession(session, {
+                    data: { ...session.data, password_create_first: password }
+                });
+                await this.sendPrompt(chatId, session, botTexts.createPasswordConfirmPrompt[lang], {
+                    replyMarkup: keyboards.cancelReplyKeyboard(lang)
+                });
+                return;
+            }
+
+            if (firstEntry !== password) {
+                await this.setSession(session, {
+                    data: { ...session.data, password_create_first: null }
+                });
+                await this.sendPrompt(chatId, session, `${botTexts.passwordMismatch[lang]}\n\n${botTexts.createPasswordPrompt[lang]}`, {
+                    replyMarkup: keyboards.cancelReplyKeyboard(lang)
+                });
+                return;
+            }
+
+            const passwordHash = await bcrypt.hash(firstEntry, 10);
             const { error: updateError } = await this.supabase
                 .from('users')
                 .update({
@@ -2582,7 +2688,7 @@ export class TelegramBot {
                 await sendMessage(chatId, botTexts.error[lang]);
                 return;
             }
-            await this.setSession(session, { data: { ...session.data, password_flow: null } });
+            await this.setSession(session, { data: { ...session.data, password_flow: null, password_create_first: null } });
             await this.sendPrompt(chatId, session, botTexts.passwordCreated[lang]);
             await this.finalizeLogin(chatId, phone, session);
             return;
@@ -3832,6 +3938,46 @@ export class TelegramBot {
 
     private async handleSpecialCriteria(chatId: number, value: string, session: TelegramSession, messageId?: number): Promise<void> {
         const lang = session.lang;
+
+        if (session.state === BotState.POSTING_JOB_SPECIAL) {
+            const currentSpecial = Array.isArray(session.data?.temp_job?.special) ? [...session.data.temp_job.special] : [];
+            if (value === 'done') {
+                const previousKeys = Array.isArray(session.data?.temp_job?.language_keys)
+                    ? session.data.temp_job.language_keys
+                    : [];
+                const languageKeys = previousKeys.length > 0 ? previousKeys : this.getDefaultJobLanguageKeys(lang);
+                const updatedJob = {
+                    ...session.data?.temp_job,
+                    special: currentSpecial,
+                    language_keys: languageKeys,
+                    languages: this.mapJobLanguageKeysToLabels(languageKeys, lang)
+                };
+                await this.setSession(session, {
+                    state: BotState.POSTING_JOB_LANGUAGES,
+                    data: { ...session.data, temp_job: updatedJob }
+                });
+                await this.sendPrompt(chatId, session, botTexts.jobLanguagesPrompt[lang], {
+                    replyMarkup: keyboards.jobLanguagesKeyboard(lang, languageKeys)
+                });
+                return;
+            }
+
+            const idx = currentSpecial.indexOf(value);
+            if (idx === -1) currentSpecial.push(value);
+            else currentSpecial.splice(idx, 1);
+
+            await this.setSession(session, {
+                data: { ...session.data, temp_job: { ...session.data?.temp_job, special: currentSpecial } }
+            });
+            const options = { replyMarkup: keyboards.specialCriteriaKeyboard(lang, currentSpecial, 'job_age') };
+            if (messageId) {
+                await editMessage(chatId, messageId, botTexts.jobSpecialCriteriaPrompt[lang], options);
+            } else {
+                await this.sendPrompt(chatId, session, botTexts.jobSpecialCriteriaPrompt[lang], options);
+            }
+            return;
+        }
+
         const currentSpecial = Array.isArray(session.data?.resume?.special) ? [...session.data.resume.special] : [];
 
         if (value === 'done') {
@@ -3910,7 +4056,6 @@ export class TelegramBot {
             state: BotState.ENTERING_ABOUT,
             data: updatedData
         });
-        const options = { replyMarkup: keyboards.aboutSkipInlineKeyboard(lang, 'salary') };
         if (messageId) {
             try {
                 await deleteMessage(chatId, messageId);
@@ -3918,7 +4063,7 @@ export class TelegramBot {
                 // ignore
             }
         }
-        await this.sendPrompt(chatId, session, botTexts.askAbout[lang], options);
+        await this.presentResumeAboutStep(chatId, session);
     }
 
     private async handleJobSalaryQuick(chatId: number, value: string, session: TelegramSession, messageId?: number): Promise<void> {
@@ -4050,7 +4195,7 @@ export class TelegramBot {
                 data: { ...session.data, temp_job: updatedJob }
             });
             await this.sendPrompt(chatId, session, botTexts.jobWorkingHoursPrompt[lang], {
-                replyMarkup: keyboards.backKeyboard(lang, 'job_work_days')
+                replyMarkup: keyboards.jobWorkingHoursKeyboard(lang)
             });
             return;
         }
@@ -4071,6 +4216,226 @@ export class TelegramBot {
             }
         }
         await this.sendPrompt(chatId, session, botTexts.askExperience[lang], options);
+    }
+
+    private async handleJobWorkingHoursSelect(chatId: number, value: string, session: TelegramSession, messageId?: number): Promise<void> {
+        const lang = session.lang;
+        if (session.state !== BotState.POSTING_JOB_WORK_HOURS) return;
+
+        if (value === 'manual') {
+            await this.sendPrompt(chatId, session, `${botTexts.jobWorkingHoursPrompt[lang]}\n<i>${lang === 'uz' ? "Format: 09:00-18:00" : 'Формат: 09:00-18:00'}</i>`, {
+                replyMarkup: keyboards.backKeyboard(lang, 'job_work_days')
+            });
+            return;
+        }
+
+        const map: Record<string, string> = {
+            '09-18': '09:00-18:00',
+            '08-17': '08:00-17:00',
+            '10-19': '10:00-19:00',
+            '09-17': '09:00-17:00'
+        };
+        const workingHours = map[value];
+        if (!workingHours) return;
+
+        const updatedJob = { ...session.data?.temp_job, working_hours: workingHours };
+        await this.setSession(session, {
+            state: BotState.POSTING_JOB_EXPERIENCE,
+            data: { ...session.data, temp_job: updatedJob }
+        });
+        await this.sendPrompt(chatId, session, botTexts.jobExperiencePrompt[lang], { replyMarkup: keyboards.jobExperienceKeyboard(lang) });
+    }
+
+    private async handleJobLanguageAction(chatId: number, value: string, session: TelegramSession, messageId?: number): Promise<void> {
+        const lang = session.lang;
+        if (session.state !== BotState.POSTING_JOB_LANGUAGES) return;
+
+        const currentKeys = Array.isArray(session.data?.temp_job?.language_keys)
+            ? [...session.data.temp_job.language_keys]
+            : this.getDefaultJobLanguageKeys(lang);
+
+        if (value === 'manual') {
+            await this.sendPrompt(chatId, session, `${botTexts.jobLanguagesPrompt[lang]}\n<i>${lang === 'uz' ? "Har bir tilni alohida qatorda yozing." : 'Напишите каждый язык с новой строки.'}</i>`, {
+                replyMarkup: keyboards.backKeyboard(lang, 'job_special')
+            });
+            return;
+        }
+
+        if (value === 'done' || value === 'skip') {
+            const finalKeys = value === 'skip' ? [] : currentKeys;
+            const updatedJob = {
+                ...session.data?.temp_job,
+                language_keys: finalKeys,
+                languages: this.mapJobLanguageKeysToLabels(finalKeys, lang)
+            };
+            await this.setSession(session, {
+                state: BotState.POSTING_JOB_BENEFITS,
+                data: { ...session.data, temp_job: updatedJob }
+            });
+            const selectedBenefitKeys = Array.isArray(updatedJob?.benefit_keys) ? updatedJob.benefit_keys : [];
+            await this.sendPrompt(chatId, session, botTexts.jobBenefitsPrompt[lang], {
+                replyMarkup: keyboards.jobBenefitsKeyboard(lang, selectedBenefitKeys)
+            });
+            return;
+        }
+
+        if (!['uz', 'ru', 'en'].includes(value)) return;
+        const toggled = currentKeys.includes(value)
+            ? currentKeys.filter(item => item !== value)
+            : [...currentKeys, value];
+        const updatedJob = {
+            ...session.data?.temp_job,
+            language_keys: toggled,
+            languages: this.mapJobLanguageKeysToLabels(toggled, lang)
+        };
+        await this.setSession(session, {
+            data: { ...session.data, temp_job: updatedJob }
+        });
+
+        const options = { replyMarkup: keyboards.jobLanguagesKeyboard(lang, toggled) };
+        if (messageId) {
+            try {
+                await editMessage(chatId, messageId, botTexts.jobLanguagesPrompt[lang], options);
+                return;
+            } catch {
+                // ignore and send fresh prompt
+            }
+        }
+        await this.sendPrompt(chatId, session, botTexts.jobLanguagesPrompt[lang], options);
+    }
+
+    private async handleResumeLanguageAction(chatId: number, value: string, session: TelegramSession, messageId?: number): Promise<void> {
+        const lang = session.lang;
+        if (session.state !== BotState.SELECTING_RESUME_LANGUAGES) return;
+
+        const currentKeys = Array.isArray(session.data?.resume?.language_keys)
+            ? [...session.data.resume.language_keys]
+            : this.getDefaultJobLanguageKeys(lang);
+
+        if (value === 'manual') {
+            await this.sendPrompt(chatId, session, `${botTexts.resumeLanguagesPrompt[lang]}\n<i>${lang === 'uz' ? "Har bir tilni alohida qatorda yozing." : 'Напишите каждый язык с новой строки.'}</i>`, {
+                replyMarkup: keyboards.backKeyboard(lang, 'resume_languages')
+            });
+            return;
+        }
+
+        if (value === 'done' || value === 'skip') {
+            const finalKeys = value === 'skip' ? [] : currentKeys;
+            const updatedResume = {
+                ...session.data?.resume,
+                language_keys: finalKeys,
+                languages: this.mapJobLanguageKeysToLabels(finalKeys, lang)
+            };
+            const hasSkills = Array.isArray(updatedResume?.skills) && updatedResume.skills.length > 0;
+            await this.setSession(session, {
+                state: BotState.ADDING_SKILLS,
+                data: { ...session.data, resume: updatedResume }
+            });
+            await this.sendPrompt(chatId, session, botTexts.askSkills[lang], {
+                replyMarkup: keyboards.skillsInlineKeyboard(lang, hasSkills, 'resume_languages')
+            });
+            return;
+        }
+
+        if (!['uz', 'ru', 'en'].includes(value)) return;
+        const toggled = currentKeys.includes(value)
+            ? currentKeys.filter(item => item !== value)
+            : [...currentKeys, value];
+        const updatedResume = {
+            ...session.data?.resume,
+            language_keys: toggled,
+            languages: this.mapJobLanguageKeysToLabels(toggled, lang)
+        };
+        await this.setSession(session, {
+            data: { ...session.data, resume: updatedResume }
+        });
+
+        const options = { replyMarkup: keyboards.resumeLanguagesKeyboard(lang, toggled) };
+        if (messageId) {
+            try {
+                await editMessage(chatId, messageId, botTexts.resumeLanguagesPrompt[lang], options);
+                return;
+            } catch {
+                // ignore and send a fresh prompt
+            }
+        }
+        await this.sendPrompt(chatId, session, botTexts.resumeLanguagesPrompt[lang], options);
+    }
+
+    private async continueAfterJobBenefits(chatId: number, session: TelegramSession, updatedJob: any): Promise<void> {
+        const lang = session.lang;
+        const existingHr = String(updatedJob?.hr_name || '').trim();
+        const hasExistingHr = existingHr.length >= 3;
+        const isHrFromProfile = Boolean(updatedJob?.hr_from_profile) && hasExistingHr;
+        const finalJob = { ...updatedJob, hr_from_profile: isHrFromProfile };
+
+        await this.setSession(session, {
+            state: hasExistingHr ? BotState.POSTING_JOB_CONTACT_PHONE : BotState.POSTING_JOB_HR_NAME,
+            data: { ...session.data, temp_job: finalJob }
+        });
+
+        if (hasExistingHr) {
+            const backTarget = isHrFromProfile ? 'job_benefits' : 'job_hr';
+            await this.sendPrompt(chatId, session, botTexts.jobContactPrompt[lang], {
+                replyMarkup: keyboards.backKeyboard(lang, backTarget)
+            });
+            return;
+        }
+
+        await this.sendPrompt(chatId, session, botTexts.jobHrPrompt[lang], {
+            replyMarkup: keyboards.backKeyboard(lang, 'job_benefits')
+        });
+    }
+
+    private async handleJobBenefitAction(chatId: number, value: string, session: TelegramSession, messageId?: number): Promise<void> {
+        const lang = session.lang;
+        if (session.state !== BotState.POSTING_JOB_BENEFITS) return;
+
+        const currentKeys = Array.isArray(session.data?.temp_job?.benefit_keys)
+            ? [...session.data.temp_job.benefit_keys]
+            : [];
+
+        if (value === 'manual') {
+            await this.sendPrompt(chatId, session, `${botTexts.jobBenefitsPrompt[lang]}\n<i>${lang === 'uz' ? "Har birini alohida qatorda yozing." : 'Пишите по одному пункту с новой строки.'}</i>`, {
+                replyMarkup: keyboards.backKeyboard(lang, 'job_languages')
+            });
+            return;
+        }
+
+        if (value === 'done' || value === 'skip') {
+            const finalKeys = value === 'skip' ? [] : currentKeys;
+            const updatedJob = {
+                ...session.data?.temp_job,
+                benefit_keys: finalKeys,
+                benefits: finalKeys.length > 0 ? this.mapJobBenefitKeysToLabels(finalKeys, lang) : null
+            };
+            await this.continueAfterJobBenefits(chatId, session, updatedJob);
+            return;
+        }
+
+        if (!['official', 'lunch', 'transport'].includes(value)) return;
+        const toggled = currentKeys.includes(value)
+            ? currentKeys.filter(item => item !== value)
+            : [...currentKeys, value];
+        const updatedJob = {
+            ...session.data?.temp_job,
+            benefit_keys: toggled,
+            benefits: toggled.length > 0 ? this.mapJobBenefitKeysToLabels(toggled, lang) : null
+        };
+        await this.setSession(session, {
+            data: { ...session.data, temp_job: updatedJob }
+        });
+
+        const options = { replyMarkup: keyboards.jobBenefitsKeyboard(lang, toggled) };
+        if (messageId) {
+            try {
+                await editMessage(chatId, messageId, botTexts.jobBenefitsPrompt[lang], options);
+                return;
+            } catch {
+                // ignore and send fresh prompt
+            }
+        }
+        await this.sendPrompt(chatId, session, botTexts.jobBenefitsPrompt[lang], options);
     }
 
     private sanitizeYearValue(value: any): number | null {
@@ -4161,7 +4526,7 @@ export class TelegramBot {
             region_id, district_id, category_id, category_ids,
             experience, experience_level, education: educationData, education_level, gender,
             salary, title, name, about, skills, desired_position, full_name,
-            expected_salary_min, birth_date, experience_details, special, field_id, field_title
+            expected_salary_min, birth_date, experience_details, special, field_id, field_title, languages
         } = resumeData;
 
         const parseNumber = (value: any): number | null => {
@@ -4208,6 +4573,13 @@ export class TelegramBot {
         const normalizedSpecial = Array.isArray(specialSource)
             ? Array.from(new Set(specialSource.map((s: any) => String(s).trim()).filter(Boolean)))
             : [];
+        const normalizedLanguages = hasProp(resumeData, 'languages')
+            ? Array.from(new Set(
+                (Array.isArray(languages) ? languages : this.parseListInput(String(languages || '')))
+                    .map((item: any) => String(item).trim())
+                    .filter(Boolean)
+            ))
+            : null;
 
         let safeTitle = String(
             title
@@ -4270,6 +4642,9 @@ export class TelegramBot {
             updated_at: new Date().toISOString(),
             phone: session.phone || existing?.phone || null
         } as Record<string, any>;
+        if (normalizedLanguages !== null) {
+            payload.languages = normalizedLanguages;
+        }
 
         if (!payload.title || String(payload.title).trim().length === 0) {
             payload.title = 'Mutaxassis';
@@ -4599,14 +4974,7 @@ export class TelegramBot {
             }
             const draft = { ...(session.data?.employer_profile || {}) };
             draft.director_name = directorName;
-            const regions = await this.getRegions();
-            await this.setSession(session, {
-                state: BotState.EMPLOYER_PROFILE_REGION,
-                data: { ...session.data, employer_profile: draft }
-            });
-            await this.sendPrompt(chatId, session, botTexts.employerRegionPrompt[lang], {
-                replyMarkup: keyboards.regionKeyboard(lang, regions, 'employer_director')
-            });
+            await this.finalizeEmployerProfile(chatId, session, draft);
             return;
         }
 
@@ -4737,10 +5105,12 @@ export class TelegramBot {
             }
             const updatedJob = { ...session.data?.temp_job, address };
             await this.updateSession(session.telegram_user_id, {
-                state: BotState.POSTING_JOB_WORK_MODE,
-                data: { ...session.data, temp_job: updatedJob }
+                state: BotState.REQUESTING_LOCATION,
+                data: { ...session.data, temp_job: updatedJob, location_intent: 'job_post_location' }
             });
-            await this.sendPrompt(chatId, session, botTexts.jobWorkModePrompt[lang], { replyMarkup: keyboards.jobWorkModeKeyboard(lang) });
+            await this.sendPrompt(chatId, session, botTexts.jobLocationPrompt[lang], {
+                replyMarkup: keyboards.locationRequestKeyboard(lang, { showBack: true, showCancel: false })
+            });
             return;
         }
 
@@ -4767,47 +5137,57 @@ export class TelegramBot {
                 });
                 return;
             }
-            const updatedJob = { ...session.data?.temp_job, age_min: parsed.min, age_max: parsed.max };
+            const currentSpecial = Array.isArray(session.data?.temp_job?.special) ? session.data.temp_job.special : [];
+            const updatedJob = {
+                ...session.data?.temp_job,
+                age_min: parsed.min,
+                age_max: parsed.max,
+                special: currentSpecial
+            };
             await this.updateSession(session.telegram_user_id, {
-                state: BotState.POSTING_JOB_LANGUAGES,
+                state: BotState.POSTING_JOB_SPECIAL,
                 data: { ...session.data, temp_job: updatedJob }
             });
-            await this.sendPrompt(chatId, session, botTexts.jobLanguagesPrompt[lang], {
-                replyMarkup: keyboards.aboutSkipInlineKeyboard(lang, 'job_age')
+            await this.sendPrompt(chatId, session, botTexts.jobSpecialCriteriaPrompt[lang], {
+                replyMarkup: keyboards.specialCriteriaKeyboard(lang, currentSpecial, 'job_age')
+            });
+            return;
+        }
+
+        if (state === BotState.POSTING_JOB_SPECIAL) {
+            await this.sendPrompt(chatId, session, botTexts.jobSpecialCriteriaPrompt[lang], {
+                replyMarkup: keyboards.specialCriteriaKeyboard(
+                    lang,
+                    Array.isArray(session.data?.temp_job?.special) ? session.data.temp_job.special : [],
+                    'job_age'
+                )
             });
             return;
         }
 
         if (state === BotState.POSTING_JOB_LANGUAGES) {
             const list = this.parseListInput(text);
-            const updatedJob = { ...session.data?.temp_job, languages: list };
+            const keys = this.mapJobLanguageLabelsToKeys(list);
+            const updatedJob = { ...session.data?.temp_job, languages: list, language_keys: keys };
             await this.updateSession(session.telegram_user_id, {
                 state: BotState.POSTING_JOB_BENEFITS,
                 data: { ...session.data, temp_job: updatedJob }
             });
             await this.sendPrompt(chatId, session, botTexts.jobBenefitsPrompt[lang], {
-                replyMarkup: keyboards.aboutSkipInlineKeyboard(lang, 'job_languages')
+                replyMarkup: keyboards.jobBenefitsKeyboard(lang, Array.isArray(session.data?.temp_job?.benefit_keys) ? session.data.temp_job.benefit_keys : [])
             });
             return;
         }
 
         if (state === BotState.POSTING_JOB_BENEFITS) {
-            const updatedJob = { ...session.data?.temp_job, benefits: text.trim() || null };
-            const existingHr = String(updatedJob?.hr_name || '').trim();
-            const hasHrFromProfile = existingHr.length >= 3;
-            await this.updateSession(session.telegram_user_id, {
-                state: hasHrFromProfile ? BotState.POSTING_JOB_CONTACT_PHONE : BotState.POSTING_JOB_HR_NAME,
-                data: { ...session.data, temp_job: updatedJob }
-            });
-            if (hasHrFromProfile) {
-                await this.sendPrompt(chatId, session, botTexts.jobContactPrompt[lang], {
-                    replyMarkup: keyboards.backKeyboard(lang, 'job_hr')
-                });
-            } else {
-                await this.sendPrompt(chatId, session, botTexts.jobHrPrompt[lang], {
-                    replyMarkup: keyboards.backKeyboard(lang, 'job_benefits')
-                });
-            }
+            const list = this.parseListInput(text);
+            const benefitKeys = this.mapJobBenefitLabelsToKeys(list);
+            const updatedJob = {
+                ...session.data?.temp_job,
+                benefits: list.length > 0 ? list : (text.trim() ? [text.trim()] : null),
+                benefit_keys: benefitKeys
+            };
+            await this.continueAfterJobBenefits(chatId, session, updatedJob);
             return;
         }
 
@@ -4819,7 +5199,7 @@ export class TelegramBot {
                 });
                 return;
             }
-            const updatedJob = { ...session.data?.temp_job, hr_name: hrName };
+            const updatedJob = { ...session.data?.temp_job, hr_name: hrName, hr_from_profile: false };
             await this.updateSession(session.telegram_user_id, {
                 state: BotState.POSTING_JOB_CONTACT_PHONE,
                 data: { ...session.data, temp_job: updatedJob }
@@ -4831,11 +5211,11 @@ export class TelegramBot {
         if (state === BotState.POSTING_JOB_CONTACT_PHONE) {
             const cleaned = text.replace(/[^\d+]/g, '');
             const updatedJob = { ...session.data?.temp_job, contact_phone: cleaned || text.trim() || null };
-            await this.updateSession(session.telegram_user_id, {
+            await this.setSession(session, {
                 state: BotState.POSTING_JOB_DESCRIPTION,
                 data: { ...session.data, temp_job: updatedJob }
             });
-            await this.sendPrompt(chatId, session, botTexts.postJobDescription[lang], { replyMarkup: keyboards.backKeyboard(lang, 'job_contact') });
+            await this.presentJobDescriptionStep(chatId, session);
             return;
         }
 
@@ -4843,7 +5223,7 @@ export class TelegramBot {
             const description = text.trim();
             if (description.length < 3) {
                 await this.sendPrompt(chatId, session, `${botTexts.minThreeChars[lang]}\n\n${botTexts.postJobDescription[lang]}`, {
-                    replyMarkup: keyboards.backKeyboard(lang, 'job_contact')
+                    replyMarkup: keyboards.jobDescriptionKeyboard(lang)
                 });
                 return;
             }
@@ -5032,13 +5412,52 @@ export class TelegramBot {
                 await this.showResumeById(chatId, session.data.active_resume_id, session);
                 return;
             }
-            const updatedData = { ...session.data, resume: { ...session.data?.resume, about: aboutText } };
+            const existingLanguageKeys = Array.isArray(session.data?.resume?.language_keys)
+                ? session.data.resume.language_keys
+                : [];
+            const languageKeys = existingLanguageKeys.length > 0
+                ? existingLanguageKeys
+                : this.getDefaultJobLanguageKeys(lang);
+            const updatedData = {
+                ...session.data,
+                resume: {
+                    ...session.data?.resume,
+                    about: aboutText,
+                    language_keys: languageKeys,
+                    languages: this.mapJobLanguageKeysToLabels(languageKeys, lang)
+                }
+            };
             await this.setSession(session, {
-                state: BotState.ADDING_SKILLS,
+                state: BotState.SELECTING_RESUME_LANGUAGES,
                 data: updatedData
             });
-            const options = { replyMarkup: keyboards.skillsInlineKeyboard(lang, false, 'about') };
-            await this.sendPrompt(chatId, session, botTexts.askSkills[lang], options);
+            await this.sendPrompt(chatId, session, botTexts.resumeLanguagesPrompt[lang], {
+                replyMarkup: keyboards.resumeLanguagesKeyboard(lang, languageKeys)
+            });
+            return;
+        }
+
+        if (state === BotState.SELECTING_RESUME_LANGUAGES) {
+            const lowerText = text.toLowerCase();
+            if (lowerText === "o'tkazib yuborish" || lowerText === 'пропустить') {
+                await this.handleSkip(chatId, session);
+                return;
+            }
+            const list = this.parseListInput(text);
+            const keys = this.mapJobLanguageLabelsToKeys(list);
+            const updatedResume = {
+                ...session.data?.resume,
+                language_keys: keys,
+                languages: list
+            };
+            const hasSkills = Array.isArray(updatedResume?.skills) && updatedResume.skills.length > 0;
+            await this.setSession(session, {
+                state: BotState.ADDING_SKILLS,
+                data: { ...session.data, resume: updatedResume }
+            });
+            await this.sendPrompt(chatId, session, botTexts.askSkills[lang], {
+                replyMarkup: keyboards.skillsInlineKeyboard(lang, hasSkills, 'resume_languages')
+            });
             return;
         }
 
@@ -5064,7 +5483,11 @@ export class TelegramBot {
             const addedText = addedItems.join(', ');
             await this.sendPrompt(chatId, session, `${botTexts.skillAdded[lang]} ${addedText}`, {
                 parseMode: 'HTML',
-                replyMarkup: keyboards.skillsInlineKeyboard(lang, currentSkills.length > 0, 'about')
+                replyMarkup: keyboards.skillsInlineKeyboard(
+                    lang,
+                    currentSkills.length > 0,
+                    session.data?.edit_mode ? 'resume_view' : 'resume_languages'
+                )
             });
             return;
         }
@@ -5292,6 +5715,7 @@ export class TelegramBot {
         const menuTexts = {
             jobs: { uz: '🔎 Ish topish', ru: '🔎 Найти работу' },
             saved: { uz: '⭐ Saqlanganlar', ru: '⭐ Сохранённые' },
+            offers: { uz: '📨 Takliflar', ru: '📨 Приглашения' },
             resume: { uz: '🧾 Rezyume', ru: '🧾 Резюме' },
             settings: { uz: '⚙️ Sozlamalar', ru: '⚙️ Настройки' },
             help: { uz: '🆘 Yordam', ru: '🆘 Помощь' }
@@ -5332,6 +5756,8 @@ export class TelegramBot {
 
         if (text === menuTexts.jobs[lang]) {
             await this.handleAction(chatId, 'jobs', session);
+        } else if (text === menuTexts.offers[lang]) {
+            await this.handleAction(chatId, 'offers', session);
         } else if (text === menuTexts.resume[lang]) {
             await this.handleAction(chatId, 'profile', session);
         } else if (text === menuTexts.settings[lang]) {
@@ -5357,13 +5783,48 @@ export class TelegramBot {
 
         // Optional resume steps
         if (state === BotState.ENTERING_ABOUT) {
-            const updatedData = { ...session.data, resume: { ...session.data?.resume, about: null } };
+            if (session.data?.edit_mode && session.data?.active_resume_id) {
+                await this.saveResume(session, { ...session.data?.resume, about: null }, session.data.active_resume_id);
+                const updatedData = { ...session.data, edit_mode: false, edit_field: null };
+                await this.setSession(session, { data: updatedData });
+                await this.showResumeById(chatId, session.data.active_resume_id, session);
+                return;
+            }
+            const defaultLanguageKeys = this.getDefaultJobLanguageKeys(lang);
+            const updatedData = {
+                ...session.data,
+                resume: {
+                    ...session.data?.resume,
+                    about: null,
+                    language_keys: defaultLanguageKeys,
+                    languages: this.mapJobLanguageKeysToLabels(defaultLanguageKeys, lang)
+                }
+            };
+            await this.setSession(session, {
+                state: BotState.SELECTING_RESUME_LANGUAGES,
+                data: updatedData
+            });
+            await this.sendPrompt(chatId, session, botTexts.resumeLanguagesPrompt[lang], {
+                replyMarkup: keyboards.resumeLanguagesKeyboard(lang, defaultLanguageKeys)
+            });
+            return;
+        }
+        if (state === BotState.SELECTING_RESUME_LANGUAGES) {
+            const updatedData = {
+                ...session.data,
+                resume: {
+                    ...session.data?.resume,
+                    language_keys: [],
+                    languages: []
+                }
+            };
+            const hasSkills = Array.isArray(updatedData?.resume?.skills) && updatedData.resume.skills.length > 0;
             await this.setSession(session, {
                 state: BotState.ADDING_SKILLS,
                 data: updatedData
             });
             await this.sendPrompt(chatId, session, botTexts.askSkills[lang], {
-                replyMarkup: keyboards.skillsInlineKeyboard(lang, false, 'about')
+                replyMarkup: keyboards.skillsInlineKeyboard(lang, hasSkills, 'resume_languages')
             });
             return;
         }
@@ -5376,18 +5837,18 @@ export class TelegramBot {
 
         // Optional job steps
         if (state === BotState.POSTING_JOB_LANGUAGES) {
-            const updatedJob = { ...session.data?.temp_job, languages: [] };
+            const updatedJob = { ...session.data?.temp_job, languages: [], language_keys: [] };
             await this.setSession(session, {
                 state: BotState.POSTING_JOB_BENEFITS,
                 data: { ...session.data, temp_job: updatedJob }
             });
             await this.sendPrompt(chatId, session, botTexts.jobBenefitsPrompt[lang], {
-                replyMarkup: keyboards.aboutSkipInlineKeyboard(lang, 'job_languages')
+                replyMarkup: keyboards.jobBenefitsKeyboard(lang, [])
             });
             return;
         }
         if (state === BotState.POSTING_JOB_BENEFITS) {
-            const updatedJob = { ...session.data?.temp_job, benefits: null };
+            const updatedJob = { ...session.data?.temp_job, benefits: null, benefit_keys: [] };
             const existingHr = String(updatedJob?.hr_name || '').trim();
             const hasHrFromProfile = existingHr.length >= 3;
             await this.setSession(session, {
@@ -5396,7 +5857,7 @@ export class TelegramBot {
             });
             if (hasHrFromProfile) {
                 await this.sendPrompt(chatId, session, botTexts.jobContactPrompt[lang], {
-                    replyMarkup: keyboards.backKeyboard(lang, 'job_hr')
+                    replyMarkup: keyboards.backKeyboard(lang, 'job_benefits')
                 });
             } else {
                 await this.sendPrompt(chatId, session, botTexts.jobHrPrompt[lang], {
@@ -5413,6 +5874,16 @@ export class TelegramBot {
 
         // For required steps, ignore skip and re-ask
         if (state === BotState.REQUESTING_LOCATION) {
+            if (session.data?.location_intent === 'job_post_location') {
+                await this.setSession(session, {
+                    state: BotState.POSTING_JOB_WORK_MODE,
+                    data: { ...session.data, location_intent: null }
+                });
+                await this.sendPrompt(chatId, session, botTexts.jobWorkModePrompt[lang], {
+                    replyMarkup: keyboards.jobWorkModeKeyboard(lang)
+                });
+                return;
+            }
             await this.sendPrompt(chatId, session, botTexts.locationRequest[lang], {
                 replyMarkup: keyboards.locationRequestKeyboard(lang)
             });
@@ -5431,6 +5902,7 @@ export class TelegramBot {
             edit_field: null,
             location_intent: null,
             role_switch_pending: false,
+            password_create_first: null,
             geo_requirements_resume_id: null,
             geo_requirements_need_gender: false,
             geo_requirements_need_education: false,
@@ -5577,14 +6049,31 @@ export class TelegramBot {
 
         if (target === 'about') {
             await this.setSession(session, { state: BotState.ENTERING_ABOUT });
-            await this.sendPrompt(chatId, session, botTexts.askAbout[lang], { replyMarkup: keyboards.aboutSkipInlineKeyboard(lang, 'name') });
+            await this.presentResumeAboutStep(chatId, session);
+            return;
+        }
+
+        if (target === 'resume_languages') {
+            const selected = Array.isArray(session.data?.resume?.language_keys)
+                ? session.data.resume.language_keys
+                : this.getDefaultJobLanguageKeys(lang);
+            await this.setSession(session, { state: BotState.SELECTING_RESUME_LANGUAGES });
+            await this.sendPrompt(chatId, session, botTexts.resumeLanguagesPrompt[lang], {
+                replyMarkup: keyboards.resumeLanguagesKeyboard(lang, selected)
+            });
             return;
         }
 
         if (target === 'skills') {
             const hasSkills = Array.isArray(session.data?.resume?.skills) && session.data.resume.skills.length > 0;
             await this.setSession(session, { state: BotState.ADDING_SKILLS });
-            await this.sendPrompt(chatId, session, botTexts.askSkills[lang], { replyMarkup: keyboards.skillsInlineKeyboard(lang, hasSkills, 'about') });
+            await this.sendPrompt(chatId, session, botTexts.askSkills[lang], {
+                replyMarkup: keyboards.skillsInlineKeyboard(
+                    lang,
+                    hasSkills,
+                    session.data?.edit_mode ? 'resume_view' : 'resume_languages'
+                )
+            });
             return;
         }
 
@@ -5643,6 +6132,21 @@ export class TelegramBot {
         }
 
         if (target === 'job_category') {
+            const cachedOptions: OsonishField[] = Array.isArray(session.data?.field_options) ? session.data.field_options : [];
+            const existingQuery = String(session.data?.field_query || '').trim();
+            if (cachedOptions.length > 0) {
+                const page = Number.isFinite(Number(session.data?.field_page)) ? Number(session.data?.field_page) : 0;
+                const safePage = Math.max(0, page);
+                await this.setSession(session, {
+                    state: BotState.SELECTING_FIELD,
+                    data: { ...session.data, field_context: 'job', field_page: safePage }
+                });
+                await this.sendPrompt(chatId, session, this.buildFieldPromptText(lang, existingQuery || String(session.data?.temp_job?.title || ''), cachedOptions.length, safePage, 10), {
+                    replyMarkup: keyboards.fieldsKeyboard(lang, cachedOptions, 'job_title', safePage, 10)
+                });
+                return;
+            }
+
             const existingTitle = String(session.data?.temp_job?.title || '').trim();
             if (existingTitle.length >= 3) {
                 const loadingHintId = await this.showLoadingHint(chatId, session);
@@ -5739,7 +6243,7 @@ export class TelegramBot {
 
         if (target === 'job_work_hours') {
             await this.setSession(session, { state: BotState.POSTING_JOB_WORK_HOURS });
-            await this.sendPrompt(chatId, session, botTexts.jobWorkingHoursPrompt[lang], { replyMarkup: keyboards.backKeyboard(lang, 'job_work_days') });
+            await this.sendPrompt(chatId, session, botTexts.jobWorkingHoursPrompt[lang], { replyMarkup: keyboards.jobWorkingHoursKeyboard(lang) });
             return;
         }
 
@@ -5767,18 +6271,29 @@ export class TelegramBot {
             return;
         }
 
+        if (target === 'job_special') {
+            const selected = Array.isArray(session.data?.temp_job?.special) ? session.data.temp_job.special : [];
+            await this.setSession(session, { state: BotState.POSTING_JOB_SPECIAL });
+            await this.sendPrompt(chatId, session, botTexts.jobSpecialCriteriaPrompt[lang], {
+                replyMarkup: keyboards.specialCriteriaKeyboard(lang, selected, 'job_age')
+            });
+            return;
+        }
+
         if (target === 'job_languages') {
+            const selectedKeys = Array.isArray(session.data?.temp_job?.language_keys) ? session.data.temp_job.language_keys : [];
             await this.setSession(session, { state: BotState.POSTING_JOB_LANGUAGES });
             await this.sendPrompt(chatId, session, botTexts.jobLanguagesPrompt[lang], {
-                replyMarkup: keyboards.aboutSkipInlineKeyboard(lang, 'job_age')
+                replyMarkup: keyboards.jobLanguagesKeyboard(lang, selectedKeys)
             });
             return;
         }
 
         if (target === 'job_benefits') {
+            const selectedKeys = Array.isArray(session.data?.temp_job?.benefit_keys) ? session.data.temp_job.benefit_keys : [];
             await this.setSession(session, { state: BotState.POSTING_JOB_BENEFITS });
             await this.sendPrompt(chatId, session, botTexts.jobBenefitsPrompt[lang], {
-                replyMarkup: keyboards.aboutSkipInlineKeyboard(lang, 'job_languages')
+                replyMarkup: keyboards.jobBenefitsKeyboard(lang, selectedKeys)
             });
             return;
         }
@@ -5791,13 +6306,15 @@ export class TelegramBot {
 
         if (target === 'job_contact') {
             await this.setSession(session, { state: BotState.POSTING_JOB_CONTACT_PHONE });
-            await this.sendPrompt(chatId, session, botTexts.jobContactPrompt[lang], { replyMarkup: keyboards.backKeyboard(lang, 'job_hr') });
+            const hasHrFromProfile = Boolean(session.data?.temp_job?.hr_from_profile);
+            const backTarget = hasHrFromProfile ? 'job_benefits' : 'job_hr';
+            await this.sendPrompt(chatId, session, botTexts.jobContactPrompt[lang], { replyMarkup: keyboards.backKeyboard(lang, backTarget) });
             return;
         }
 
         if (target === 'job_description') {
             await this.setSession(session, { state: BotState.POSTING_JOB_DESCRIPTION });
-            await this.sendPrompt(chatId, session, botTexts.postJobDescription[lang], { replyMarkup: keyboards.backKeyboard(lang, 'job_contact') });
+            await this.presentJobDescriptionStep(chatId, session);
             return;
         }
 
@@ -6149,7 +6666,7 @@ export class TelegramBot {
 
         if (field === 'about') {
             await this.setSession(session, { state: BotState.ENTERING_ABOUT });
-            await this.sendPrompt(chatId, session, botTexts.askAbout[lang], { replyMarkup: keyboards.aboutSkipInlineKeyboard(lang) });
+            await this.presentResumeAboutStep(chatId, session);
             return;
         }
 
@@ -6190,7 +6707,6 @@ export class TelegramBot {
         lines.push('— — — — — — — — — — — — — — — —');
 
         if (resume.full_name) lines.push(`🪪 | ${lang === 'uz' ? 'Ism' : 'Имя'}: ${resume.full_name}`);
-        if (resume.phone) lines.push(`📱 | ${lang === 'uz' ? 'Telefon' : 'Телефон'}: ${resume.phone}`);
         if (resume.birth_date) {
             let formatted = String(resume.birth_date);
             const parsed = new Date(resume.birth_date);
@@ -6200,7 +6716,7 @@ export class TelegramBot {
                 const yyyy = parsed.getFullYear();
                 formatted = `${dd}.${mm}.${yyyy}`;
             }
-            lines.push(`🎂 | ${lang === 'uz' ? "Tug'ilgan sana" : 'Дата рождения'}: ${formatted}`);
+            lines.push(`📅 | ${lang === 'uz' ? "Tug'ilgan sana" : 'Дата рождения'}: ${formatted}`);
         }
 
         const regions = await this.getRegions();
@@ -6265,6 +6781,9 @@ export class TelegramBot {
         if (resume.expected_salary_min) {
             lines.push(`💰 | ${lang === 'uz' ? 'Kutilayotgan maosh' : 'Ожидаемая зарплата'}: ${resume.expected_salary_min} so'm`);
         }
+        if (resume.expected_salary_max) {
+            lines.push(`💸 | ${lang === 'uz' ? 'Maksimal maosh' : 'Максимальная зарплата'}: ${resume.expected_salary_max} so'm`);
+        }
 
         if (Array.isArray(resume.special) && resume.special.length > 0) {
             const labels: Record<string, { uz: string; ru: string }> = {
@@ -6315,8 +6834,37 @@ export class TelegramBot {
             lines.push(`🧠 | ${lang === 'uz' ? "Ko'nikmalar" : 'Навыки'}: ${resume.skills.join(', ')}`);
         }
 
+        if (Array.isArray(resume.languages) && resume.languages.length > 0) {
+            const languageItems = resume.languages
+                .map((item: any) => {
+                    if (typeof item === 'string') return item.trim();
+                    if (typeof item === 'number') {
+                        const map: Record<number, string> = {
+                            1: lang === 'uz' ? "O'zbek tili" : 'Узбекский язык',
+                            2: lang === 'uz' ? 'Rus tili' : 'Русский язык',
+                            3: lang === 'uz' ? 'Ingliz tili' : 'Английский язык'
+                        };
+                        return map[item] || '';
+                    }
+                    if (item && typeof item === 'object') {
+                        return String(item.language || item.name || item.title || '').trim();
+                    }
+                    return '';
+                })
+                .filter(Boolean);
+            if (languageItems.length > 0) {
+                lines.push(`🗣️ | ${lang === 'uz' ? 'Tillar' : 'Языки'}: ${languageItems.join(', ')}`);
+            }
+        }
+
         if (resume.about) {
             lines.push(`📝 | ${lang === 'uz' ? "O'zi haqida" : 'О себе'}: ${resume.about}`);
+        }
+
+        if (resume.phone) {
+            lines.push('');
+            lines.push(`☎️ | ${lang === 'uz' ? "Bog'lanish" : 'Контакты'}`);
+            lines.push(`📞 | ${lang === 'uz' ? 'Telefon' : 'Телефон'}: ${resume.phone}`);
         }
 
         return lines.join('\n');
@@ -6441,7 +6989,7 @@ export class TelegramBot {
             if (!ai) {
                 return { ...job, aiScore: null, strictScore: strict, matchScore: strict } as MatchedJob & any;
             }
-            const combined = Math.round((strict * 0.75) + (ai.aiScore * 0.25));
+            const combined = Math.max(strict, Math.round((strict * 0.75) + (ai.aiScore * 0.25)));
             return {
                 ...job,
                 aiScore: ai.aiScore,
@@ -6477,7 +7025,7 @@ export class TelegramBot {
             const strictScore = Math.max(0, Math.min(100, Math.round(Number(item.score) || 0)));
             const ai = aiMap.get(String(item.resume?.id || ''));
             if (!ai) return { ...item, score: strictScore, strictScore, aiScore: undefined };
-            const score = Math.round((strictScore * 0.75) + (ai.aiScore * 0.25));
+            const score = Math.max(strictScore, Math.round((strictScore * 0.75) + (ai.aiScore * 0.25)));
             return { ...item, score: Math.max(0, Math.min(100, score)), strictScore, aiScore: ai.aiScore };
         });
 
@@ -7588,9 +8136,65 @@ export class TelegramBot {
         if (!raw) return [];
         const parts = raw
             .split(/[,\n;]/)
-            .map(item => item.trim())
+            .map(item => item.replace(/^[-*•]\s*/, '').trim())
             .filter(Boolean);
         return Array.from(new Set(parts));
+    }
+
+    private getDefaultJobLanguageKeys(lang: BotLang): string[] {
+        return lang === 'ru' ? ['ru'] : ['uz'];
+    }
+
+    private mapJobLanguageKeysToLabels(keys: string[], lang: BotLang): string[] {
+        const labels: Record<string, { uz: string; ru: string }> = {
+            uz: { uz: "O'zbek tili", ru: 'Узбекский язык' },
+            ru: { uz: 'Rus tili', ru: 'Русский язык' },
+            en: { uz: 'Ingliz tili', ru: 'Английский язык' }
+        };
+        return keys
+            .map(key => labels[key]?.[lang])
+            .filter((value): value is string => Boolean(value));
+    }
+
+    private mapJobLanguageLabelsToKeys(labels: string[]): string[] {
+        const keys = new Set<string>();
+        for (const raw of labels) {
+            const normalized = String(raw || '').toLowerCase().trim();
+            if (!normalized) continue;
+            if (normalized.includes("o'zbek") || normalized.includes('uzbek') || normalized.includes('узбек')) keys.add('uz');
+            if (normalized.includes('rus') || normalized.includes('russian') || normalized.includes('рус')) keys.add('ru');
+            if (normalized.includes('ingliz') || normalized.includes('english') || normalized.includes('англ')) keys.add('en');
+        }
+        return Array.from(keys);
+    }
+
+    private mapJobBenefitKeysToLabels(keys: string[], lang: BotLang): string[] {
+        const labels: Record<string, { uz: string; ru: string }> = {
+            official: { uz: "Rasmiy ishga joylashish", ru: 'Официальное оформление' },
+            lunch: { uz: 'Bepul tushlik', ru: 'Бесплатный обед' },
+            transport: { uz: "Moddiy rag'batlantirishlar mavjud", ru: 'Есть материальные поощрения' }
+        };
+        return keys
+            .map(key => labels[key]?.[lang])
+            .filter((value): value is string => Boolean(value));
+    }
+
+    private mapJobBenefitLabelsToKeys(labels: string[]): string[] {
+        const keys = new Set<string>();
+        for (const raw of labels) {
+            const normalized = String(raw || '').toLowerCase().trim();
+            if (!normalized) continue;
+            if (normalized.includes('rasmiy') || normalized.includes('офиц')) keys.add('official');
+            if (normalized.includes('tushlik') || normalized.includes('обед') || normalized.includes('lunch')) keys.add('lunch');
+            if (
+                normalized.includes('transport')
+                || normalized.includes("rag'bat")
+                || normalized.includes('ragbat')
+                || normalized.includes('поощр')
+                || normalized.includes('moddiy')
+            ) keys.add('transport');
+        }
+        return Array.from(keys);
     }
 
     private buildLooseMatches(
@@ -8306,9 +8910,11 @@ export class TelegramBot {
             case BotState.ENTERING_NAME:
                 return 'title';
             case BotState.ENTERING_ABOUT:
-                return 'name';
-            case BotState.ADDING_SKILLS:
+                return session.data?.edit_mode ? 'resume_view' : 'salary';
+            case BotState.SELECTING_RESUME_LANGUAGES:
                 return 'about';
+            case BotState.ADDING_SKILLS:
+                return session.data?.edit_mode ? 'resume_view' : 'resume_languages';
             case BotState.ENTERING_WORKPLACE:
                 return 'experience';
             case BotState.ENTERING_WORKPLACE_YEARS:
@@ -8328,6 +8934,7 @@ export class TelegramBot {
             case BotState.REQUESTING_LOCATION: {
                 const intent = session.data?.location_intent;
                 if (intent === 'resume_final') return 'skills';
+                if (intent === 'job_post_location') return 'job_address';
                 if (intent === 'job_search_geo') return 'main_menu';
                 if (intent === 'subscription_geo' || intent === 'update_only') return 'main_menu';
                 return 'main_menu';
@@ -8378,14 +8985,16 @@ export class TelegramBot {
                 return 'job_education';
             case BotState.POSTING_JOB_AGE:
                 return 'job_gender';
-            case BotState.POSTING_JOB_LANGUAGES:
+            case BotState.POSTING_JOB_SPECIAL:
                 return 'job_age';
+            case BotState.POSTING_JOB_LANGUAGES:
+                return 'job_special';
             case BotState.POSTING_JOB_BENEFITS:
                 return 'job_languages';
             case BotState.POSTING_JOB_HR_NAME:
                 return 'job_benefits';
             case BotState.POSTING_JOB_CONTACT_PHONE:
-                return 'job_hr';
+                return session.data?.temp_job?.hr_from_profile ? 'job_benefits' : 'job_hr';
             case BotState.POSTING_JOB_DESCRIPTION:
                 return 'job_contact';
             case BotState.POSTING_JOB_CONFIRM:
@@ -8434,6 +9043,34 @@ export class TelegramBot {
         }
     }
 
+    private async clearRoleSwitchArtifacts(chatId: number, session: TelegramSession): Promise<void> {
+        await this.clearLastJobArtifacts(chatId, session);
+        const lastWorkerMessageId = session.data?.last_worker_match_message_id;
+        if (lastWorkerMessageId) {
+            try {
+                await deleteMessage(chatId, lastWorkerMessageId);
+            } catch {
+                // ignore
+            }
+        }
+        if (session.data?.last_prompt_message_id) {
+            try {
+                await deleteMessage(chatId, session.data.last_prompt_message_id);
+            } catch {
+                // ignore
+            }
+        }
+        if (lastWorkerMessageId || session.data?.last_prompt_message_id) {
+            await this.setSession(session, {
+                data: {
+                    ...session.data,
+                    last_worker_match_message_id: null,
+                    last_prompt_message_id: null
+                }
+            });
+        }
+    }
+
     private async showMainMenu(chatId: number, session: TelegramSession): Promise<void> {
         await this.clearFlowCancelKeyboard(chatId, session);
         const updatedData = { ...session.data, clean_inputs: false };
@@ -8477,6 +9114,8 @@ export class TelegramBot {
             await this.handleEmployerMainMenu(chatId, 'post_job', session);
         } else if (action === 'saved') {
             await this.showSavedJobs(chatId, session);
+        } else if (action === 'offers') {
+            await this.showSeekerOffers(chatId, session);
         } else if (action === 'help') {
             const isEmployer = session.data?.active_role === 'employer';
             await this.sendPrompt(chatId, session, botTexts.helpText[lang], {
@@ -8514,10 +9153,14 @@ export class TelegramBot {
                 .select('company_name, phone, director_name')
                 .eq('user_id', session.user_id)
                 .maybeSingle();
+            const hasHrFromProfile = String(employer?.director_name || '').trim().length >= 3;
             const baseJob = {
                 company_name: employer?.company_name || null,
                 contact_phone: employer?.phone || session.phone || null,
-                hr_name: employer?.director_name || null
+                hr_name: employer?.director_name || null,
+                hr_from_profile: hasHrFromProfile,
+                language_keys: [],
+                benefit_keys: []
             };
             const updatedData = { ...session.data, temp_job: baseJob, clean_inputs: true };
             await this.setSession(session, {
@@ -8548,26 +9191,47 @@ export class TelegramBot {
             return;
         }
         if (action === 'find_worker') {
-            const loadingMessageId = await this.showLoadingHint(chatId, session, botTexts.workerSearchLoading[lang]);
-            try {
-                const jobs = await this.getEmployerJobs(session, 20);
-                if (!jobs || jobs.length === 0) {
-                    await this.sendPrompt(chatId, session, botTexts.employerNoVacanciesHint[lang], {
-                        replyMarkup: keyboards.employerMainMenuKeyboard(lang)
-                    });
-                    return;
-                }
-                await this.sendPrompt(chatId, session, lang === 'uz' ? "👥 Qaysi vakansiya uchun ishchi topamiz?" : '👥 Для какой вакансии ищем кандидатов?', {
-                    replyMarkup: keyboards.employerJobsKeyboard(lang, jobs)
+            const jobs = await this.getEmployerJobs(session, 20);
+            if (!jobs || jobs.length === 0) {
+                await this.sendPrompt(chatId, session, botTexts.employerNoVacanciesHint[lang], {
+                    replyMarkup: keyboards.employerMainMenuKeyboard(lang)
                 });
-            } finally {
-                await this.clearLoadingHint(chatId, loadingMessageId);
+                return;
             }
+            const searchableJobs = jobs.filter(job => {
+                const state = this.getJobLifecycleState(job);
+                return !state.isPaused && !state.isFilled;
+            });
+            if (!searchableJobs.length) {
+                await this.sendPrompt(
+                    chatId,
+                    session,
+                    lang === 'uz'
+                        ? "ℹ️ Hozircha ishchi qidirish uchun faol vakansiya yo‘q.\n\n📋 Mening vakansiyalarim bo‘limida vakansiyani faollashtiring."
+                        : 'ℹ️ Сейчас нет активных вакансий для поиска сотрудников.\n\nАктивируйте вакансию в разделе «Мои вакансии».',
+                    { replyMarkup: keyboards.employerMainMenuKeyboard(lang) }
+                );
+                return;
+            }
+            await this.sendPrompt(chatId, session, lang === 'uz' ? "🔎 | Qaysi vakansiya uchun ishchi topamiz?" : '🔎 | Для какой вакансии ищем кандидатов?', {
+                replyMarkup: keyboards.employerJobsKeyboard(lang, searchableJobs)
+            });
             return;
         }
     }
 
-    private async getEmployerJobs(session: TelegramSession, limit: number = 30): Promise<Array<{ id: string; title_uz?: string; title_ru?: string; title?: string | null; employer_id?: string | null; user_id?: string | null; created_by?: string | null; contact_phone?: string | null; company_name?: string | null; created_at?: string | null }>> {
+    private getJobLifecycleState(job: any): { isPaused: boolean; isFilled: boolean; isUnknown: boolean } {
+        const statusRaw = String(job?.status || job?.source_status || '').toLowerCase().trim();
+        const hasStatus = statusRaw.length > 0;
+        const hasActiveFlag = typeof job?.is_active === 'boolean';
+        const isFilled = ['filled', 'closed', 'archived'].includes(statusRaw);
+        const isPausedByStatus = ['inactive', 'paused', 'on_hold'].includes(statusRaw);
+        const isPaused = !isFilled && (isPausedByStatus || job?.is_active === false);
+        const isUnknown = !hasStatus && !hasActiveFlag;
+        return { isPaused, isFilled, isUnknown };
+    }
+
+    private async getEmployerJobs(session: TelegramSession, limit: number = 30): Promise<Array<{ id: string; title_uz?: string; title_ru?: string; title?: string | null; employer_id?: string | null; user_id?: string | null; created_by?: string | null; contact_phone?: string | null; company_name?: string | null; created_at?: string | null; status?: string | null; is_active?: boolean | null }>> {
         const { data: employer } = await this.supabase
             .from('employer_profiles')
             .select('id')
@@ -8722,6 +9386,37 @@ export class TelegramBot {
             })
             .slice(0, limit);
 
+        const statusById = new Map<string, { status?: string | null; is_active?: boolean | null }>();
+        const jobIds = jobs.map((job: any) => String(job?.id || '')).filter(Boolean);
+        if (jobIds.length > 0) {
+            let statusSelect = 'id, status, is_active';
+            for (let attempt = 0; attempt < 8; attempt += 1) {
+                const statusRes = await this.supabase
+                    .from('jobs')
+                    .select(statusSelect)
+                    .in('id', jobIds);
+                if (!statusRes.error) {
+                    for (const row of (statusRes.data || []) as any[]) {
+                        if (!row?.id) continue;
+                        statusById.set(String(row.id), {
+                            status: row?.status ?? null,
+                            is_active: row?.is_active ?? null
+                        });
+                    }
+                    break;
+                }
+                const missingColumn = this.extractMissingColumn(statusRes.error);
+                if (missingColumn) {
+                    const next = this.stripColumnFromSelect(statusSelect, missingColumn);
+                    if (next && next !== statusSelect) {
+                        statusSelect = next;
+                        continue;
+                    }
+                }
+                break;
+            }
+        }
+
         return jobs.map((job: any) => {
             const inferredTitle = job?.title
                 || job?.title_uz
@@ -8733,9 +9428,12 @@ export class TelegramBot {
                 || job?.raw_source_json?.position
                 || job?.raw_source_json?.job_title
                 || null;
+            const statusPatch = statusById.get(String(job?.id || '')) || {};
             return {
                 ...job,
-                title: inferredTitle
+                title: inferredTitle,
+                status: statusPatch.status ?? job?.status ?? null,
+                is_active: statusPatch.is_active ?? job?.is_active ?? null
             };
         });
     }
@@ -8746,7 +9444,7 @@ export class TelegramBot {
         const employerJobIds = new Set((employerJobs || []).map(job => String(job.id)));
         const employerJobsMap = new Map((employerJobs || []).map(job => [String(job.id), job]));
 
-        let appSelect = 'id, created_at, status, full_name, resume_id, user_id, applicant_id, job_id';
+        let appSelect = 'id, created_at, status, full_name, resume_id, user_id, applicant_id, job_id, viewed_at';
         let apps: any[] | null = null;
         let error: any = null;
         for (let attempt = 0; attempt < 12; attempt += 1) {
@@ -8783,8 +9481,8 @@ export class TelegramBot {
 
         if (!filtered.length) {
             const emptyText = lang === 'uz'
-                ? "📨 | Arizalar bo'limi\n\nHozircha arizalar yo‘q.\n📢 «Vakansiya joylash» orqali yangi vakansiya oching va nomzodlardan ariza kuting."
-                : '📨 | Раздел откликов\n\nПока откликов нет.\n📢 Разместите вакансию и дождитесь первых откликов кандидатов.';
+                ? "📨 | Arizalar bo'limi\n\nHozircha arizalar yo‘q."
+                : '📨 | Раздел откликов\n\nПока откликов нет.';
             await this.sendPrompt(chatId, session, emptyText, { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
             return;
         }
@@ -8797,7 +9495,8 @@ export class TelegramBot {
                 applicant: app.full_name || null,
                 jobTitle: lang === 'uz'
                     ? (inferredTitle || 'Vakansiya')
-                    : (inferredTitle || 'Вакансия')
+                    : (inferredTitle || 'Вакансия'),
+                isUnread: !app?.viewed_at
             };
         });
 
@@ -8836,6 +9535,13 @@ export class TelegramBot {
         }
 
         if (error || !app) {
+            await sendMessage(chatId, botTexts.error[lang], { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
+            return;
+        }
+
+        const employerJobs = await this.getEmployerJobs(session, 400);
+        const allowedJobIds = new Set((employerJobs || []).map((job: any) => String(job?.id || '')));
+        if (!allowedJobIds.has(String(app?.job_id || ''))) {
             await sendMessage(chatId, botTexts.error[lang], { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
             return;
         }
@@ -8905,7 +9611,13 @@ export class TelegramBot {
         }
 
         if (!resume) {
-            const fallback = `${lang === 'uz' ? 'Nomzod' : 'Кандидат'}: ${app.full_name || '—'}\n${lang === 'uz' ? 'Telefon' : 'Телефон'}: ${app.phone || '—'}\n${lang === 'uz' ? 'Vakansiya' : 'Вакансия'}: ${jobTitle}`;
+            const fallback = [
+                `${lang === 'uz' ? 'Nomzod' : 'Кандидат'}: ${app.full_name || '—'}`,
+                `${lang === 'uz' ? 'Vakansiya' : 'Вакансия'}: ${jobTitle}`,
+                '',
+                `☎️ | ${lang === 'uz' ? "Bog'lanish" : 'Контакты'}`,
+                `📞 | ${lang === 'uz' ? 'Telefon' : 'Телефон'}: ${app.phone || '—'}`
+            ].join('\n');
             await this.sendPrompt(chatId, session, fallback, { replyMarkup: keyboards.applicationViewKeyboard(lang) });
             return;
         }
@@ -8956,6 +9668,77 @@ export class TelegramBot {
         });
     }
 
+    private async handleEmployerJobActivate(chatId: number, jobId: string, session: TelegramSession, sourceMessageId?: number): Promise<void> {
+        const lang = session.lang;
+        if (sourceMessageId) {
+            try {
+                await deleteMessage(chatId, sourceMessageId);
+            } catch {
+                // ignore
+            }
+        }
+        const { error } = await this.supabase
+            .from('jobs')
+            .update({
+                status: 'active',
+                source_status: 'active',
+                is_active: true,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', jobId);
+
+        if (error) {
+            console.error('Job activate error:', error);
+            await this.sendPrompt(chatId, session, botTexts.error[lang], { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
+            return;
+        }
+        await this.handleEmployerJobView(chatId, jobId, session);
+    }
+
+    private async handleEmployerJobDelete(chatId: number, jobId: string, session: TelegramSession): Promise<void> {
+        const lang = session.lang;
+        if (!jobId) {
+            await this.sendPrompt(chatId, session, botTexts.error[lang], { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
+            return;
+        }
+
+        const employerJobs = await this.getEmployerJobs(session, 400);
+        const allowedJobIds = new Set((employerJobs || []).map((job: any) => String(job?.id || '')));
+        if (!allowedJobIds.has(String(jobId))) {
+            await this.sendPrompt(chatId, session, botTexts.error[lang], { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
+            return;
+        }
+
+        let hardDeleted = false;
+        const hardDelete = await this.supabase
+            .from('jobs')
+            .delete()
+            .eq('id', jobId);
+        if (!hardDelete.error) {
+            hardDeleted = true;
+        } else {
+            const archive = await this.supabase
+                .from('jobs')
+                .update({
+                    status: 'archived',
+                    source_status: 'archived',
+                    is_active: false,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', jobId);
+            if (archive.error) {
+                console.error('Job delete/archive error:', archive.error);
+                await this.sendPrompt(chatId, session, botTexts.error[lang], { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
+                return;
+            }
+        }
+
+        const infoText = hardDeleted
+            ? (lang === 'uz' ? "✅ Vakansiya o'chirildi." : '✅ Вакансия удалена.')
+            : (lang === 'uz' ? '✅ Vakansiya arxivga o‘tkazildi.' : '✅ Вакансия переведена в архив.');
+        await this.sendPrompt(chatId, session, infoText, { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
+    }
+
     private async handleMatchJob(chatId: number, jobId: string, session: TelegramSession, sourceMessageId?: number): Promise<void> {
         const lang = session.lang;
         if (sourceMessageId) {
@@ -8991,13 +9774,27 @@ export class TelegramBot {
                 await this.sendPrompt(chatId, session, botTexts.error[lang], { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
                 return;
             }
+            const state = this.getJobLifecycleState(job);
+            const isPaused = state.isPaused;
+            const isFilled = state.isFilled;
+            if (isPaused || isFilled) {
+                await this.showEmployerJobDetails(chatId, session, job);
+                return;
+            }
             await this.showMatchingResumesForJob(chatId, session, job);
         } finally {
             await this.clearLoadingHint(chatId, loadingMessageId);
         }
     }
 
-    private async handleEmployerJobView(chatId: number, jobId: string, session: TelegramSession): Promise<void> {
+    private async handleEmployerJobView(chatId: number, jobId: string, session: TelegramSession, sourceMessageId?: number): Promise<void> {
+        if (sourceMessageId) {
+            try {
+                await deleteMessage(chatId, sourceMessageId);
+            } catch {
+                // ignore
+            }
+        }
         const { data: job } = await this.supabase
             .from('jobs')
             .select('*')
@@ -9013,13 +9810,17 @@ export class TelegramBot {
     private async showEmployerJobDetails(chatId: number, session: TelegramSession, job: any): Promise<void> {
         const lang = session.lang;
         const text = formatFullJobCard(job, lang);
+        const state = this.getJobLifecycleState(job);
+        const isPaused = state.isPaused;
+        const isFilled = state.isFilled;
         await this.sendPrompt(chatId, session, text, {
-            replyMarkup: keyboards.employerJobViewKeyboard(lang, job.id)
+            replyMarkup: keyboards.employerJobViewKeyboard(lang, job.id, { isPaused, isFilled })
         });
     }
 
     private async handleRoleSwitch(chatId: number, session: TelegramSession): Promise<void> {
         const lang = session.lang;
+        await this.clearRoleSwitchArtifacts(chatId, session);
         if (!session.phone) {
             await this.sendPrompt(chatId, session, botTexts.startWelcome[lang], {
                 replyMarkup: keyboards.startKeyboard(lang),
@@ -9036,7 +9837,8 @@ export class TelegramBot {
         const updatedData = {
             ...session.data,
             role_switch_pending: true,
-            password_flow: hasPassword ? 'login' : 'create'
+            password_flow: hasPassword ? 'login' : 'create',
+            password_create_first: null
         };
         await this.setSession(session, { state: BotState.AWAITING_PASSWORD, data: updatedData });
         const prompt = hasPassword ? botTexts.enterPassword[lang] : botTexts.createPasswordPrompt[lang];
@@ -9070,7 +9872,7 @@ export class TelegramBot {
 
         let employerProfile = employer;
         if (!employerProfile?.id && session.user_id) {
-            const fallbackCompany = jobData?.company_name || 'Kompaniya';
+            const fallbackCompany = jobData?.company_name || 'Tashkilot';
             const { data: createdEmployer, error: createError } = await this.supabase
                 .from('employer_profiles')
                 .upsert({
@@ -9121,16 +9923,19 @@ export class TelegramBot {
         const title = jobData?.title || jobData?.field_title || (lang === 'uz' ? 'Vakansiya' : 'Вакансия');
         const aiSections = jobData?.ai_sections || null;
         const description = jobData?.description || this.buildJobDescriptionFromSections(aiSections) || title;
-        const companyName = jobData?.company_name || employerProfile.company_name || 'Kompaniya';
+        const companyName = jobData?.company_name || employerProfile.company_name || 'Tashkilot';
         const address = jobData?.address || employerProfile.address || employerProfile.default_address || null;
 
         const rawMeta = jobData?.ai_meta || {};
         const languages = Array.isArray(jobData?.languages)
             ? jobData.languages
             : (Array.isArray(aiSections?.tillar) ? aiSections.tillar : []);
-        const benefitsText = jobData?.benefits
-            ? String(jobData.benefits)
-            : (Array.isArray(aiSections?.qulayliklar) ? aiSections.qulayliklar.join(', ') : null);
+        const benefitsList = Array.isArray(jobData?.benefits)
+            ? jobData.benefits.map((item: any) => String(item).trim()).filter(Boolean)
+            : (typeof jobData?.benefits === 'string'
+                ? this.parseListInput(jobData.benefits)
+                : (Array.isArray(aiSections?.qulayliklar) ? aiSections.qulayliklar.map((item: any) => String(item).trim()).filter(Boolean) : []));
+        const benefitsText = benefitsList.length > 0 ? benefitsList.join(', ') : null;
         const special = Array.isArray(jobData?.special) ? jobData.special : [];
         const raw_source_json = {
             ...(jobData?.raw_source_json || {}),
@@ -9139,7 +9944,7 @@ export class TelegramBot {
             working_hours: jobData?.working_hours || rawMeta?.working_hours || null,
             talablar: aiSections?.talablar || [],
             ish_vazifalari: aiSections?.ish_vazifalari || [],
-            qulayliklar: aiSections?.qulayliklar || (benefitsText ? [benefitsText] : []),
+            qulayliklar: benefitsList.length > 0 ? benefitsList : (aiSections?.qulayliklar || []),
             tillar: languages
         };
 
@@ -9169,6 +9974,8 @@ export class TelegramBot {
             region_name: jobData?.region_name || null,
             district_name: jobData?.district_name || null,
             address,
+            latitude: this.toCoordinate(jobData?.latitude),
+            longitude: this.toCoordinate(jobData?.longitude),
             salary_min: Number.isFinite(jobData?.salary_min) ? jobData?.salary_min : (jobData?.salary_min ? Number(jobData.salary_min) : null),
             salary_max: Number.isFinite(jobData?.salary_max) ? jobData?.salary_max : (jobData?.salary_max ? Number(jobData.salary_max) : null),
             contact_phone: jobData?.contact_phone || employerProfile.phone || session.phone || null,
@@ -9282,18 +10089,395 @@ export class TelegramBot {
             return;
         }
 
-        await sendMessage(chatId, botTexts.jobPublished[lang], { replyMarkup: keyboards.jobPublishedKeyboard(lang, createdJob?.id) });
+        await this.sendPrompt(chatId, session, botTexts.jobPublished[lang], { replyMarkup: keyboards.jobPublishedKeyboard(lang, createdJob?.id) });
         await this.clearFlowCancelKeyboard(chatId, session);
         await this.setSession(session, { state: BotState.EMPLOYER_MAIN_MENU, data: { ...session.data, temp_job: null, clean_inputs: false } });
     }
 
+    private buildAiJobDescriptionSuggestion(jobData: any, lang: BotLang): string {
+        const title = String(jobData?.title || jobData?.field_title || (lang === 'uz' ? 'lavozim' : 'должность')).trim();
+        const experience = String(jobData?.experience || '').toLowerCase();
+        const education = String(jobData?.education_level || '').toLowerCase();
+        const workMode = String(jobData?.work_mode || '').toLowerCase();
+        const hours = String(jobData?.working_hours || '').trim();
+
+        const expTextUz = experience
+            ? (experience.includes('no_experience') ? "Tajriba talab etilmaydi." : `Kamida ${experience.replace(/_/g, ' ')} tajriba talab qilinadi.`)
+            : 'Ish tajribasi ustunlik beradi.';
+        const expTextRu = experience
+            ? (experience.includes('no_experience') ? 'Опыт не обязателен.' : `Требуется опыт: ${experience.replace(/_/g, ' ')}.`)
+            : 'Опыт работы будет преимуществом.';
+
+        const eduTextUz = education && education !== 'any'
+            ? `${education.replace(/_/g, ' ')} darajadagi ma'lumot afzal.`
+            : "Ma'lumot darajasi bo'yicha moslik ko'rib chiqiladi.";
+        const eduTextRu = education && education !== 'any'
+            ? `Предпочтительно образование: ${education.replace(/_/g, ' ')}.`
+            : 'Уровень образования обсуждается индивидуально.';
+
+        const modeTextUz = workMode
+            ? `Ish formati: ${workMode.replace(/_/g, ' ')}${hours ? ` (${hours})` : ''}.`
+            : (hours ? `Ish vaqti: ${hours}.` : 'Ish jadvali kelishiladi.');
+        const modeTextRu = workMode
+            ? `Формат работы: ${workMode.replace(/_/g, ' ')}${hours ? ` (${hours})` : ''}.`
+            : (hours ? `График работы: ${hours}.` : 'График обсуждается.');
+
+        if (lang === 'uz') {
+            return [
+                `- ${title} bo'yicha kundalik vazifalarni sifatli bajarish va natija uchun javob berish.`,
+                `- ${expTextUz} ${eduTextUz}`,
+                `- Jamoa bilan hamkorlikda ishlash, ichki tartibga amal qilish. ${modeTextUz}`
+            ].join('\n');
+        }
+
+        return [
+            `- Выполнять ежедневные задачи по позиции «${title}» с фокусом на результат.`,
+            `- ${expTextRu} ${eduTextRu}`,
+            `- Работать в команде и соблюдать внутренние правила. ${modeTextRu}`
+        ].join('\n');
+    }
+
+    private normalizeAiListSuggestion(rawText: string): string {
+        const raw = String(rawText || '')
+            .replace(/```[\s\S]*?```/g, ' ')
+            .replace(/\r/g, '\n')
+            .trim();
+        if (!raw) return '';
+
+        const lines = raw
+            .split('\n')
+            .map(line => line.trim())
+            .filter(Boolean)
+            .filter(line => !/^(talablar|vazifalar|требования|обязанности)\s*:?\s*$/i.test(line))
+            .map(line => line.replace(/^[-•*]\s*/, '').replace(/^\d+[\.)]\s*/, '').trim())
+            .filter(Boolean)
+            .slice(0, 3);
+
+        if (!lines.length) return '';
+        return lines.map(line => `- ${line}`).join('\n');
+    }
+
+    private async generateAiJobDescriptionSuggestion(jobData: any, lang: BotLang): Promise<string> {
+        const fallback = this.buildAiJobDescriptionSuggestion(jobData, lang);
+        if (!process.env.DEEPSEEK_API_KEY) {
+            return fallback;
+        }
+
+        const title = String(jobData?.title || jobData?.field_title || (lang === 'uz' ? 'lavozim' : 'должность')).trim();
+        const category = String(jobData?.category_name || '').trim();
+        const company = String(jobData?.company_name || '').trim();
+        const workMode = String(jobData?.work_mode || '').trim();
+        const employment = String(jobData?.employment_type || '').trim();
+
+        const prompt = lang === 'uz'
+            ? [
+                "Siz tajribali HR mutaxassissiz.",
+                "Faqat o'zbek lotin alifbosida yozing, inglizcha va ruscha so'zlarni aralashtirmang.",
+                "Quyidagi vakansiya uchun 'Talablar va vazifalar' bo'limi uchun 3 ta aniq band yozing.",
+                "Qoidalar:",
+                "- Faqat 3 ta band bo'lsin.",
+                "- Har band '-' bilan boshlangan bo'lsin.",
+                "- Maosh, ish vaqti, ish kunlari, yosh va aniq tajriba muddatini takrorlamang.",
+                "- Har band qisqa va amaliy bo'lsin.",
+                "",
+                `Lavozim: ${title || 'Lavozim'}`,
+                `Soha: ${category || "Ko'rsatilmagan"}`,
+                `Tashkilot: ${company || "Ko'rsatilmagan"}`,
+                `Ish formati: ${workMode || "Ko'rsatilmagan"}`,
+                `Bandlik: ${employment || "Ko'rsatilmagan"}`,
+                "",
+                "Faqat ro'yxatni qaytaring."
+            ].join('\n')
+            : [
+                'Вы опытный HR-специалист.',
+                'Пишите только на русском языке, без английских слов.',
+                'Сформируйте 3 пункта для блока «Требования и обязанности» для вакансии.',
+                'Правила:',
+                '- Ровно 3 пункта.',
+                '- Каждый пункт должен начинаться с "-".',
+                '- Не повторяйте зарплату, график, возраст и конкретные сроки опыта.',
+                '- Пункты должны быть короткими и практичными.',
+                '',
+                `Должность: ${title || 'Должность'}`,
+                `Сфера: ${category || 'Не указано'}`,
+                `Компания: ${company || 'Не указано'}`,
+                `Формат работы: ${workMode || 'Не указано'}`,
+                `Занятость: ${employment || 'Не указано'}`,
+                '',
+                'Верните только список.'
+            ].join('\n');
+
+        try {
+            const response = await callDeepSeekText(prompt, 280, undefined, 0.35);
+            const normalized = this.normalizeAiListSuggestion(response);
+            return normalized || fallback;
+        } catch (error) {
+            console.error('DeepSeek description suggestion error:', error);
+            return fallback;
+        }
+    }
+
+    private async presentJobDescriptionStep(chatId: number, session: TelegramSession): Promise<void> {
+        const lang = session.lang;
+        const loadingHintId = await this.showLoadingHint(
+            chatId,
+            session,
+            lang === 'uz' ? "🤖 | AI tavsiya tayyorlanmoqda..." : '🤖 | Подготавливаю AI-рекомендацию...'
+        );
+
+        let suggestion = '';
+        try {
+            suggestion = await this.generateAiJobDescriptionSuggestion(session.data?.temp_job || {}, lang);
+        } finally {
+            await this.clearLoadingHint(chatId, loadingHintId);
+        }
+
+        if (!suggestion) {
+            await this.sendPrompt(chatId, session, botTexts.postJobDescription[lang], {
+                replyMarkup: keyboards.jobDescriptionKeyboard(lang)
+            });
+            return;
+        }
+
+        const nextData = { ...session.data, ai_job_description_suggestion: suggestion };
+        await this.setSession(session, { state: BotState.POSTING_JOB_DESCRIPTION, data: nextData });
+
+        const preview = lang === 'uz'
+            ? `${botTexts.postJobDescription[lang]}\n\n<b>🤖 | AI tavsiyasi</b>\n<i>Ushbu matn AI yordamida shakllantirildi.</i>\n\n${this.escapeHtml(suggestion)}\n\n<i>Shu variantni qo‘llashingiz yoki o‘zingiz yozishingiz mumkin.</i>`
+            : `${botTexts.postJobDescription[lang]}\n\n<b>🤖 | Рекомендация AI</b>\n<i>Этот текст сгенерирован AI.</i>\n\n${this.escapeHtml(suggestion)}\n\n<i>Можно продолжить с этим вариантом или ввести вручную.</i>`;
+
+        await this.sendPrompt(chatId, session, preview, {
+            parseMode: 'HTML',
+            replyMarkup: keyboards.aiJobDescriptionPreviewKeyboard(lang)
+        });
+    }
+
+    private buildAiResumeAboutSuggestion(resumeData: any, lang: BotLang): string {
+        const title = String(resumeData?.title || resumeData?.field_title || (lang === 'uz' ? 'mutaxassis' : 'специалист')).trim();
+        const experienceKey = String(resumeData?.experience || resumeData?.experience_level || '').trim();
+        const experienceLabel = experienceKey && EXPERIENCE_LABELS[experienceKey as keyof typeof EXPERIENCE_LABELS]
+            ? EXPERIENCE_LABELS[experienceKey as keyof typeof EXPERIENCE_LABELS][lang]
+            : (lang === 'uz' ? "tajriba darajasi ko'rsatilmagan" : 'уровень опыта не указан');
+        const skills = Array.isArray(resumeData?.skills) ? resumeData.skills.filter(Boolean).slice(0, 4) : [];
+
+        if (lang === 'uz') {
+            const skillsText = skills.length > 0 ? skills.join(', ') : "tez o'rganish va jamoada ishlash";
+            return `${title} lavozimida ishlashga qiziqaman. ${experienceLabel} darajada tajribaga egaman va vazifalarni mas'uliyat bilan bajaraman. Asosiy ko'nikmalarim: ${skillsText}.`;
+        }
+
+        const skillsText = skills.length > 0 ? skills.join(', ') : 'быстрая обучаемость и работа в команде';
+        return `Рассматриваю работу на позиции «${title}». Мой уровень опыта: ${experienceLabel}; подхожу к задачам ответственно и на результат. Ключевые навыки: ${skillsText}.`;
+    }
+
+    private normalizeAiParagraph(rawText: string): string {
+        const cleaned = String(rawText || '')
+            .replace(/```[\s\S]*?```/g, ' ')
+            .replace(/\r/g, '\n')
+            .replace(/\n{2,}/g, '\n')
+            .replace(/\s+/g, ' ')
+            .trim();
+        return cleaned;
+    }
+
+    private async generateAiResumeAboutSuggestion(resumeData: any, lang: BotLang): Promise<string> {
+        const fallback = this.buildAiResumeAboutSuggestion(resumeData, lang);
+        if (!process.env.DEEPSEEK_API_KEY) {
+            return fallback;
+        }
+
+        const title = String(resumeData?.title || resumeData?.field_title || (lang === 'uz' ? 'mutaxassis' : 'специалист')).trim();
+        const experience = String(resumeData?.experience || resumeData?.experience_level || '').trim();
+        const education = String(resumeData?.education_level || '').trim();
+        const skills = Array.isArray(resumeData?.skills) ? resumeData.skills.map((item: any) => String(item).trim()).filter(Boolean).slice(0, 6) : [];
+        const special = Array.isArray(resumeData?.special) ? resumeData.special.map((item: any) => String(item).trim()).filter(Boolean) : [];
+
+        const prompt = lang === 'uz'
+            ? [
+                "Siz professional karyera maslahatchisisiz.",
+                "Faqat o'zbek lotin alifbosida yozing, inglizcha va ruscha so'zlarni aralashtirmang.",
+                "Nomzod haqida 2-3 gapdan iborat, professional va aniq 'o'zi haqida' matn yozing.",
+                "Qoidalar:",
+                "- Matn juda umumiy bo'lmasin.",
+                "- Ma'lumotni takrorlamang.",
+                "- Faqat bitta qisqa paragraf qaytaring.",
+                "",
+                `Lavozim: ${title || 'Ko‘rsatilmagan'}`,
+                `Tajriba: ${experience || "Ko'rsatilmagan"}`,
+                `Ma'lumot: ${education || "Ko'rsatilmagan"}`,
+                `Ko'nikmalar: ${skills.length > 0 ? skills.join(', ') : "Ko'rsatilmagan"}`,
+                `Alohida toifalar: ${special.length > 0 ? special.join(', ') : "Ko'rsatilmagan"}`
+            ].join('\n')
+            : [
+                'Вы профессиональный карьерный консультант.',
+                'Пишите только на русском языке.',
+                'Сформируйте профессиональный блок «О себе» на 2-3 предложения.',
+                'Правила:',
+                '- Без лишней воды и штампов.',
+                '- Не дублируйте исходные поля дословно.',
+                '- Верните один краткий абзац.',
+                '',
+                `Должность: ${title || 'Не указано'}`,
+                `Опыт: ${experience || 'Не указано'}`,
+                `Образование: ${education || 'Не указано'}`,
+                `Навыки: ${skills.length > 0 ? skills.join(', ') : 'Не указано'}`,
+                `Особые категории: ${special.length > 0 ? special.join(', ') : 'Не указано'}`
+            ].join('\n');
+
+        try {
+            const response = await callDeepSeekText(prompt, 240, undefined, 0.45);
+            const normalized = this.normalizeAiParagraph(response);
+            return normalized || fallback;
+        } catch (error) {
+            console.error('DeepSeek resume about suggestion error:', error);
+            return fallback;
+        }
+    }
+
+    private async presentResumeAboutStep(chatId: number, session: TelegramSession): Promise<void> {
+        const lang = session.lang;
+        const loadingHintId = await this.showLoadingHint(
+            chatId,
+            session,
+            lang === 'uz' ? "🤖 | AI tavsiya tayyorlanmoqda..." : '🤖 | Подготавливаю AI-рекомендацию...'
+        );
+
+        let suggestion = '';
+        try {
+            suggestion = await this.generateAiResumeAboutSuggestion(session.data?.resume || {}, lang);
+        } finally {
+            await this.clearLoadingHint(chatId, loadingHintId);
+        }
+
+        const nextData = { ...session.data, ai_resume_about_suggestion: suggestion || null };
+        await this.setSession(session, { state: BotState.ENTERING_ABOUT, data: nextData });
+
+        const preview = suggestion
+            ? (lang === 'uz'
+                ? `${botTexts.askAbout[lang]}\n\n<b>🤖 | AI tavsiyasi</b>\n<i>Ushbu matn AI yordamida shakllantirildi.</i>\n\n${this.escapeHtml(suggestion)}\n\n<i>Shu variantni qo‘llashingiz yoki o‘zingiz yozishingiz mumkin.</i>`
+                : `${botTexts.askAbout[lang]}\n\n<b>🤖 | Рекомендация AI</b>\n<i>Этот текст сформирован с помощью AI.</i>\n\n${this.escapeHtml(suggestion)}\n\n<i>Можно продолжить с этим вариантом или ввести вручную.</i>`)
+            : botTexts.askAbout[lang];
+
+        await this.sendPrompt(chatId, session, preview, {
+            parseMode: 'HTML',
+            replyMarkup: keyboards.aiResumeAboutPreviewKeyboard(lang, session.data?.edit_mode ? 'resume_view' : 'salary')
+        });
+    }
+
+    private async handleJobDescriptionAiAction(chatId: number, action: string, session: TelegramSession, messageId?: number): Promise<void> {
+        const lang = session.lang;
+        if (session.state !== BotState.POSTING_JOB_DESCRIPTION) return;
+
+        if (action === 'manual') {
+            await this.sendPrompt(chatId, session, botTexts.postJobDescription[lang], { replyMarkup: keyboards.jobDescriptionKeyboard(lang) });
+            return;
+        }
+
+        if (action === 'apply') {
+            const suggestion = String(session.data?.ai_job_description_suggestion || this.buildAiJobDescriptionSuggestion(session.data?.temp_job || {}, lang)).trim();
+            if (!suggestion) return;
+            const updatedJob = { ...session.data?.temp_job, description: suggestion };
+            await this.setSession(session, {
+                state: BotState.POSTING_JOB_CONFIRM,
+                data: { ...session.data, temp_job: updatedJob, ai_job_description_suggestion: null }
+            });
+            const jobSummary = this.buildJobConfirmText(lang, updatedJob);
+            await this.sendPrompt(chatId, session, jobSummary, { replyMarkup: keyboards.jobConfirmKeyboard(lang) });
+            return;
+        }
+
+        if (action === 'generate' || action === 'retry') {
+            await this.presentJobDescriptionStep(chatId, session);
+        }
+    }
+
+    private async handleResumeAboutAiAction(chatId: number, action: string, session: TelegramSession, messageId?: number): Promise<void> {
+        const lang = session.lang;
+        if (session.state !== BotState.ENTERING_ABOUT) return;
+
+        if (action === 'manual') {
+            await this.sendPrompt(chatId, session, botTexts.askAbout[lang], {
+                replyMarkup: keyboards.aiResumeAboutPreviewKeyboard(lang, session.data?.edit_mode ? 'resume_view' : 'salary')
+            });
+            return;
+        }
+
+        if (action === 'apply') {
+            const suggestion = String(session.data?.ai_resume_about_suggestion || this.buildAiResumeAboutSuggestion(session.data?.resume || {}, lang)).trim();
+            if (!suggestion) return;
+            if (session.data?.edit_mode && session.data?.active_resume_id) {
+                const updatedResume = { ...session.data?.resume, about: suggestion };
+                await this.saveResume(session, updatedResume, session.data.active_resume_id);
+                await this.setSession(session, {
+                    data: { ...session.data, edit_mode: false, edit_field: null, ai_resume_about_suggestion: null, resume: updatedResume }
+                });
+                await this.showResumeById(chatId, session.data.active_resume_id, session);
+                return;
+            }
+            const updatedResume = { ...session.data?.resume, about: suggestion };
+            const existingLanguageKeys = Array.isArray(updatedResume?.language_keys)
+                ? updatedResume.language_keys
+                : [];
+            const languageKeys = existingLanguageKeys.length > 0
+                ? existingLanguageKeys
+                : this.getDefaultJobLanguageKeys(lang);
+            const updatedData = {
+                ...session.data,
+                ai_resume_about_suggestion: null,
+                resume: {
+                    ...updatedResume,
+                    language_keys: languageKeys,
+                    languages: this.mapJobLanguageKeysToLabels(languageKeys, lang)
+                }
+            };
+            await this.setSession(session, {
+                state: BotState.SELECTING_RESUME_LANGUAGES,
+                data: updatedData
+            });
+            await this.sendPrompt(chatId, session, botTexts.resumeLanguagesPrompt[lang], {
+                replyMarkup: keyboards.resumeLanguagesKeyboard(lang, languageKeys)
+            });
+            return;
+        }
+
+        if (action === 'generate' || action === 'retry') {
+            await this.presentResumeAboutStep(chatId, session);
+        }
+    }
+
     private async showMatchingResumesForJob(chatId: number, session: TelegramSession, job: any): Promise<void> {
         const lang = session.lang;
-        let selectClause = 'id, full_name, title, field_id, field_title, region_id, district_id, category_id, category_ids, expected_salary_min, experience, education_level, gender, birth_date';
+        const jobTitle = job?.field_title || job?.title_uz || job?.title_ru || job?.title || '';
+        let targetRegionId: number | null = null;
+        let targetDistrictIdRaw: any = null;
+        if (job?.employer_id) {
+            try {
+                const { data: employerLocation } = await this.supabase
+                    .from('employer_profiles')
+                    .select('region_id, district_id')
+                    .eq('id', job.employer_id)
+                    .maybeSingle();
+                targetRegionId = this.toCoordinate(employerLocation?.region_id ?? null);
+                targetDistrictIdRaw = employerLocation?.district_id ?? null;
+            } catch {
+                // ignore fallback errors
+            }
+        }
+        if (targetRegionId === null) {
+            targetRegionId = this.toCoordinate(job?.region_id ?? null);
+        }
+        if (targetDistrictIdRaw === null || targetDistrictIdRaw === undefined) {
+            targetDistrictIdRaw = job?.district_id ?? null;
+        }
+        const targetDistrictId = targetDistrictIdRaw !== null && targetDistrictIdRaw !== undefined
+            ? String(targetDistrictIdRaw)
+            : null;
+
+        let selectClause = 'id, user_id, full_name, title, field_id, field_title, region_id, district_id, category_id, category_ids, expected_salary_min, experience, education_level, gender, birth_date';
         let resumes: any[] | null = null;
         let error: any = null;
         let useStatusFilter = true;
         let orderColumn: 'updated_at' | 'created_at' | null = 'updated_at';
+        let useRegionFilter = targetRegionId !== null;
 
         for (let attempt = 0; attempt < 12; attempt += 1) {
             let query = this.supabase
@@ -9305,7 +10489,10 @@ export class TelegramBot {
             if (useStatusFilter) {
                 query = query.eq('status', 'active');
             }
-            query = query.limit(1000);
+            if (useRegionFilter && targetRegionId !== null) {
+                query = query.eq('region_id', targetRegionId);
+            }
+            query = query.limit(useRegionFilter ? 500 : 600);
             const primary = await query;
             resumes = primary.data || null;
             error = primary.error || null;
@@ -9314,6 +10501,10 @@ export class TelegramBot {
             if (missingColumn) {
                 if (orderColumn && missingColumn === orderColumn) {
                     orderColumn = orderColumn === 'updated_at' ? 'created_at' : null;
+                    continue;
+                }
+                if (missingColumn === 'region_id') {
+                    useRegionFilter = false;
                     continue;
                 }
                 const nextSelect = this.stripColumnFromSelect(selectClause, missingColumn);
@@ -9360,6 +10551,10 @@ export class TelegramBot {
                 useStatusFilter = false;
                 continue;
             }
+            if (lowerMsg.includes('region_id')) {
+                useRegionFilter = false;
+                continue;
+            }
             break;
         }
 
@@ -9369,29 +10564,22 @@ export class TelegramBot {
             return;
         }
 
-        const jobTitle = job?.field_title || job?.title_uz || job?.title_ru || job?.title || '';
-        let targetRegionId = this.toCoordinate(job?.region_id ?? null);
-        let targetDistrictIdRaw = job?.district_id ?? null;
-        if ((targetRegionId === null || targetDistrictIdRaw === null || targetDistrictIdRaw === undefined) && job?.employer_id) {
-            try {
-                const { data: employerLocation } = await this.supabase
-                    .from('employer_profiles')
-                    .select('region_id, district_id')
-                    .eq('id', job.employer_id)
-                    .maybeSingle();
-                if (targetRegionId === null) {
-                    targetRegionId = this.toCoordinate(employerLocation?.region_id ?? null);
-                }
-                if (targetDistrictIdRaw === null || targetDistrictIdRaw === undefined) {
-                    targetDistrictIdRaw = employerLocation?.district_id ?? null;
-                }
-            } catch {
-                // ignore fallback errors
+        if ((!resumes || resumes.length === 0) && targetRegionId !== null && useRegionFilter) {
+            let fallbackQuery = this.supabase
+                .from('resumes')
+                .select(selectClause)
+                .limit(600);
+            if (orderColumn) {
+                fallbackQuery = fallbackQuery.order(orderColumn, { ascending: false });
+            }
+            if (useStatusFilter) {
+                fallbackQuery = fallbackQuery.eq('status', 'active');
+            }
+            const fallback = await fallbackQuery;
+            if (!fallback.error && Array.isArray(fallback.data)) {
+                resumes = fallback.data;
             }
         }
-        const targetDistrictId = targetDistrictIdRaw !== null && targetDistrictIdRaw !== undefined
-            ? String(targetDistrictIdRaw)
-            : null;
 
         const baseScored = (resumes || []).map((resume: any) => {
             const base = calculateMatchScore({
@@ -9429,7 +10617,12 @@ export class TelegramBot {
             return;
         }
 
-        const aiRanked = await this.applyAiRerankToResumeMatches(job, baseScored.map(item => ({
+        const processingPool = [...baseScored]
+            .sort((a, b) => Number(b.score || 0) - Number(a.score || 0))
+            .slice(0, 400);
+        const aiInputPool = processingPool.slice(0, 220);
+
+        const aiRanked = await this.applyAiRerankToResumeMatches(job, aiInputPool.map(item => ({
             resume: item.resume,
             score: item.score
         })), lang);
@@ -9444,7 +10637,7 @@ export class TelegramBot {
             });
         }
 
-        const scored = baseScored
+        const scored = processingPool
             .map(item => {
                 const resumeId = String(item.resume?.id || '');
                 const ai = aiById.get(resumeId);
@@ -9478,28 +10671,57 @@ export class TelegramBot {
             id: String(item.resume?.id || ''),
             full_name: item.resume?.full_name || null,
             title: item.resume?.title || item.resume?.field_title || null,
+            user_id: item.resume?.user_id || null,
             score: Number(item.score || 0),
             strictScore: Number(item.strictScore || item.score || 0),
             aiScore: typeof item.aiScore === 'number' ? Number(item.aiScore) : null,
             matchCriteria: item.matchCriteria || null,
             conditionallySuitable: Boolean(item.conditionallySuitable),
             conditionalReason: item.conditionalReason || null,
-            ageKnown: item.ageKnown !== false
+            ageKnown: item.ageKnown !== false,
+            offer_sent: false
         });
 
         const districtList = districtListRaw.map(toWorkerItem).filter(item => item.id);
         const regionList = regionListRaw.map(toWorkerItem).filter(item => item.id);
 
-        const primaryList = districtList.length > 0 ? districtList : regionList;
-        const scope: 'district' | 'region' = districtList.length > 0 ? 'district' : 'region';
-
-        if (!primaryList.length) {
+        if (!districtList.length && !regionList.length) {
             await this.sendPrompt(chatId, session, lang === 'uz' ? "Mos rezyumelar topilmadi." : 'Подходящие резюме не найдены.', {
                 replyMarkup: keyboards.employerMainMenuKeyboard(lang)
             });
             return;
         }
 
+        if (!districtList.length && regionList.length > 0) {
+            await this.setSession(session, {
+                state: BotState.EMPLOYER_MAIN_MENU,
+                data: {
+                    ...session.data,
+                    worker_resume_list: [],
+                    worker_district_resume_list: [],
+                    worker_region_resume_list: regionList.slice(0, 1000),
+                    worker_scope: 'district',
+                    currentWorkerIndex: 0,
+                    worker_job_id: String(job?.id || ''),
+                    worker_job_title: jobTitle || (lang === 'uz' ? 'Vakansiya' : 'Вакансия'),
+                    related_resume_list: []
+                }
+            });
+
+            const regionCount = regionList.length;
+            const notice = lang === 'uz'
+                ? `ℹ️ | Ushbu tuman/shaharda mos nomzod topilmadi.\n\n<b>${regionCount} ta nomzod</b> viloyat bo'yicha topildi.`
+                : `ℹ️ | В этом районе/городе подходящие кандидаты не найдены.\n\n<b>По области найдено: ${regionCount}</b>.`;
+            await this.sendPrompt(chatId, session, notice, {
+                replyMarkup: keyboards.workerRegionFallbackKeyboard(lang, {
+                    showRegionSearch: regionCount > 0,
+                    regionCount
+                })
+            });
+            return;
+        }
+
+        const primaryList = districtList;
         await this.saveMatchRecommendations(
             'employer_to_resume',
             String(job?.id || ''),
@@ -9519,7 +10741,7 @@ export class TelegramBot {
                 worker_resume_list: primaryList.slice(0, 1000),
                 worker_district_resume_list: districtList.slice(0, 1000),
                 worker_region_resume_list: regionList.slice(0, 1000),
-                worker_scope: scope,
+                worker_scope: 'district',
                 currentWorkerIndex: 0,
                 worker_job_id: String(job?.id || ''),
                 worker_job_title: jobTitle || (lang === 'uz' ? 'Vakansiya' : 'Вакансия'),
@@ -9535,6 +10757,7 @@ export class TelegramBot {
             id: string;
             full_name?: string | null;
             title?: string | null;
+            user_id?: string | null;
             score?: number | null;
             strictScore?: number | null;
             aiScore?: number | null;
@@ -9542,9 +10765,28 @@ export class TelegramBot {
             conditionallySuitable?: boolean;
             conditionalReason?: 'education' | 'experience' | 'both' | null;
             ageKnown?: boolean;
+            offer_sent?: boolean;
         }> = Array.isArray(session.data?.worker_resume_list) ? session.data.worker_resume_list : [];
 
         if (!list.length) {
+            const scope = String(session.data?.worker_scope || 'district');
+            const regionList = Array.isArray(session.data?.worker_region_resume_list) ? session.data.worker_region_resume_list : [];
+            if (scope !== 'region' && regionList.length > 0) {
+                await this.sendPrompt(
+                    chatId,
+                    session,
+                    lang === 'uz'
+                        ? `ℹ️ | Ushbu tuman/shaharda mos nomzod topilmadi.\n\n<b>${regionList.length} ta nomzod</b> viloyat bo'yicha topildi.`
+                        : `ℹ️ | В этом районе/городе подходящие кандидаты не найдены.\n\n<b>По области найдено: ${regionList.length}</b>.`,
+                    {
+                        replyMarkup: keyboards.workerRegionFallbackKeyboard(lang, {
+                            showRegionSearch: true,
+                            regionCount: regionList.length
+                        })
+                    }
+                );
+                return;
+            }
             await this.sendPrompt(chatId, session, lang === 'uz' ? "Mos rezyumelar topilmadi." : 'Подходящие резюме не найдены.', {
                 replyMarkup: keyboards.employerMainMenuKeyboard(lang)
             });
@@ -9567,8 +10809,37 @@ export class TelegramBot {
             resume = data || null;
         }
 
+        const jobId = String(session.data?.worker_job_id || '');
+        let distanceKm: number | null = null;
+        if (jobId && current?.user_id) {
+            try {
+                const [{ data: jobGeo }, { data: seekerGeo }] = await Promise.all([
+                    this.supabase
+                        .from('jobs')
+                        .select('latitude, longitude')
+                        .eq('id', jobId)
+                        .maybeSingle(),
+                    this.supabase
+                        .from('job_seeker_profiles')
+                        .select('latitude, longitude')
+                        .eq('user_id', String(current.user_id))
+                        .maybeSingle()
+                ]);
+                const jobLat = this.toCoordinate(jobGeo?.latitude);
+                const jobLon = this.toCoordinate(jobGeo?.longitude);
+                const seekerLat = this.toCoordinate(seekerGeo?.latitude);
+                const seekerLon = this.toCoordinate(seekerGeo?.longitude);
+                if (jobLat !== null && jobLon !== null && seekerLat !== null && seekerLon !== null) {
+                    distanceKm = this.haversineKm(jobLat, jobLon, seekerLat, seekerLon);
+                }
+            } catch {
+                distanceKm = null;
+            }
+        }
+
         const jobTitle = String(session.data?.worker_job_title || (lang === 'uz' ? 'Vakansiya' : 'Вакансия'));
         const score = Number(current?.score || 0);
+        const strictScore = Number(current?.strictScore || score || 0);
         const criteria = current?.matchCriteria || {};
         const labels = {
             location: lang === 'uz' ? 'Joylashuv' : 'Локация',
@@ -9587,12 +10858,16 @@ export class TelegramBot {
         if (criteria.experience) matchLines.push(`<i>✅ ${labels.experience}</i>`);
         if (criteria.education) matchLines.push(`<i>✅ ${labels.education}</i>`);
         if (criteria.age && current?.ageKnown !== false) matchLines.push(`<i>✅ ${labels.age}</i>`);
+        if (distanceKm !== null) {
+            matchLines.push(`<i>📏 ${lang === 'uz' ? 'Masofa' : 'Расстояние'}: ~${Math.round(distanceKm)} km</i>`);
+        }
 
         const resumeTextRaw = resume
             ? await this.buildResumeText(resume, lang)
             : `${lang === 'uz' ? 'Nomzod' : 'Кандидат'}: ${current?.full_name || '—'}\n${lang === 'uz' ? 'Lavozim' : 'Должность'}: ${current?.title || '—'}`;
 
-        const matchBlockParts: string[] = [`<b>🎯 | ${lang === 'uz' ? 'Moslik' : 'Совпадение'}:</b> ${score}%`];
+        const shownScore = Math.max(score, strictScore);
+        const matchBlockParts: string[] = [`<b>🎯 | ${lang === 'uz' ? 'Moslik' : 'Совпадение'}:</b> ${shownScore}%`];
         if (matchLines.length > 0) {
             matchBlockParts.push(matchLines.join('\n'));
         }
@@ -9631,12 +10906,30 @@ export class TelegramBot {
         const scope = String(session.data?.worker_scope || 'district');
         const regionList = Array.isArray(session.data?.worker_region_resume_list) ? session.data.worker_region_resume_list : [];
         const showRegionSearch = scope !== 'region' && regionList.length > 0;
+        let isOfferSent = Boolean(current?.offer_sent);
+        if (!isOfferSent && jobId && resumeId) {
+            try {
+                const { data: existingOffer } = await this.supabase
+                    .from('job_offers')
+                    .select('id')
+                    .eq('job_id', jobId)
+                    .eq('resume_id', resumeId)
+                    .in('status', ['sent', 'pending'])
+                    .limit(1)
+                    .maybeSingle();
+                isOfferSent = Boolean(existingOffer?.id);
+            } catch {
+                isOfferSent = Boolean(current?.offer_sent);
+            }
+        }
 
         const sent = await sendMessage(chatId, text, {
             parseMode: 'HTML',
             replyMarkup: keyboards.workerNavigationKeyboard(lang, safeIndex, list.length, {
                 showRegionSearch,
-                regionCount: regionList.length
+                regionCount: regionList.length,
+                showInviteAction: Boolean(current?.id),
+                inviteStatus: isOfferSent ? 'sent' : 'available'
             })
         });
 
@@ -9681,12 +10974,476 @@ export class TelegramBot {
 
         const index = Number(session.data?.currentWorkerIndex || 0);
         let newIndex = index;
+        if (direction === 'first') newIndex = 0;
         if (direction === 'next') newIndex += 1;
         if (direction === 'prev') newIndex -= 1;
         if (newIndex < 0) newIndex = 0;
         if (newIndex >= list.length) newIndex = list.length - 1;
 
         await this.showEmployerResumeMatch(chatId, session, newIndex);
+    }
+
+    private async getUserTelegramMeta(userId: string | null | undefined): Promise<{ telegramId: number | null; lang: BotLang }> {
+        if (!userId) return { telegramId: null, lang: 'uz' };
+
+        let telegramId: number | null = null;
+        try {
+            const { data } = await this.supabase
+                .from('users')
+                .select('telegram_user_id')
+                .eq('id', userId)
+                .maybeSingle();
+            const raw = data?.telegram_user_id;
+            const num = raw === null || raw === undefined ? NaN : Number(raw);
+            telegramId = Number.isFinite(num) ? num : null;
+        } catch {
+            telegramId = null;
+        }
+
+        let lang: BotLang = 'uz';
+        try {
+            const latest = await this.supabase
+                .from('telegram_sessions')
+                .select('lang, updated_at')
+                .eq('user_id', userId)
+                .order('updated_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+            const rawLang = String(latest.data?.lang || '').trim().toLowerCase();
+            if (rawLang === 'ru' || rawLang === 'uz') {
+                lang = rawLang as BotLang;
+            }
+        } catch {
+            try {
+                const fallback = await this.supabase
+                    .from('telegram_sessions')
+                    .select('lang')
+                    .eq('user_id', userId)
+                    .limit(1)
+                    .maybeSingle();
+                const rawLang = String(fallback.data?.lang || '').trim().toLowerCase();
+                if (rawLang === 'ru' || rawLang === 'uz') {
+                    lang = rawLang as BotLang;
+                }
+            } catch {
+                // ignore
+            }
+        }
+
+        return { telegramId, lang };
+    }
+
+    private async showSeekerOffers(chatId: number, session: TelegramSession): Promise<void> {
+        const lang = session.lang;
+        if (!session.user_id) {
+            await this.sendPrompt(chatId, session, botTexts.error[lang], { replyMarkup: keyboards.mainMenuKeyboard(lang, 'seeker') });
+            return;
+        }
+
+        let offers: any[] | null = null;
+        let offersError: any = null;
+        const joined = await this.supabase
+            .from('job_offers')
+            .select('id, job_id, status, seen_at, created_at, jobs(id, title_uz, title_ru, title, company_name)')
+            .eq('seeker_user_id', session.user_id)
+            .order('created_at', { ascending: false })
+            .limit(40);
+        offers = joined.data || null;
+        offersError = joined.error || null;
+
+        if (offersError) {
+            const fallback = await this.supabase
+                .from('job_offers')
+                .select('id, job_id, status, seen_at, created_at')
+                .eq('seeker_user_id', session.user_id)
+                .order('created_at', { ascending: false })
+                .limit(40);
+            offers = fallback.data || null;
+            offersError = fallback.error || null;
+        }
+
+        if (offersError) {
+            console.error('Offers fetch error:', offersError);
+            await this.sendPrompt(chatId, session, botTexts.noOffers[lang], { replyMarkup: keyboards.mainMenuKeyboard(lang, 'seeker') });
+            return;
+        }
+
+        if (!offers || offers.length === 0) {
+            await this.sendPrompt(chatId, session, botTexts.noOffers[lang], { replyMarkup: keyboards.mainMenuKeyboard(lang, 'seeker') });
+            return;
+        }
+
+        const needJobs = offers.some((item: any) => !item?.jobs && item?.job_id);
+        let jobsById = new Map<string, any>();
+        if (needJobs) {
+            const jobIds = Array.from(new Set(offers.map((item: any) => String(item?.job_id || '')).filter(Boolean)));
+            if (jobIds.length > 0) {
+                const { data: jobs } = await this.supabase
+                    .from('jobs')
+                    .select('id, title_uz, title_ru, title, company_name')
+                    .in('id', jobIds);
+                jobsById = new Map((jobs || []).map((job: any) => [String(job.id), job]));
+            }
+        }
+
+        const list = offers.map((offer: any) => {
+            const job = offer?.jobs || jobsById.get(String(offer?.job_id || '')) || null;
+            const title = lang === 'uz'
+                ? (job?.title_uz || job?.title_ru || job?.title || 'Vakansiya')
+                : (job?.title_ru || job?.title_uz || job?.title || 'Вакансия');
+            return {
+                id: String(offer?.id || ''),
+                title,
+                company: job?.company_name || (lang === 'uz' ? 'Tashkilot' : 'Компания'),
+                isUnread: !offer?.seen_at
+            };
+        }).filter((offer: any) => offer.id);
+
+        await this.setSession(session, {
+            data: { ...session.data, seeker_offers_list: list }
+        });
+
+        await this.sendPrompt(chatId, session, `${botTexts.offersTitle[lang]}\n\n${lang === 'uz' ? `Jami: ${list.length}` : `Всего: ${list.length}`}`, {
+            replyMarkup: keyboards.seekerOffersKeyboard(lang, list)
+        });
+    }
+
+    private async showSeekerOfferDetail(chatId: number, offerId: string, session: TelegramSession): Promise<void> {
+        const lang = session.lang;
+        if (!session.user_id) {
+            await this.sendPrompt(chatId, session, botTexts.error[lang], { replyMarkup: keyboards.mainMenuKeyboard(lang, 'seeker') });
+            return;
+        }
+
+        let offer: any = null;
+        let error: any = null;
+        const joined = await this.supabase
+            .from('job_offers')
+            .select('id, job_id, status, message, created_at, seen_at, jobs(*)')
+            .eq('id', offerId)
+            .eq('seeker_user_id', session.user_id)
+            .maybeSingle();
+        offer = joined.data || null;
+        error = joined.error || null;
+
+        if (error || !offer) {
+            const fallback = await this.supabase
+                .from('job_offers')
+                .select('id, job_id, status, message, created_at, seen_at')
+                .eq('id', offerId)
+                .eq('seeker_user_id', session.user_id)
+                .maybeSingle();
+            offer = fallback.data || null;
+            error = fallback.error || null;
+        }
+
+        if (error || !offer) {
+            await this.sendPrompt(chatId, session, botTexts.noOffers[lang], { replyMarkup: keyboards.mainMenuKeyboard(lang, 'seeker') });
+            return;
+        }
+
+        if (!offer.seen_at) {
+            try {
+                await this.supabase
+                    .from('job_offers')
+                    .update({ seen_at: new Date().toISOString() })
+                    .eq('id', offerId);
+            } catch {
+                // ignore
+            }
+        }
+
+        let job: any = offer?.jobs || null;
+        const jobId = String(offer?.job_id || '');
+        if (!job && jobId) {
+            const { data: jobRow } = await this.supabase
+                .from('jobs')
+                .select('id, title_uz, title_ru, title, company_name, contact_phone, phone, hr_name')
+                .eq('id', jobId)
+                .maybeSingle();
+            job = jobRow || null;
+        }
+
+        const company = this.escapeHtml(String(job?.company_name || (lang === 'uz' ? 'Tashkilot' : 'Компания')));
+        const title = this.escapeHtml(String(
+            lang === 'uz'
+                ? (job?.title_uz || job?.title_ru || job?.title || 'Vakansiya')
+                : (job?.title_ru || job?.title_uz || job?.title || 'Вакансия')
+        ));
+        const createdAt = offer?.created_at ? new Date(offer.created_at).toLocaleString(lang === 'uz' ? 'uz-UZ' : 'ru-RU') : null;
+        const phone = String(job?.contact_phone || job?.phone || '').trim();
+        const hr = String(job?.hr_name || '').trim();
+
+        const lines: string[] = [
+            botTexts.offerReceivedSeeker[lang](company, title)
+        ];
+        if (createdAt) lines.push(`\n🕒 | ${lang === 'uz' ? 'Yuborilgan sana' : 'Дата отправки'}: ${this.escapeHtml(createdAt)}`);
+        if (hr || phone) {
+            lines.push('');
+            lines.push(`☎️ | ${lang === 'uz' ? "Bog'lanish" : 'Контакты'}`);
+            if (hr) lines.push(`👤 | ${lang === 'uz' ? 'Mas’ul shaxs' : 'Контактное лицо'}: ${this.escapeHtml(hr)}`);
+            if (phone) lines.push(`📞 | ${lang === 'uz' ? 'Telefon' : 'Телефон'}: ${this.escapeHtml(phone)}`);
+        }
+
+        await this.sendPrompt(chatId, session, lines.join('\n'), {
+            parseMode: 'HTML',
+            replyMarkup: keyboards.seekerOfferViewKeyboard(lang, offerId, jobId || null)
+        });
+    }
+
+    private async handleOfferAction(chatId: number, action: string, extra: string, session: TelegramSession): Promise<void> {
+        const lang = session.lang;
+
+        if (action === 'list') {
+            await this.showSeekerOffers(chatId, session);
+            return;
+        }
+
+        if (action === 'view') {
+            const offerId = String(extra || '').trim();
+            if (!offerId) {
+                await this.showSeekerOffers(chatId, session);
+                return;
+            }
+            await this.showSeekerOfferDetail(chatId, offerId, session);
+            return;
+        }
+
+        if (action === 'back_candidates') {
+            const list: any[] = Array.isArray(session.data?.worker_resume_list) ? session.data.worker_resume_list : [];
+            if (!list.length) {
+                await this.showMainMenu(chatId, session);
+                return;
+            }
+            const idx = Number(session.data?.currentWorkerIndex || 0);
+            await this.showEmployerResumeMatch(chatId, session, idx);
+            return;
+        }
+
+        if (action === 'confirm') {
+            const list: any[] = Array.isArray(session.data?.worker_resume_list) ? session.data.worker_resume_list : [];
+            const idx = Number(session.data?.currentWorkerIndex || 0);
+            const current = list[idx] || null;
+            const candidateName = String(current?.full_name || '').trim() || (lang === 'uz' ? "Ismi ko‘rsatilmagan" : 'Имя не указано');
+            const jobTitle = session.data?.worker_job_title || (lang === 'uz' ? 'Vakansiya' : 'Вакансия');
+            await this.sendPrompt(chatId, session, botTexts.offerConfirmPrompt[lang](
+                this.escapeHtml(String(candidateName)),
+                this.escapeHtml(String(jobTitle))
+            ), {
+                parseMode: 'HTML',
+                replyMarkup: keyboards.offerConfirmKeyboard(lang)
+            });
+            return;
+        }
+
+        if (action === 'send') {
+            await this.sendJobOfferToCurrentCandidate(chatId, session);
+            return;
+        }
+
+        if (action === 'cancel') {
+            const index = Number(session.data?.currentWorkerIndex || 0);
+            await this.showEmployerResumeMatch(chatId, session, index);
+            return;
+        }
+
+        await this.showMainMenu(chatId, session);
+    }
+
+    private async handleOfferJobView(chatId: number, jobId: string, session: TelegramSession): Promise<void> {
+        const lang = session.lang;
+        const { data: jobRaw, error } = await this.supabase
+            .from('jobs')
+            .select('*, regions(name_uz, name_ru), districts(name_uz, name_ru), categories(name_uz, name_ru), employer_profiles(company_name)')
+            .eq('id', jobId)
+            .maybeSingle();
+
+        if (error || !jobRaw) {
+            await this.sendPrompt(chatId, session, botTexts.error[lang], { replyMarkup: keyboards.mainMenuKeyboard(lang, 'seeker') });
+            return;
+        }
+
+        const job = this.normalizeJob(jobRaw, lang);
+        await this.sendPrompt(chatId, session, formatFullJobCard(job, lang), {
+            parseMode: 'HTML',
+            replyMarkup: keyboards.offerJobViewKeyboard(lang, String(jobId))
+        });
+    }
+
+    private async sendJobOfferToCurrentCandidate(chatId: number, session: TelegramSession): Promise<void> {
+        const lang = session.lang;
+        const list: any[] = Array.isArray(session.data?.worker_resume_list) ? session.data.worker_resume_list : [];
+        const idx = Number(session.data?.currentWorkerIndex || 0);
+        const current = list[idx] || null;
+        const resumeId = String(current?.id || '');
+        const jobId = String(session.data?.worker_job_id || '');
+
+        if (!resumeId || !jobId || !session.user_id) {
+            await this.sendPrompt(chatId, session, botTexts.error[lang], { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
+            return;
+        }
+
+        const { data: resume } = await this.supabase
+            .from('resumes')
+            .select('id, user_id, full_name')
+            .eq('id', resumeId)
+            .maybeSingle();
+        if (!resume?.id || !resume?.user_id) {
+            await this.sendPrompt(chatId, session, botTexts.error[lang], { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
+            return;
+        }
+
+        const { data: job } = await this.supabase
+            .from('jobs')
+            .select('id, title_uz, title_ru, title, company_name, contact_phone, phone, hr_name')
+            .eq('id', jobId)
+            .maybeSingle();
+        if (!job?.id) {
+            await this.sendPrompt(chatId, session, botTexts.error[lang], { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
+            return;
+        }
+
+        try {
+            const existing = await this.supabase
+                .from('job_offers')
+                .select('id')
+                .eq('job_id', jobId)
+                .eq('resume_id', resumeId)
+                .in('status', ['sent', 'pending'])
+                .limit(1)
+                .maybeSingle();
+            if (existing.data?.id) {
+                const markSent = (rows: any[]) => (rows || []).map((item: any) => {
+                    if (String(item?.id || '') !== resumeId) return item;
+                    return { ...item, offer_sent: true };
+                });
+                const updatedList = markSent(list);
+                const updatedDistrictList = markSent(Array.isArray(session.data?.worker_district_resume_list) ? session.data.worker_district_resume_list : []);
+                const updatedRegionList = markSent(Array.isArray(session.data?.worker_region_resume_list) ? session.data.worker_region_resume_list : []);
+                await this.setSession(session, {
+                    data: {
+                        ...session.data,
+                        worker_resume_list: updatedList,
+                        worker_district_resume_list: updatedDistrictList,
+                        worker_region_resume_list: updatedRegionList,
+                        currentWorkerIndex: idx
+                    }
+                });
+                await this.sendPrompt(chatId, session, botTexts.offerAlreadySent[lang], {
+                    replyMarkup: keyboards.offerSentResultKeyboard(lang, updatedList.length > 0)
+                });
+                return;
+            }
+        } catch {
+            // ignore duplicate check errors
+        }
+
+        const insertResult = await this.supabase
+            .from('job_offers')
+            .insert({
+                job_id: jobId,
+                resume_id: resumeId,
+                employer_user_id: session.user_id,
+                seeker_user_id: resume.user_id,
+                status: 'sent',
+                created_at: new Date().toISOString()
+            })
+            .select('id')
+            .maybeSingle();
+
+        if (insertResult.error || !insertResult.data?.id) {
+            console.error('Offer insert error:', insertResult.error);
+            await this.sendPrompt(chatId, session, botTexts.error[lang], { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
+            return;
+        }
+
+        await this.notifySeekerAboutOffer(resume.user_id, insertResult.data.id, job);
+
+        const markSent = (rows: any[]) => (rows || []).map((item: any) => {
+            if (String(item?.id || '') !== resumeId) return item;
+            return { ...item, offer_sent: true };
+        });
+        const updatedList = markSent(list);
+        const updatedDistrictList = markSent(Array.isArray(session.data?.worker_district_resume_list) ? session.data.worker_district_resume_list : []);
+        const updatedRegionList = markSent(Array.isArray(session.data?.worker_region_resume_list) ? session.data.worker_region_resume_list : []);
+
+        const lastWorkerMessageId = session.data?.last_worker_match_message_id;
+        if (lastWorkerMessageId) {
+            try {
+                await deleteMessage(chatId, lastWorkerMessageId);
+            } catch {
+                // ignore
+            }
+        }
+
+        await this.setSession(session, {
+            data: {
+                ...session.data,
+                worker_resume_list: updatedList,
+                worker_district_resume_list: updatedDistrictList,
+                worker_region_resume_list: updatedRegionList,
+                currentWorkerIndex: idx,
+                last_worker_match_message_id: null
+            }
+        });
+
+        await this.sendPrompt(chatId, session, botTexts.offerSentEmployer[lang], {
+            replyMarkup: keyboards.offerSentResultKeyboard(lang, updatedList.length > 0)
+        });
+    }
+
+    private async notifySeekerAboutOffer(seekerUserId: string, offerId: string, job: any): Promise<void> {
+        const meta = await this.getUserTelegramMeta(seekerUserId);
+        if (!meta.telegramId) return;
+
+        const lang = meta.lang;
+        const company = this.escapeHtml(String(job?.company_name || (lang === 'uz' ? 'Tashkilot' : 'Компания')));
+        const title = this.escapeHtml(String(
+            lang === 'uz'
+                ? (job?.title_uz || job?.title_ru || job?.title || 'Vakansiya')
+                : (job?.title_ru || job?.title_uz || job?.title || 'Вакансия')
+        ));
+
+        try {
+            await sendMessage(meta.telegramId, botTexts.offerReceivedSeeker[lang](company, title), {
+                parseMode: 'HTML',
+                replyMarkup: keyboards.seekerOfferNotificationKeyboard(lang, offerId, String(job?.id || ''))
+            });
+        } catch (err) {
+            console.error('Offer notify seeker error:', err);
+        }
+    }
+
+    private async notifyEmployerAboutApplication(applicationId: string, jobId: string, applicantName: string): Promise<void> {
+        try {
+            const { data: job } = await this.supabase
+                .from('jobs')
+                .select('id, title_uz, title_ru, title, employer_id, created_by, user_id, employer_profiles(user_id)')
+                .eq('id', jobId)
+                .maybeSingle();
+            if (!job?.id) return;
+
+            const employerProfilesRaw = job?.employer_profiles;
+            const employerProfile = Array.isArray(employerProfilesRaw) ? employerProfilesRaw[0] : employerProfilesRaw;
+            const employerUserId = employerProfile?.user_id || job?.created_by || job?.user_id || null;
+            if (!employerUserId) return;
+
+            const meta = await this.getUserTelegramMeta(String(employerUserId));
+            if (!meta.telegramId) return;
+            const lang = meta.lang;
+            const jobTitle = this.escapeHtml(String(
+                lang === 'uz'
+                    ? (job?.title_uz || job?.title_ru || job?.title || 'Vakansiya')
+                    : (job?.title_ru || job?.title_uz || job?.title || 'Вакансия')
+            ));
+            const fullName = this.escapeHtml(String(applicantName || (lang === 'uz' ? 'Nomzod' : 'Кандидат')));
+            await sendMessage(meta.telegramId, botTexts.applicationAlertEmployer[lang](fullName, jobTitle), {
+                parseMode: 'HTML',
+                replyMarkup: keyboards.applicationAlertKeyboard(lang, applicationId)
+            });
+        } catch (err) {
+            console.error('Application notify employer error:', err);
+        }
     }
 
     // JOB SEARCH
@@ -9881,6 +11638,7 @@ export class TelegramBot {
         }
         const index = session.data?.currentJobIndex || 0;
         let newIndex = index;
+        if (direction === 'first') newIndex = 0;
         if (direction === 'next') newIndex += 1;
         if (direction === 'prev') newIndex -= 1;
         if (newIndex < 0) newIndex = 0;
@@ -9948,11 +11706,44 @@ export class TelegramBot {
             return;
         }
 
-        const { error } = await this.supabase.from('job_applications').insert(payload);
-        if (error) {
-            console.error('Apply error:', error);
-            await sendMessage(chatId, botTexts.error[lang]);
-            return;
+        let insertedApplicationId: string | null = null;
+        let insertError: any = null;
+        try {
+            const insertWithId = await this.supabase
+                .from('job_applications')
+                .insert(payload)
+                .select('id')
+                .maybeSingle();
+            insertError = insertWithId.error || null;
+            insertedApplicationId = insertWithId.data?.id ? String(insertWithId.data.id) : null;
+        } catch (err) {
+            insertError = err;
+        }
+
+        if (insertError) {
+            const fallbackInsert = await this.supabase.from('job_applications').insert(payload);
+            if (fallbackInsert.error) {
+                console.error('Apply error:', fallbackInsert.error);
+                await sendMessage(chatId, botTexts.error[lang]);
+                return;
+            }
+            try {
+                const latest = await this.supabase
+                    .from('job_applications')
+                    .select('id')
+                    .eq('job_id', jobId)
+                    .eq('resume_id', resumeRecord.id)
+                    .order('created_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle();
+                insertedApplicationId = latest.data?.id ? String(latest.data.id) : null;
+            } catch {
+                insertedApplicationId = null;
+            }
+        }
+
+        if (insertedApplicationId) {
+            await this.notifyEmployerAboutApplication(insertedApplicationId, jobId, resumeRecord.full_name || 'Nomzod');
         }
 
         await sendMessage(chatId, botTexts.applicationSent[lang], { replyMarkup: keyboards.removeKeyboard() });
