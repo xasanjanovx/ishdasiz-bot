@@ -236,6 +236,21 @@ export const getWorkingDaysLabel = (job: any, lang: Language) => {
     if (normalized.includes('full week') || normalized.includes('to‘liq hafta') || normalized.includes("to'liq hafta")) {
         return lang === 'uz' ? "To'liq hafta" : 'Полная неделя';
     }
+    if (
+        normalized.includes('moslashuvchan')
+        || normalized.includes('flex')
+        || normalized.includes('гибкий')
+    ) {
+        return lang === 'uz' ? 'Moslashuvchan jadval' : 'Гибкий график';
+    }
+    if (
+        normalized.includes('navbatch')
+        || normalized.includes('smen')
+        || normalized.includes('shift')
+        || normalized.includes('посмен')
+    ) {
+        return lang === 'uz' ? 'Navbatchilik asosida' : 'Посменный график';
+    }
     if (normalized.includes('2/2')) return lang === 'uz' ? 'Smenali 2/2' : 'Сменный 2/2';
     if (normalized.includes('3/3')) return lang === 'uz' ? 'Smenali 3/3' : 'Сменный 3/3';
     return null;

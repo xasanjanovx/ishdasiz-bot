@@ -7,6 +7,7 @@ const TELEGRAM_API_URL = 'https://api.telegram.org/bot';
 const DEFAULT_TIMEOUT_MS = 10000;
 const MAX_RETRIES = 3;
 const BACKOFF_BASE_MS = 500;
+let DRY_RUN_MESSAGE_ID = 700000;
 
 function sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
@@ -22,6 +23,37 @@ async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: nu
     }
 }
 
+function isDryRunEnabled(): boolean {
+    return process.env.TELEGRAM_DRY_RUN === '1';
+}
+
+function buildDryRunResponse(method: string, params: Record<string, any> = {}): any {
+    switch (method) {
+        case 'sendMessage':
+        case 'sendSticker':
+        case 'sendLocation':
+            DRY_RUN_MESSAGE_ID += 1;
+            return {
+                message_id: DRY_RUN_MESSAGE_ID,
+                date: Math.floor(Date.now() / 1000),
+                chat: { id: params.chat_id },
+                text: params.text ?? params.caption ?? ''
+            };
+        case 'editMessageText':
+        case 'deleteMessage':
+        case 'answerCallbackQuery':
+        case 'setWebhook':
+            return true;
+        case 'getWebhookInfo':
+            return { url: '', has_custom_certificate: false, pending_update_count: 0 };
+        case 'getMe':
+            return { id: 0, is_bot: true, username: 'dry_run_bot' };
+        case 'getChatMember':
+            return { status: 'member' };
+        default:
+            return true;
+    }
+}
 export function getBotToken(): string {
     const token = process.env.TELEGRAM_BOT_TOKEN;
     if (!token) {
@@ -38,6 +70,10 @@ export async function callTelegramAPI<T = any>(
     params: Record<string, any> = {},
     options: { timeoutMs?: number; suppressErrors?: boolean } = {}
 ): Promise<T> {
+    if (isDryRunEnabled()) {
+        return buildDryRunResponse(method, params) as T;
+    }
+
     const token = getBotToken();
     const url = `${TELEGRAM_API_URL}${token}/${method}`;
 
@@ -113,6 +149,32 @@ export async function sendMessage(
         ...(autoParse ? { parse_mode: autoParse } : {}),
         reply_markup: options.replyMarkup,
         disable_web_page_preview: options.disableWebPagePreview
+    });
+}
+
+/**
+ * Send sticker message
+ */
+export async function sendSticker(
+    chatId: number | string,
+    sticker: string,
+    options: {
+        caption?: string;
+        parseMode?: 'HTML' | 'Markdown' | 'MarkdownV2';
+        replyMarkup?: any;
+        disableNotification?: boolean;
+    } = {}
+): Promise<any> {
+    if (!sticker || typeof sticker !== 'string') {
+        throw new Error('Sticker file_id is required');
+    }
+    return callTelegramAPI('sendSticker', {
+        chat_id: chatId,
+        sticker,
+        ...(options.caption ? { caption: options.caption } : {}),
+        ...(options.parseMode ? { parse_mode: options.parseMode } : {}),
+        ...(options.replyMarkup ? { reply_markup: options.replyMarkup } : {}),
+        ...(typeof options.disableNotification === 'boolean' ? { disable_notification: options.disableNotification } : {})
     });
 }
 
@@ -262,4 +324,5 @@ export async function isUserSubscribed(
     if (!member) return false;
     return ['member', 'administrator', 'creator'].includes(member.status);
 }
+
 

@@ -4,7 +4,7 @@
  */
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { sendMessage, editMessage, answerCallbackQuery, isUserSubscribed, sendLocation, deleteMessage } from './telegram-api';
+import { sendMessage, editMessage, answerCallbackQuery, isUserSubscribed, sendLocation, deleteMessage, sendSticker } from './telegram-api';
 import * as keyboards from './keyboards';
 import {
     botTexts,
@@ -30,6 +30,17 @@ import bcrypt from 'bcryptjs';
 
 const MAX_LOGIN_ATTEMPTS = 5;
 const LOCKOUT_MINUTES = 15;
+
+type StickerTone = 'loading' | 'announce' | 'success' | 'warning' | 'error';
+
+// Premium stickers chosen from user-provided sets (serious/icon style only).
+const SERIOUS_STICKERS: Record<StickerTone, string> = {
+    loading: 'CAACAgQAAxUAAWmPFeoL9yAU6NlwofRyJFD546QmAAJjEAACyw2IUdo9lI0ErdlMOgQ', // TgAndroidIcons 🔎
+    announce: 'CAACAgQAAxUAAWmPFeoKBn_H-wzpiXroegIvpogPAAKGEgACmi4ZUKNMzHe46WeSOgQ', // TgAndroidIcons 📢
+    success: 'CAACAgIAAxUAAWmPFep4rf4pg5BsDDK9k_L1WCwiAAKfJAACuenISJL2-m2ABOeAOgQ', // Golden_Icons ✅
+    warning: 'CAACAgIAAxUAAWmPFepswAZognLVVvMeNOqkgEhgAAL6IQAC79vBSAAB-hCcxLp0wToE', // Golden_Icons ⚠️
+    error: 'CAACAgIAAxUAAWmPFeo1DO1TjCPbX9EM73Gs0A0_AAL9IgACeAXASD4zh472qgbdOgQ' // Golden_Icons ❗️
+};
 
 // ============================================
 // FSM States
@@ -1415,6 +1426,44 @@ export class TelegramBot {
         return state === BotState.AWAITING_PASSWORD || state === BotState.AWAITING_OTP;
     }
 
+    private normalizeTelegramUsername(value: any): string | null {
+        if (!value) return null;
+        const cleaned = String(value).trim().replace(/^@+/, '');
+        if (!cleaned) return null;
+        if (!/^[A-Za-z0-9_]{5,32}$/.test(cleaned)) return null;
+        return cleaned;
+    }
+
+    private async syncTelegramUsernameFromUpdate(session: TelegramSession, usernameRaw: any): Promise<void> {
+        const username = this.normalizeTelegramUsername(usernameRaw);
+        if (!username) return;
+
+        const current = this.normalizeTelegramUsername(session.data?.telegram_username);
+        if (current !== username) {
+            const updatedData = { ...(session.data || {}), telegram_username: username };
+            await this.setSession(session, { data: updatedData });
+        }
+
+        if (!session.user_id) return;
+        const now = new Date().toISOString();
+        try {
+            await this.supabase
+                .from('job_seeker_profiles')
+                .update({ telegram: username, updated_at: now })
+                .eq('user_id', session.user_id);
+        } catch {
+            // optional column may be absent on older schema
+        }
+        try {
+            await this.supabase
+                .from('employer_profiles')
+                .update({ telegram: username, updated_at: now })
+                .eq('user_id', session.user_id);
+        } catch {
+            // optional column may be absent on older schema
+        }
+    }
+
     private shouldSkipModeration(state: BotState, text: string): boolean {
         const skipStates = [
             BotState.POSTING_JOB_SALARY,
@@ -1488,7 +1537,7 @@ export class TelegramBot {
     private async showLoadingHint(chatId: number, session: TelegramSession, customText?: string): Promise<number | null> {
         try {
             const text = customText || botTexts.fieldSearchLoading[session.lang || 'uz'];
-            const sent = await sendMessage(chatId, text);
+            const sent = await this.sendSeriousSticker(chatId, 'loading', { caption: text });
             return sent?.message_id || null;
         } catch {
             return null;
@@ -1514,6 +1563,30 @@ export class TelegramBot {
             .trim();
     }
 
+    private async sendSeriousSticker(
+        chatId: number,
+        tone: StickerTone,
+        options: { caption?: string; replyMarkup?: any; parseMode?: 'HTML' | 'Markdown' | 'MarkdownV2' } = {}
+    ): Promise<any | null> {
+        const stickerId = SERIOUS_STICKERS[tone];
+        if (!stickerId) return null;
+        try {
+            return await sendSticker(chatId, stickerId, {
+                caption: options.caption,
+                parseMode: options.parseMode,
+                replyMarkup: options.replyMarkup
+            });
+        } catch {
+            if (options.caption) {
+                return await sendMessage(chatId, options.caption, {
+                    parseMode: options.parseMode,
+                    replyMarkup: options.replyMarkup
+                });
+            }
+            return null;
+        }
+    }
+
     private normalizePhoneValue(value: string | null | undefined): string {
         if (!value) return '';
         return String(value).replace(/\D/g, '');
@@ -1535,7 +1608,7 @@ export class TelegramBot {
         return Array.from(variants).filter(Boolean);
     }
 
-    private async findUserByPhone(phone: string): Promise<{ id: string; phone?: string | null; telegram_user_id?: number | null } | null> {
+    private async findUserByPhone(phone: string): Promise<{ id: string; phone?: string | null; telegram_user_id?: number | null; password_hash?: string | null } | null> {
         const digits = this.normalizePhoneValue(phone);
         if (!digits) return null;
 
@@ -1543,7 +1616,7 @@ export class TelegramBot {
         if (variants.length > 0) {
             const { data } = await this.supabase
                 .from('users')
-                .select('id, phone, telegram_user_id')
+                .select('id, phone, telegram_user_id, password_hash')
                 .in('phone', variants)
                 .limit(20);
 
@@ -1558,7 +1631,7 @@ export class TelegramBot {
         if (last9.length === 9) {
             const { data } = await this.supabase
                 .from('users')
-                .select('id, phone, telegram_user_id')
+                .select('id, phone, telegram_user_id, password_hash')
                 .ilike('phone', `%${last9}`)
                 .limit(50);
             if (Array.isArray(data) && data.length > 0) {
@@ -1653,6 +1726,7 @@ export class TelegramBot {
         const callback = update?.callback_query;
         const updateId = update?.update_id;
         const userId = message?.from?.id ?? callback?.from?.id;
+        const telegramUsernameRaw = message?.from?.username ?? callback?.from?.username ?? null;
         const messageId = message?.message_id;
         const callbackId = callback?.id;
         const chatType = message?.chat?.type ?? callback?.message?.chat?.type;
@@ -1674,6 +1748,8 @@ export class TelegramBot {
             console.log('[BOT] No session, skipping');
             return;
         }
+
+        await this.syncTelegramUsernameFromUpdate(session, telegramUsernameRaw);
 
         console.log('[BOT] Session state:', session.state, 'lang:', session.lang);
 
@@ -2114,12 +2190,27 @@ export class TelegramBot {
             await this.setSession(session, { state: BotState.AWAITING_PHONE });
             await this.sendPrompt(chatId, session, botTexts.askPhone[lang], { replyMarkup: keyboards.phoneRequestKeyboard(lang) });
         } else if (value === 'password') {
-            // Password auth is only allowed for role switch.
-            if (phone) {
-                await this.startSMSAuth(chatId, phone, session);
-            } else {
+            if (!phone) {
                 await this.sendPrompt(chatId, session, botTexts.askPhone[lang], { replyMarkup: keyboards.phoneRequestKeyboard(lang) });
+                return;
             }
+            const user = await this.findUserByPhone(phone);
+            const hasPassword = Boolean(user?.password_hash && String(user.password_hash).trim().length > 0);
+            if (!hasPassword) {
+                await this.startSMSAuth(chatId, phone, session);
+                return;
+            }
+            await this.setSession(session, {
+                state: BotState.AWAITING_PASSWORD,
+                data: {
+                    ...session.data,
+                    password_flow: 'login',
+                    password_create_first: null
+                }
+            });
+            await this.sendPrompt(chatId, session, botTexts.enterPassword[lang], {
+                replyMarkup: keyboards.cancelReplyKeyboard(lang)
+            });
         } else if (value === 'sms') {
             if (!phone) {
                 await sendMessage(chatId, botTexts.error[lang]);
@@ -2180,6 +2271,7 @@ export class TelegramBot {
             company_name: profile?.company_name || '',
             director_name: profile?.director_name || null,
             phone: profile?.phone || session.phone || null,
+            telegram: profile?.telegram || this.normalizeTelegramUsername(session.data?.telegram_username) || null,
             region_id: profile?.region_id || null,
             district_id: profile?.district_id || null,
             address: profile?.address || profile?.default_address || null,
@@ -2228,6 +2320,7 @@ export class TelegramBot {
             company_name: draft.company_name,
             director_name: draft.director_name || null,
             phone: draft.phone || session.phone || null,
+            telegram: this.normalizeTelegramUsername(draft.telegram) || this.normalizeTelegramUsername(session.data?.telegram_username) || null,
             updated_at: new Date().toISOString()
         };
 
@@ -2567,7 +2660,10 @@ export class TelegramBot {
 
         const user = await this.findUserByPhone(fullPhone);
         if (user?.id) {
-            await sendMessage(chatId, botTexts.accountFound[lang], { replyMarkup: keyboards.loginChoiceKeyboard(lang) });
+            const hasPassword = Boolean(user.password_hash && String(user.password_hash).trim().length > 0);
+            await this.sendPrompt(chatId, session, botTexts.accountFound[lang], {
+                replyMarkup: keyboards.loginChoiceKeyboard(lang, hasPassword)
+            });
         } else {
             await this.startSMSAuth(chatId, fullPhone, session);
         }
@@ -3165,12 +3261,15 @@ export class TelegramBot {
         const lang = session.lang;
         const districts = session.data?.districts || [];
         const districtIdNum = Number.parseInt(districtId, 10);
-        const district = districts.find((d: any) => String(d.id) === String(districtIdNum));
+        const district = districts.find((d: any) => String(d.id) === String(districtId))
+            || districts.find((d: any) => Number.isFinite(districtIdNum) && String(d.id) === String(districtIdNum));
+        const normalizedDistrictId = district?.id
+            ?? (Number.isFinite(districtIdNum) ? districtIdNum : districtId);
 
         if (session.state === BotState.EMPLOYER_PROFILE_DISTRICT) {
             const updatedDraft = {
                 ...(session.data?.employer_profile || {}),
-                district_id: Number.isFinite(districtIdNum) ? districtIdNum : districtId
+                district_id: normalizedDistrictId
             };
             await this.setSession(session, {
                 state: BotState.EMPLOYER_PROFILE_ADDRESS,
@@ -3185,7 +3284,7 @@ export class TelegramBot {
         if (session.state === BotState.POSTING_JOB_DISTRICT) {
             const updatedJob = {
                 ...session.data?.temp_job,
-                district_id: Number.isFinite(districtIdNum) ? districtIdNum : districtId,
+                district_id: normalizedDistrictId,
                 district_name: lang === 'uz' ? district?.name_uz : district?.name_ru
             };
             await this.setSession(session, {
@@ -3201,7 +3300,7 @@ export class TelegramBot {
         if (session.data?.edit_mode && session.data?.active_resume_id) {
             const updatedResume = {
                 ...session.data?.resume,
-                district_id: Number.isFinite(districtIdNum) ? districtIdNum : districtId,
+                district_id: normalizedDistrictId,
                 district_name: lang === 'uz' ? district?.name_uz : district?.name_ru
             };
             await this.saveResume(session, updatedResume, session.data.active_resume_id);
@@ -3241,7 +3340,7 @@ export class TelegramBot {
             ...session.data,
             resume: {
                 ...session.data?.resume,
-                district_id: Number.isFinite(districtIdNum) ? districtIdNum : districtId,
+                district_id: normalizedDistrictId,
                 district_name: lang === 'uz' ? district?.name_uz : district?.name_ru
             }
         };
@@ -4649,6 +4748,7 @@ export class TelegramBot {
         if (!payload.title || String(payload.title).trim().length === 0) {
             payload.title = 'Mutaxassis';
         }
+        const profileTelegram = this.normalizeTelegramUsername(session.data?.telegram_username);
 
         if (resumeId) {
             let payloadToUse: Record<string, any> = { ...payload };
@@ -4696,6 +4796,7 @@ export class TelegramBot {
                 user_id: session.user_id,
                 full_name: payload.full_name || null,
                 phone: payload.phone || session.phone || null,
+                telegram: profileTelegram,
                 region_id: payload.region_id || null,
                 district_id: payload.district_id || null,
                 category_id: payload.category_id || null,
@@ -4758,6 +4859,7 @@ export class TelegramBot {
             user_id: session.user_id,
             full_name: payload.full_name || null,
             phone: payload.phone || session.phone || null,
+            telegram: profileTelegram,
             region_id: payload.region_id || null,
             district_id: payload.district_id || null,
             category_id: payload.category_id || null,
@@ -6694,7 +6796,11 @@ export class TelegramBot {
         await this.showResumeById(chatId, resumeId, session);
     }
 
-    private async buildResumeText(resume: any, lang: BotLang): Promise<string> {
+    private async buildResumeText(
+        resume: any,
+        lang: BotLang,
+        options: { hideLocation?: boolean } = {}
+    ): Promise<string> {
         const normalizedEducation = this.normalizeEducationLevelKey(resume?.education_level);
         if (!normalizedEducation) {
             resume = { ...resume, education_level: null };
@@ -6735,7 +6841,22 @@ export class TelegramBot {
         const location = [regionName ? (lang === 'uz' ? regionName.name_uz : regionName.name_ru) : null, districtName]
             .filter(Boolean)
             .join(', ');
-        if (location) lines.push(`📍 | ${lang === 'uz' ? 'Joylashuv' : 'Локация'}: ${location}`);
+        if (!options.hideLocation && location) {
+            lines.push(`📍 | ${lang === 'uz' ? 'Joylashuv' : 'Локация'}: ${location}`);
+        }
+        let profileTelegram: string | null = null;
+        if (resume?.user_id) {
+            try {
+                const { data: seekerMeta } = await this.supabase
+                    .from('job_seeker_profiles')
+                    .select('telegram')
+                    .eq('user_id', resume.user_id)
+                    .maybeSingle();
+                profileTelegram = this.normalizeTelegramUsername(seekerMeta?.telegram);
+            } catch {
+                profileTelegram = null;
+            }
+        }
 
         const categories = await this.getCategories();
         const categoryIds = Array.isArray(resume.category_ids) && resume.category_ids.length > 0
@@ -6861,10 +6982,11 @@ export class TelegramBot {
             lines.push(`📝 | ${lang === 'uz' ? "O'zi haqida" : 'О себе'}: ${resume.about}`);
         }
 
-        if (resume.phone) {
+        if (resume.phone || profileTelegram) {
             lines.push('');
             lines.push(`☎️ | ${lang === 'uz' ? "Bog'lanish" : 'Контакты'}`);
-            lines.push(`📞 | ${lang === 'uz' ? 'Telefon' : 'Телефон'}: ${resume.phone}`);
+            if (resume.phone) lines.push(`📞 | ${lang === 'uz' ? 'Telefon' : 'Телефон'}: ${resume.phone}`);
+            if (profileTelegram) lines.push(`💬 | Telegram: @${profileTelegram}`);
         }
 
         return lines.join('\n');
@@ -6900,6 +7022,7 @@ export class TelegramBot {
             user_id: session.user_id,
             full_name: resumeData?.full_name || null,
             phone: session.phone || null,
+            telegram: this.normalizeTelegramUsername(session.data?.telegram_username),
             region_id: resumeData?.region_id || null,
             district_id: resumeData?.district_id || null,
             birth_date: resumeData?.birth_date || null,
@@ -7511,10 +7634,24 @@ export class TelegramBot {
                 });
                 return;
             } else {
-                // If no related jobs, check if there are jobs in other regions
-                const broadJobsForFallback = await this.fetchActiveJobs(1200);
-                const regionButtons = this.buildRegionButtonsList(broadJobsForFallback, lang, regionId);
+                // If no related jobs, show only OTHER REGIONS with matching vacancies (not all vacancies).
+                let broadPoolForFallback = broadNormalized;
+                if (hasTitleTokens) {
+                    const preferredBroad = this.filterJobsByDesiredTitle(broadNormalized, desiredTitle, false, resume.field_id);
+                    if (preferredBroad.length > 0) broadPoolForFallback = preferredBroad;
+                }
+                const otherRegionMatched = matchAndSortJobs(profile, broadPoolForFallback);
+                const regionButtons = this.buildRegionButtonsList(otherRegionMatched, lang, regionId);
                 if (regionButtons.length > 0) {
+                    await this.setSession(session, {
+                        data: {
+                            ...session.data,
+                            search_region_options: regionButtons,
+                            search_region_origin: 'other_regions',
+                            search_region_id: null,
+                            search_district_id: null
+                        }
+                    });
                     await this.sendPrompt(chatId, session, botTexts.noRegionJobs[lang], {
                         replyMarkup: keyboards.regionJobsFallbackKeyboard(lang, regionButtons, { includeRelated: false })
                     });
@@ -7534,7 +7671,9 @@ export class TelegramBot {
             job_source: 'resume',
             active_resume_id: resume.id,
             clean_inputs: false,
-            related_job_list: []
+            related_job_list: [],
+            search_region_options: [],
+            search_region_origin: null
         };
         await this.setSession(session, {
             state: BotState.BROWSING_JOBS,
@@ -7670,7 +7809,16 @@ export class TelegramBot {
             return;
         }
 
-        const updatedData = { ...session.data, job_list: matched, currentJobIndex: 0, job_source: 'geo', clean_inputs: false, related_job_list: [] };
+        const updatedData = {
+            ...session.data,
+            job_list: matched,
+            currentJobIndex: 0,
+            job_source: 'geo',
+            clean_inputs: false,
+            related_job_list: [],
+            search_region_options: [],
+            search_region_origin: null
+        };
         await this.setSession(session, {
             state: BotState.BROWSING_JOBS,
             data: updatedData
@@ -7679,10 +7827,14 @@ export class TelegramBot {
     }
 
     private normalizeJob(job: any, lang: BotLang): any {
-        const regionName = job.regions ? (lang === 'uz' ? job.regions.name_uz : job.regions.name_ru) : job.region_name;
-        const districtName = job.districts ? (lang === 'uz' ? job.districts.name_uz : job.districts.name_ru) : job.district_name;
-        const companyName = job.company_name || job.employer_profiles?.company_name || null;
         const raw = job.raw_source_json || {};
+        const regionName = job.regions
+            ? (lang === 'uz' ? job.regions.name_uz : job.regions.name_ru)
+            : (job.region_name || (lang === 'uz' ? raw?.region_name_uz : raw?.region_name_ru) || raw?.region_name || null);
+        const districtName = job.districts
+            ? (lang === 'uz' ? job.districts.name_uz : job.districts.name_ru)
+            : (job.district_name || (lang === 'uz' ? raw?.district_name_uz : raw?.district_name_ru) || raw?.district_name || null);
+        const companyName = job.company_name || job.employer_profiles?.company_name || null;
         const normalized: any = {
             ...job,
             region_name: regionName,
@@ -8381,6 +8533,20 @@ export class TelegramBot {
         return R * c;
     }
 
+    private formatDistance(km: number, lang: BotLang): string {
+        if (!Number.isFinite(km) || km < 0) {
+            return lang === 'uz' ? "Noma'lum" : 'Неизвестно';
+        }
+        if (km < 1) {
+            const meters = Math.max(1, Math.round(km * 1000));
+            return `${meters} ${lang === 'uz' ? 'm' : 'м'}`;
+        }
+        if (km < 10) {
+            return `${km.toFixed(1)} ${lang === 'uz' ? 'km' : 'км'}`;
+        }
+        return `${Math.round(km)} ${lang === 'uz' ? 'km' : 'км'}`;
+    }
+
     private getDistanceToJob(job: any, fromLat: number, fromLon: number): number | null {
         let lat = this.toCoordinate(job.latitude);
         let lon = this.toCoordinate(job.longitude);
@@ -8638,6 +8804,22 @@ export class TelegramBot {
         messageId?: number
     ): Promise<void> {
         const lang = session.lang;
+        if (regionValue === 'allregions') {
+            const storedOptions = Array.isArray(session.data?.search_region_options)
+                ? session.data.search_region_options
+                : [];
+            if (storedOptions.length > 0) {
+                await this.sendPrompt(chatId, session, botTexts.noRegionJobs[lang], {
+                    replyMarkup: keyboards.regionJobsFallbackKeyboard(lang, storedOptions, { includeRelated: false })
+                });
+                return;
+            }
+            await this.sendPrompt(chatId, session, botTexts.noJobsFound[lang], {
+                replyMarkup: keyboards.mainMenuKeyboard(lang, 'seeker')
+            });
+            return;
+        }
+
         const regionId = this.toCoordinate(regionValue);
 
         if (regionId === null) {
@@ -8745,9 +8927,10 @@ export class TelegramBot {
             } catch { /* ignore */ }
         }
 
+        const showBackToRegionList = String(session.data?.search_region_origin || '') === 'other_regions';
         await this.sendPrompt(chatId, session, headerText, {
             parseMode: 'HTML',
-            replyMarkup: keyboards.districtJobsFallbackKeyboard(lang, districtButtons)
+            replyMarkup: keyboards.districtJobsFallbackKeyboard(lang, districtButtons, { backToRegions: showBackToRegionList })
         });
     }
 
@@ -9073,7 +9256,12 @@ export class TelegramBot {
 
     private async showMainMenu(chatId: number, session: TelegramSession): Promise<void> {
         await this.clearFlowCancelKeyboard(chatId, session);
-        const updatedData = { ...session.data, clean_inputs: false };
+        const updatedData = {
+            ...session.data,
+            clean_inputs: false,
+            search_region_options: [],
+            search_region_origin: null
+        };
         await this.setSession(session, { state: BotState.MAIN_MENU, data: updatedData });
         const lang = session.lang;
         const isEmployer = session.data?.active_role === 'employer';
@@ -9088,8 +9276,13 @@ export class TelegramBot {
     private async handleAction(chatId: number, action: string, session: TelegramSession): Promise<void> {
         const lang = session.lang;
 
-        if (action === 'jobs' || action === 'search') {
-            if (action === 'search' && session.data?.active_resume_id) {
+        if (action === 'jobs') {
+            await this.showResumeSearchSelection(chatId, session);
+            return;
+        }
+
+        if (action === 'search') {
+            if (session.data?.active_resume_id) {
                 const { data: resume } = await this.supabase
                     .from('resumes')
                     .select('*')
@@ -9100,10 +9293,7 @@ export class TelegramBot {
                     return;
                 }
             }
-            await this.setSession(session, { state: BotState.BROWSING_JOBS });
-            await this.sendPrompt(chatId, session, botTexts.searchModePrompt[lang], {
-                replyMarkup: keyboards.searchModeKeyboard(lang)
-            });
+            await this.showResumeSearchSelection(chatId, session);
         } else if (action === 'profile') {
             await this.showResumeList(chatId, session);
         } else if (action === 'settings') {
@@ -9147,6 +9337,7 @@ export class TelegramBot {
     private async handleEmployerMainMenu(chatId: number, action: string, session: TelegramSession): Promise<void> {
         const lang = session.lang;
         if (action === 'post_job') {
+            await this.sendSeriousSticker(chatId, 'announce');
             await this.setFlowCancelKeyboard(chatId, session);
             const { data: employer } = await this.supabase
                 .from('employer_profiles')
@@ -9193,9 +9384,16 @@ export class TelegramBot {
         if (action === 'find_worker') {
             const jobs = await this.getEmployerJobs(session, 20);
             if (!jobs || jobs.length === 0) {
-                await this.sendPrompt(chatId, session, botTexts.employerNoVacanciesHint[lang], {
-                    replyMarkup: keyboards.employerMainMenuKeyboard(lang)
-                });
+                await this.sendSeriousSticker(chatId, 'warning');
+                await this.sendPrompt(
+                    chatId,
+                    session,
+                    lang === 'uz'
+                        ? "ℹ️ Hali vakansiya yo'q. Avval yangi vakansiya joylaymiz."
+                        : 'ℹ️ Вакансий пока нет. Сначала разместим новую вакансию.',
+                    { replyMarkup: keyboards.employerMainMenuKeyboard(lang) }
+                );
+                await this.handleEmployerMainMenu(chatId, 'post_job', session);
                 return;
             }
             const searchableJobs = jobs.filter(job => {
@@ -9203,6 +9401,7 @@ export class TelegramBot {
                 return !state.isPaused && !state.isFilled;
             });
             if (!searchableJobs.length) {
+                await this.sendSeriousSticker(chatId, 'warning');
                 await this.sendPrompt(
                     chatId,
                     session,
@@ -9622,7 +9821,7 @@ export class TelegramBot {
             return;
         }
 
-        const resumeText = await this.buildResumeText(resume, lang);
+        const resumeText = await this.buildResumeText(resume, lang, { hideLocation: true });
         const header = `${lang === 'uz' ? '📨 Ariza' : '📨 Отклик'}\n${lang === 'uz' ? 'Vakansiya' : 'Вакансия'}: ${jobTitle}`;
         await this.sendPrompt(chatId, session, `${header}\n\n${resumeText}`, {
             parseMode: 'HTML',
@@ -9879,6 +10078,7 @@ export class TelegramBot {
                     user_id: session.user_id,
                     company_name: fallbackCompany,
                     phone: session.phone || null,
+                    telegram: this.normalizeTelegramUsername(session.data?.telegram_username),
                     director_name: jobData?.hr_name || null,
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString()
@@ -9897,8 +10097,15 @@ export class TelegramBot {
 
         const employerId = employerProfile.id;
         const employerLocationPatch: Record<string, any> = {};
+        const sessionTelegram = this.normalizeTelegramUsername(session.data?.telegram_username);
+        const employerTelegram = this.normalizeTelegramUsername((employerProfile as any)?.telegram);
+        const jobTelegram = this.normalizeTelegramUsername(jobData?.contact_telegram);
+        const contactTelegram = jobTelegram || employerTelegram || sessionTelegram;
         if (jobData?.region_id) employerLocationPatch.region_id = jobData.region_id;
         if (jobData?.district_id) employerLocationPatch.district_id = jobData.district_id;
+        if (contactTelegram) employerLocationPatch.telegram = contactTelegram;
+        if (this.toCoordinate(jobData?.latitude) !== null) employerLocationPatch.default_latitude = this.toCoordinate(jobData?.latitude);
+        if (this.toCoordinate(jobData?.longitude) !== null) employerLocationPatch.default_longitude = this.toCoordinate(jobData?.longitude);
         if (jobData?.address) {
             employerLocationPatch.address = jobData.address;
             employerLocationPatch.default_address = jobData.address;
@@ -9925,6 +10132,14 @@ export class TelegramBot {
         const description = jobData?.description || this.buildJobDescriptionFromSections(aiSections) || title;
         const companyName = jobData?.company_name || employerProfile.company_name || 'Tashkilot';
         const address = jobData?.address || employerProfile.address || employerProfile.default_address || null;
+        const resolvedRegionId = jobData?.region_id || employerProfile.region_id || null;
+        const resolvedDistrictId = jobData?.district_id || employerProfile.district_id || null;
+        const resolvedRegionName = jobData?.region_name
+            || (resolvedRegionId ? await this.getRegionNameById(resolvedRegionId, lang) : null)
+            || null;
+        const resolvedDistrictName = jobData?.district_name
+            || (resolvedDistrictId ? await this.getDistrictNameById(resolvedDistrictId, lang) : null)
+            || null;
 
         const rawMeta = jobData?.ai_meta || {};
         const languages = Array.isArray(jobData?.languages)
@@ -9969,10 +10184,10 @@ export class TelegramBot {
             category_id: jobData?.category_id || null,
             field_id: jobData?.field_id || null,
             field_title: jobData?.field_title || null,
-            region_id: jobData?.region_id || employerProfile.region_id || null,
-            district_id: jobData?.district_id || employerProfile.district_id || null,
-            region_name: jobData?.region_name || null,
-            district_name: jobData?.district_name || null,
+            region_id: resolvedRegionId,
+            district_id: resolvedDistrictId,
+            region_name: resolvedRegionName,
+            district_name: resolvedDistrictName,
             address,
             latitude: this.toCoordinate(jobData?.latitude),
             longitude: this.toCoordinate(jobData?.longitude),
@@ -9980,6 +10195,7 @@ export class TelegramBot {
             salary_max: Number.isFinite(jobData?.salary_max) ? jobData?.salary_max : (jobData?.salary_max ? Number(jobData.salary_max) : null),
             contact_phone: jobData?.contact_phone || employerProfile.phone || session.phone || null,
             phone: jobData?.contact_phone || employerProfile.phone || session.phone || null,
+            contact_telegram: contactTelegram || null,
             hr_name: jobData?.hr_name || employerProfile.director_name || null,
             gender: normalizedGender,
             education_level: normalizedEducation,
@@ -10085,10 +10301,12 @@ export class TelegramBot {
 
         if (insertError) {
             console.error('Job publish error:', insertError);
+            await this.sendSeriousSticker(chatId, 'error');
             await this.sendPrompt(chatId, session, botTexts.error[lang], { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
             return;
         }
 
+        await this.sendSeriousSticker(chatId, 'success');
         await this.sendPrompt(chatId, session, botTexts.jobPublished[lang], { replyMarkup: keyboards.jobPublishedKeyboard(lang, createdJob?.id) });
         await this.clearFlowCancelKeyboard(chatId, session);
         await this.setSession(session, { state: BotState.EMPLOYER_MAIN_MENU, data: { ...session.data, temp_job: null, clean_inputs: false } });
@@ -10262,11 +10480,11 @@ export class TelegramBot {
 
         if (lang === 'uz') {
             const skillsText = skills.length > 0 ? skills.join(', ') : "tez o'rganish va jamoada ishlash";
-            return `${title} lavozimida ishlashga qiziqaman. ${experienceLabel} darajada tajribaga egaman va vazifalarni mas'uliyat bilan bajaraman. Asosiy ko'nikmalarim: ${skillsText}.`;
+            return `${title} lavozimida ishlashga tayyorman. ${experienceLabel} tajriba va ${skillsText} ko‘nikmalarim bilan vazifalarni mas'uliyat bilan bajaraman.`;
         }
 
         const skillsText = skills.length > 0 ? skills.join(', ') : 'быстрая обучаемость и работа в команде';
-        return `Рассматриваю работу на позиции «${title}». Мой уровень опыта: ${experienceLabel}; подхожу к задачам ответственно и на результат. Ключевые навыки: ${skillsText}.`;
+        return `Рассматриваю позицию «${title}». При уровне опыта «${experienceLabel}» и навыках (${skillsText}) работаю ответственно и на результат.`;
     }
 
     private normalizeAiParagraph(rawText: string): string {
@@ -10277,6 +10495,15 @@ export class TelegramBot {
             .replace(/\s+/g, ' ')
             .trim();
         return cleaned;
+    }
+
+    private shortenAiParagraph(rawText: string, maxWords: number = 36): string {
+        const cleaned = this.normalizeAiParagraph(rawText);
+        if (!cleaned) return '';
+        const words = cleaned.split(/\s+/).filter(Boolean);
+        if (words.length <= maxWords) return cleaned;
+        const trimmed = words.slice(0, maxWords).join(' ').replace(/[,:;\-]+$/g, '').trim();
+        return trimmed ? `${trimmed}.` : '';
     }
 
     private async generateAiResumeAboutSuggestion(resumeData: any, lang: BotLang): Promise<string> {
@@ -10295,10 +10522,11 @@ export class TelegramBot {
             ? [
                 "Siz professional karyera maslahatchisisiz.",
                 "Faqat o'zbek lotin alifbosida yozing, inglizcha va ruscha so'zlarni aralashtirmang.",
-                "Nomzod haqida 2-3 gapdan iborat, professional va aniq 'o'zi haqida' matn yozing.",
+                "Matnni birinchi shaxsda (men shaklida) yozing.",
+                "\"O'zim haqimda\" bo'limi uchun 2 ta qisqa, tushunarli va professional gap yozing.",
                 "Qoidalar:",
-                "- Matn juda umumiy bo'lmasin.",
-                "- Ma'lumotni takrorlamang.",
+                "- Matn sodda va xatosiz bo'lsin.",
+                "- Ma'lumotni takrorlamang va keraksiz so'z ishlatmang.",
                 "- Faqat bitta qisqa paragraf qaytaring.",
                 "",
                 `Lavozim: ${title || 'Ko‘rsatilmagan'}`,
@@ -10310,10 +10538,11 @@ export class TelegramBot {
             : [
                 'Вы профессиональный карьерный консультант.',
                 'Пишите только на русском языке.',
-                'Сформируйте профессиональный блок «О себе» на 2-3 предложения.',
+                'Пишите от первого лица.',
+                'Сформируйте блок «О себе» в 2 коротких и понятных предложениях.',
                 'Правила:',
-                '- Без лишней воды и штампов.',
-                '- Не дублируйте исходные поля дословно.',
+                '- Текст должен быть простым и без ошибок.',
+                '- Без лишней воды и дословного повторения исходных полей.',
                 '- Верните один краткий абзац.',
                 '',
                 `Должность: ${title || 'Не указано'}`,
@@ -10324,8 +10553,8 @@ export class TelegramBot {
             ].join('\n');
 
         try {
-            const response = await callDeepSeekText(prompt, 240, undefined, 0.45);
-            const normalized = this.normalizeAiParagraph(response);
+            const response = await callDeepSeekText(prompt, 180, undefined, 0.4);
+            const normalized = this.shortenAiParagraph(response, 34);
             return normalized || fallback;
         } catch (error) {
             console.error('DeepSeek resume about suggestion error:', error);
@@ -10353,8 +10582,8 @@ export class TelegramBot {
 
         const preview = suggestion
             ? (lang === 'uz'
-                ? `${botTexts.askAbout[lang]}\n\n<b>🤖 | AI tavsiyasi</b>\n<i>Ushbu matn AI yordamida shakllantirildi.</i>\n\n${this.escapeHtml(suggestion)}\n\n<i>Shu variantni qo‘llashingiz yoki o‘zingiz yozishingiz mumkin.</i>`
-                : `${botTexts.askAbout[lang]}\n\n<b>🤖 | Рекомендация AI</b>\n<i>Этот текст сформирован с помощью AI.</i>\n\n${this.escapeHtml(suggestion)}\n\n<i>Можно продолжить с этим вариантом или ввести вручную.</i>`)
+                ? `${botTexts.askAbout[lang]}\n\n<b>🤖 | AI tavsiyasi</b>\n<i>Ushbu matn AI yordamida shakllantirildi.</i>\n\n<blockquote>${this.escapeHtml(suggestion)}</blockquote>`
+                : `${botTexts.askAbout[lang]}\n\n<b>🤖 | Рекомендация AI</b>\n<i>Этот текст сформирован с помощью AI.</i>\n\n<blockquote>${this.escapeHtml(suggestion)}</blockquote>`)
             : botTexts.askAbout[lang];
 
         await this.sendPrompt(chatId, session, preview, {
@@ -10611,7 +10840,8 @@ export class TelegramBot {
         });
 
         if (!baseScored.length) {
-            await this.sendPrompt(chatId, session, lang === 'uz' ? "Mos rezyumelar topilmadi." : 'Подходящие резюме не найдены.', {
+            await this.sendSeriousSticker(chatId, 'warning');
+            await this.sendPrompt(chatId, session, botTexts.noCandidatesForJob[lang], {
                 replyMarkup: keyboards.employerMainMenuKeyboard(lang)
             });
             return;
@@ -10654,7 +10884,8 @@ export class TelegramBot {
             .sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
 
         if (!scored.length) {
-            await this.sendPrompt(chatId, session, lang === 'uz' ? "Mos rezyumelar topilmadi." : 'Подходящие резюме не найдены.', {
+            await this.sendSeriousSticker(chatId, 'warning');
+            await this.sendPrompt(chatId, session, botTexts.noCandidatesForJob[lang], {
                 replyMarkup: keyboards.employerMainMenuKeyboard(lang)
             });
             return;
@@ -10684,9 +10915,12 @@ export class TelegramBot {
 
         const districtList = districtListRaw.map(toWorkerItem).filter(item => item.id);
         const regionList = regionListRaw.map(toWorkerItem).filter(item => item.id);
+        const districtLabel = targetDistrictId ? await this.getDistrictNameById(targetDistrictId, lang) : null;
+        const regionLabel = targetRegionId !== null ? await this.getRegionNameById(targetRegionId, lang) : null;
 
         if (!districtList.length && !regionList.length) {
-            await this.sendPrompt(chatId, session, lang === 'uz' ? "Mos rezyumelar topilmadi." : 'Подходящие резюме не найдены.', {
+            await this.sendSeriousSticker(chatId, 'warning');
+            await this.sendPrompt(chatId, session, botTexts.noCandidatesForJob[lang], {
                 replyMarkup: keyboards.employerMainMenuKeyboard(lang)
             });
             return;
@@ -10704,14 +10938,19 @@ export class TelegramBot {
                     currentWorkerIndex: 0,
                     worker_job_id: String(job?.id || ''),
                     worker_job_title: jobTitle || (lang === 'uz' ? 'Vakansiya' : 'Вакансия'),
+                    worker_target_district_name: districtLabel,
+                    worker_target_region_name: regionLabel,
                     related_resume_list: []
                 }
             });
 
             const regionCount = regionList.length;
+            const areaLabelUz = districtLabel || (regionLabel || "tanlangan hudud");
+            const areaLabelRu = districtLabel || (regionLabel || 'выбранном регионе');
             const notice = lang === 'uz'
-                ? `ℹ️ | Ushbu tuman/shaharda mos nomzod topilmadi.\n\n<b>${regionCount} ta nomzod</b> viloyat bo'yicha topildi.`
-                : `ℹ️ | В этом районе/городе подходящие кандидаты не найдены.\n\n<b>По области найдено: ${regionCount}</b>.`;
+                ? `<b>ℹ️ | ${areaLabelUz} hududida mos nomzod topilmadi.</b>\n\n<b>${regionCount} ta nomzod</b> viloyat bo'yicha topildi.`
+                : `<b>ℹ️ | В зоне «${areaLabelRu}» подходящие кандидаты не найдены.</b>\n\n<b>По области найдено: ${regionCount}</b>.`;
+            await this.sendSeriousSticker(chatId, 'warning');
             await this.sendPrompt(chatId, session, notice, {
                 replyMarkup: keyboards.workerRegionFallbackKeyboard(lang, {
                     showRegionSearch: regionCount > 0,
@@ -10745,6 +10984,8 @@ export class TelegramBot {
                 currentWorkerIndex: 0,
                 worker_job_id: String(job?.id || ''),
                 worker_job_title: jobTitle || (lang === 'uz' ? 'Vakansiya' : 'Вакансия'),
+                worker_target_district_name: districtLabel,
+                worker_target_region_name: regionLabel,
                 related_resume_list: []
             }
         });
@@ -10772,12 +11013,16 @@ export class TelegramBot {
             const scope = String(session.data?.worker_scope || 'district');
             const regionList = Array.isArray(session.data?.worker_region_resume_list) ? session.data.worker_region_resume_list : [];
             if (scope !== 'region' && regionList.length > 0) {
+                const districtLabel = String(session.data?.worker_target_district_name || '').trim();
+                const regionLabel = String(session.data?.worker_target_region_name || '').trim();
+                const areaLabelUz = districtLabel || regionLabel || "tanlangan hudud";
+                const areaLabelRu = districtLabel || regionLabel || 'выбранном регионе';
                 await this.sendPrompt(
                     chatId,
                     session,
                     lang === 'uz'
-                        ? `ℹ️ | Ushbu tuman/shaharda mos nomzod topilmadi.\n\n<b>${regionList.length} ta nomzod</b> viloyat bo'yicha topildi.`
-                        : `ℹ️ | В этом районе/городе подходящие кандидаты не найдены.\n\n<b>По области найдено: ${regionList.length}</b>.`,
+                        ? `<b>ℹ️ | ${areaLabelUz} hududida mos nomzod topilmadi.</b>\n\n<b>${regionList.length} ta nomzod</b> viloyat bo'yicha topildi.`
+                        : `<b>ℹ️ | В зоне «${areaLabelRu}» подходящие кандидаты не найдены.</b>\n\n<b>По области найдено: ${regionList.length}</b>.`,
                     {
                         replyMarkup: keyboards.workerRegionFallbackKeyboard(lang, {
                             showRegionSearch: true,
@@ -10787,7 +11032,7 @@ export class TelegramBot {
                 );
                 return;
             }
-            await this.sendPrompt(chatId, session, lang === 'uz' ? "Mos rezyumelar topilmadi." : 'Подходящие резюме не найдены.', {
+            await this.sendPrompt(chatId, session, botTexts.noCandidatesForJob[lang], {
                 replyMarkup: keyboards.employerMainMenuKeyboard(lang)
             });
             return;
@@ -10859,11 +11104,11 @@ export class TelegramBot {
         if (criteria.education) matchLines.push(`<i>✅ ${labels.education}</i>`);
         if (criteria.age && current?.ageKnown !== false) matchLines.push(`<i>✅ ${labels.age}</i>`);
         if (distanceKm !== null) {
-            matchLines.push(`<i>📏 ${lang === 'uz' ? 'Masofa' : 'Расстояние'}: ~${Math.round(distanceKm)} km</i>`);
+            matchLines.push(`<i>📏 ${lang === 'uz' ? 'Masofa' : 'Расстояние'}: ${this.formatDistance(distanceKm, lang)}</i>`);
         }
 
         const resumeTextRaw = resume
-            ? await this.buildResumeText(resume, lang)
+            ? await this.buildResumeText(resume, lang, { hideLocation: true })
             : `${lang === 'uz' ? 'Nomzod' : 'Кандидат'}: ${current?.full_name || '—'}\n${lang === 'uz' ? 'Lavozim' : 'Должность'}: ${current?.title || '—'}`;
 
         const shownScore = Math.max(score, strictScore);
@@ -11181,8 +11426,11 @@ export class TelegramBot {
         if (hr || phone) {
             lines.push('');
             lines.push(`☎️ | ${lang === 'uz' ? "Bog'lanish" : 'Контакты'}`);
-            if (hr) lines.push(`👤 | ${lang === 'uz' ? 'Mas’ul shaxs' : 'Контактное лицо'}: ${this.escapeHtml(hr)}`);
+            if (hr) lines.push(`👤 | ${lang === 'uz' ? 'Mas’ul shaxs (HR menejeri)' : 'Контактное лицо'}: ${this.escapeHtml(hr)}`);
             if (phone) lines.push(`📞 | ${lang === 'uz' ? 'Telefon' : 'Телефон'}: ${this.escapeHtml(phone)}`);
+            if (phone) {
+                lines.push(`<i>${lang === 'uz' ? "Siz ishga taklif qilingansiz, bog'lanishingiz mumkin." : 'Вас пригласили на работу, вы можете связаться по телефону.'}</i>`);
+            }
         }
 
         await this.sendPrompt(chatId, session, lines.join('\n'), {
@@ -11264,9 +11512,10 @@ export class TelegramBot {
         }
 
         const job = this.normalizeJob(jobRaw, lang);
-        await this.sendPrompt(chatId, session, formatFullJobCard(job, lang), {
+        const card = `${formatFullJobCard(job, lang)}\n\n<i>${lang === 'uz' ? "Siz ushbu vakansiyaga taklif qilingansiz. Bog'lanish uchun telefon raqamidan foydalanishingiz mumkin." : 'Вы приглашены на эту вакансию. Для связи используйте контактный номер.'}</i>`;
+        await this.sendPrompt(chatId, session, card, {
             parseMode: 'HTML',
-            replyMarkup: keyboards.offerJobViewKeyboard(lang, String(jobId))
+            replyMarkup: keyboards.offerJobFromNotificationKeyboard(lang)
         });
     }
 
@@ -11512,6 +11761,15 @@ export class TelegramBot {
         if (jobLatitude !== null && jobLongitude !== null) {
             text = text.replace(/\n📌 \| (Ish joy manzili|Адрес): .*/g, '');
         }
+        if (session.user_id) {
+            const seekerGeo = await this.getSeekerGeo(session.user_id);
+            if (seekerGeo) {
+                const distanceKm = this.getDistanceToJob(job, seekerGeo.latitude, seekerGeo.longitude);
+                if (distanceKm !== null) {
+                    text += `\n\n📏 | ${lang === 'uz' ? 'Masofa' : 'Расстояние'}: ${this.formatDistance(distanceKm, lang)}`;
+                }
+            }
+        }
 
         const isFavorite = session.user_id
             ? !!(await this.supabase
@@ -11619,15 +11877,39 @@ export class TelegramBot {
     }
 
     private async getDistrictNameById(districtId: any, lang: BotLang): Promise<string | null> {
-        const idNum = this.toCoordinate(districtId);
-        if (idNum === null) return null;
-        const { data } = await this.supabase
-            .from('districts')
-            .select('name_uz, name_ru')
-            .eq('id', idNum)
-            .maybeSingle();
-        if (!data) return null;
-        return lang === 'uz' ? data.name_uz : data.name_ru;
+        const rawId = districtId === null || districtId === undefined ? '' : String(districtId).trim();
+        if (!rawId) return null;
+
+        let row: any = null;
+        try {
+            const direct = await this.supabase
+                .from('districts')
+                .select('name_uz, name_ru')
+                .eq('id', rawId)
+                .maybeSingle();
+            if (!direct.error && direct.data) {
+                row = direct.data;
+            }
+        } catch {
+            // ignore
+        }
+
+        if (!row) {
+            const idNum = this.toCoordinate(rawId);
+            if (idNum !== null) {
+                const fallback = await this.supabase
+                    .from('districts')
+                    .select('name_uz, name_ru')
+                    .eq('id', idNum)
+                    .maybeSingle();
+                if (!fallback.error && fallback.data) {
+                    row = fallback.data;
+                }
+            }
+        }
+
+        if (!row) return null;
+        return lang === 'uz' ? row.name_uz : row.name_ru;
     }
 
     private async handleJobNavigation(chatId: number, direction: string, session: TelegramSession, messageId?: number): Promise<void> {

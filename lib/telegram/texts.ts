@@ -17,8 +17,8 @@ export type BotLang = 'uz' | 'ru';
 export const botTexts = {
     // Language
     selectLanguage: {
-        uz: 'Tilni tanlang:',
-        ru: 'Выберите язык:'
+        uz: '<b>Assalomu alaykum!</b>\nBotdan foydalanish tilini tanlang.',
+        ru: '<b>Здравствуйте!</b>\nВыберите язык для использования бота.'
     },
     languageChanged: {
         uz: '✅ Til o‘zgartirildi.',
@@ -27,7 +27,7 @@ export const botTexts = {
 
     // Start / help
     startWelcome: {
-        uz: "Assalomu alaykum | <b>ISHDASIZ</b> botiga xush kelibsiz!\n\nBu yerda siz:\n| 🎯 Ish yoki xodimni ortiqcha vaqt sarflamasdan topishingiz\n| 🧾 Rezyume va vakansiyalarni bir joyda boshqarishingiz\n| ⚡ Tanlov jarayonini tez va qulay amalga oshirishingiz\n| 🤖 Sun’iy intellekt yordamidan foydalanishingiz mumkin\n\nFoydali buyruqlar:\n| ▶️ /start — ishni boshlash\n| 🔄 /role — rolni almashtirish (ish qidiruvchi / ish beruvchi)\n| 🚪 /logout — hisobdan chiqish\n| ❓ /help — foydalanish bo‘yicha yordam",
+        uz: "<b>• Assalomu alaykum | ISHDASIZ platformasiga xush kelibsiz!</b>\n\n<b>Bu yerda siz:</b>\n<blockquote><i>🚀 | Ish yoki xodimni tez topishingiz\n🧾 | Rezyume va vakansiyalarni bir joyda boshqarishingiz\n⚡️ | Tanlov jarayonini samarali tashkil etishingiz\n🤖 | Sun’iy intellekt yordamidan foydalanishingiz mumkin.</i></blockquote>\n\n<i>Foydalanish uchun <b>“Kirish”</b> ni bosing.</i>",
         ru: "Здравствуйте | Добро пожаловать в <b>ISHDASIZ</b>!\n\nЗдесь вы можете:\n| 🎯 Быстро найти работу или сотрудника\n| 🧾 Управлять резюме и вакансиями в одном месте\n| ⚡ Упростить процесс подбора\n| 🤖 Использовать помощь ИИ\n\nПолезные команды:\n| ▶️ /start — начать\n| 🔄 /role — сменить роль (соискатель / работодатель)\n| 🚪 /logout — выйти из аккаунта\n| ❓ /help — помощь по использованию"
     },
     helpText: {
@@ -61,8 +61,8 @@ export const botTexts = {
         ru: '✅ Вход выполнен успешно.\n\nДавайте заполним профиль.'
     },
     accountFound: {
-        uz: 'Sizda hisob mavjud. Kirish usulini tanlang:',
-        ru: 'Аккаунт найден. Выберите способ входа:'
+        uz: '<b>🔐 | Sizda hisob mavjud</b>\nKirish usulini tanlang:',
+        ru: '<b>🔐 | Аккаунт найден</b>\nВыберите способ входа:'
     },
     enterPassword: {
         uz: '<b>🔐 Parolni kiriting:</b>',
@@ -167,7 +167,7 @@ export const botTexts = {
         ru: '<b>🚻 | Выберите пол</b>'
     },
     askBirthDate: {
-        uz: '<b>📅 | Tug‘ilgan sanangizni kiriting</b>\n<i>kk.oo.yyyy</i>',
+        uz: '<b>📅 | Tug‘ilgan sanangizni kiriting</b>\n<i>kk.oo.yyyy</i>\n<i>Masalan: 25.04.2002</i>',
         ru: '<b>📅 | Введите дату рождения</b>\n<i>дд.мм.гггг</i>'
     },
     birthDateInvalid: {
@@ -219,15 +219,15 @@ export const botTexts = {
         ru: '<b>🪪 | Слишком короткое Ф.И.О.</b>\n<i>Введите минимум 3 буквы.</i>'
     },
     askAbout: {
-        uz: '<b>📝 | O‘zingiz haqingizda qo‘shimcha ma’lumot (qisqacha) — ixtiyoriy.</b>\n<i>Eslatma: Qancha ko‘p ma’lumot yozsangiz, ish beruvchilar sizni shuncha tez topadi.</i>',
-        ru: '<b>📝 | Дополнительная информация о себе (кратко) — необязательно.</b>\n<i>Совет: Чем больше информации, тем быстрее работодатель вас найдёт.</i>'
+        uz: '<b>📝 | O‘zingiz haqingizda qo‘shimcha ma’lumot (qisqacha).</b>\n<i>AI Yordamchining variantini qo‘llashingiz yoki o‘zingiz yozishingiz mumkin.</i>',
+        ru: '<b>📝 | Дополнительная информация о себе (кратко) — необязательно.</b>\n<i>Можно использовать вариант AI или написать свой текст.</i>'
     },
     resumeLanguagesPrompt: {
         uz: "<b>🗣️ | Biladigan tillaringizni tanlang (ixtiyoriy)</b>\n<i>Tugmalar orqali belgilang yoki o'zingiz yozing.</i>\n<i>So‘ng “Davom etish”ni bosing.</i>",
         ru: '<b>🗣️ | Выберите языки, которые знаете (необязательно)</b>\n<i>Отметьте через кнопки или впишите вручную.</i>\n<i>Затем нажмите “Продолжить”.</i>'
     },
     askSkills: {
-        uz: '<b>🧠 | Asosiy ko‘nikmalaringizni kiriting:</b>\n<i>Masalan: Word, Excel, Telegram, Mijozlar bilan muloqot, Savdo, Jamoada ishlash</i>\n<i>Har birini alohida xabar yoki vergul orqali yozishingiz mumkin.</i>\n\n<i>Ko‘nikma yuborgach “Tayyor” tugmasi paydo bo‘ladi.</i>\n<i>Agar ko‘nikma bo‘lmasa, “O‘tkazib yuborish”ni bosing.</i>',
+        uz: '<b>🧠 | Asosiy ko‘nikmalaringizni kiriting</b>\n<i>Ko‘nikmalarni vergul bilan yoki har birini alohida xabar qilib yuboring.</i>\n<i>Ko‘nikma yuborgach “Tayyor” tugmasini bosing.</i>',
         ru: '<b>🧠 | Введите основные навыки:</b>\n<i>Например: Excel, 1C, CRM, Продажи, Photoshop, Teamwork</i>\n<i>Можно отправлять по одному или через запятую.</i>\n\n<i>Кнопка “Готово” появится после первого навыка.</i>\n<i>Если навыков нет — нажмите “Пропустить”.</i>'
     },
     askWorkplace: {
@@ -301,8 +301,8 @@ export const botTexts = {
 
     // Main menu
     mainMenu: {
-        uz: '🏠 | Asosiy bo‘limlar\n| Kerakli bo‘limni tanlang.',
-        ru: '🏠 | Основные разделы\n| Выберите нужный раздел.'
+        uz: '🏠 | <b>Asosiy menyu</b>\n<i>Kerakli bo‘limni tanlang.</i>',
+        ru: '🏠 | Главное меню\nВыберите нужный раздел.'
     },
 
     // Jobs
@@ -319,11 +319,11 @@ export const botTexts = {
         ru: 'ℹ️ Точных вакансий по выбранной профессии не найдено. Можно посмотреть вакансии, которые могут вам подойти.'
     },
     noDistrictJobs: {
-        uz: 'ℹ️ Bu tumanda mos vakansiyalar topilmadi. Viloyatingizdagi boshqa tuman/shaharlarda vakansiyalar mavjud:',
+        uz: '<b>ℹ️ Bu tumanda mos vakansiyalar topilmadi.</b>\nViloyatingizdagi boshqa tuman/shaharlarda vakansiyalar mavjud:',
         ru: 'ℹ️ В этом районе подходящих вакансий нет. Вот районы/города вашей области с вакансиями:'
     },
     noRegionJobs: {
-        uz: 'ℹ️ Bu viloyatda mos vakansiyalar topilmadi. Boshqa viloyatlarda vakansiyalar mavjud:',
+        uz: '<b>ℹ️ Bu viloyatda mos vakansiyalar topilmadi.</b>\nBoshqa viloyatlarda mos vakansiyalar mavjud:',
         ru: 'ℹ️ В этой области подходящих вакансий нет. Вот другие области с вакансиями:'
     },
     otherDistrictsHint: {
@@ -345,6 +345,10 @@ export const botTexts = {
     noResumesByProfession: {
         uz: 'ℹ️ Bu lavozimga aniq mos rezyume topilmadi. Yaqin rezyumelarni ko‘rishingiz mumkin.',
         ru: 'ℹ️ Точных резюме по этой должности не найдено. Можно посмотреть близкие резюме.'
+    },
+    noCandidatesForJob: {
+        uz: "📭 | Afsuski, bu vakansiya uchun hozircha mos nomzodlar topilmadi.\n\n🤖 | Yangi nomzodlar paydo bo‘lsa, tizim sizga mos rezyumelarni tavsiya qiladi.",
+        ru: '📭 | К сожалению, по этой вакансии пока нет подходящих кандидатов.\n\n🤖 | Как только появятся новые кандидаты, система предложит вам релевантные резюме.'
     },
     noResumeWarning: {
         uz: "⚠️ Avval rezyumeni to'ldiring.",
@@ -403,7 +407,7 @@ export const botTexts = {
         ru: 'ℹ️ | Этому кандидату уже отправлено приглашение по данной вакансии.'
     },
     offerReceivedSeeker: {
-        uz: (companyName: string, jobTitle: string) => `📩 | Tabriklaymiz! Sizni ishga taklif qilishdi.\n\n🏢 | Tashkilot: <b>${companyName}</b>\n💼 | Vakansiya: <b>${jobTitle}</b>\n\nKo‘rish va bog‘lanish uchun quyidagi tugmani bosing.`,
+        uz: (companyName: string, jobTitle: string) => `<b>📩 | Tabriklaymiz! Sizni ishga taklif qilishdi.</b>\n\n🏢 | Tashkilot: <b>${companyName}</b>\n💼 | Vakansiya: <b>${jobTitle}</b>\n\nKo‘rish va bog‘lanish uchun quyidagi tugmani bosing.`,
         ru: (companyName: string, jobTitle: string) => `📩 | Поздравляем! Вас пригласили на работу.\n\n🏢 | Компания: <b>${companyName}</b>\n💼 | Вакансия: <b>${jobTitle}</b>\n\nДля просмотра и связи нажмите кнопку ниже.`
     },
 
@@ -431,7 +435,7 @@ export const botTexts = {
 
     // Roles / employer
     selectRole: {
-        uz: '👥 | Platformaga kim sifatida kirmoqchisiz ?',
+        uz: '👥 | Platformaga kim sifatida kirmoqchisiz?',
         ru: '👥 | Выберите роль:'
     },
     roleSeeker: {
@@ -443,12 +447,12 @@ export const botTexts = {
         ru: 'Работодатель'
     },
     employerWelcome: {
-        uz: "🏢 | Ish beruvchi bo'limiga xush kelibsiz.\n\n📋 Vakansiyalaringizni boshqarish, arizalarni ko‘rish va mos ishchilarni topish uchun menyudan bo‘lim tanlang.",
+        uz: "<b>🏢 | Ish beruvchi bo'limiga xush kelibsiz.</b>\n\n<i>Vakansiyalaringizni boshqarish, arizalarni ko‘rish va mos ishchilarni topish uchun menyudan bo‘lim tanlang.</i>",
         ru: '🏢 Добро пожаловать в кабинет работодателя.\n\nВыберите раздел в меню: управляйте вакансиями, откликами и подбором кандидатов.'
     },
     employerMainMenu: {
-        uz: "🏢 | Ish beruvchi menyusi\n\nKerakli bo'limni tanlang:",
-        ru: '🏢 Меню работодателя\n\nВыберите действие:'
+        uz: "🏢 | <b>Ish beruvchi menyusi</b>\n<i>Vakansiya, ariza va ishchi qidiruvi bo‘yicha bo‘limni tanlang.</i>",
+        ru: '🏢 | Панель работодателя\nВыберите нужный раздел по вакансиям и кандидатам.'
     },
     employerProfileIntro: {
         uz: '🏢 | Ish beruvchi profili',
@@ -535,7 +539,7 @@ export const botTexts = {
         ru: '❗ Введите возраст корректно. Только в формате: 18-35'
     },
     jobSpecialCriteriaPrompt: {
-        uz: "<b>✨ | Nomzod uchun qo'shimcha mezonlar (ixtiyoriy)</b>\n<i>Talaba, bitiruvchi yoki nogironligi bor nomzodlar uchun talab bo'lsa belgilang.</i>",
+        uz: "<b>✨ | Nomzod uchun qo'shimcha mezonlar (ixtiyoriy)</b>\n<i>Agar vakansiya talaba, bitiruvchi yoki nogironligi bo‘lgan nomzodlarga ham mos kelishi mumkin bo‘lsa, belgilang.</i>",
         ru: '<b>✨ | Дополнительные критерии для кандидата (необязательно)</b>\n<i>Отметьте, если вакансия подходит студентам, выпускникам или людям с инвалидностью.</i>'
     },
     jobLanguagesPrompt: {
@@ -884,7 +888,6 @@ export function formatFullJobCard(job: any, lang: BotLang): string {
     if (langs) lines.push(`🌐 | ${lang === 'uz' ? 'Tillarni bilishi' : 'Языки'}: ${langs}`);
 
     const benefits = normalize(benefitsLabel || null);
-    if (benefits) lines.push(`🛎️ | ${lang === 'uz' ? 'Qulayliklar' : 'Условия'}: ${benefits}`);
 
     const specialFlags: string[] = [];
     const specialSource = Array.isArray(job.special)
@@ -894,13 +897,13 @@ export function formatFullJobCard(job: any, lang: BotLang): string {
         ...specialSource.map((value: any) => String(value || '').trim().toLowerCase())
     ]);
     if (job.is_for_students === true || specialSet.has('students')) {
-        specialFlags.push(lang === 'uz' ? 'Talabalar uchun' : 'Для студентов');
+        specialFlags.push(lang === 'uz' ? 'Talabalar ham mos kelishi mumkin' : 'Могут подойти студенты');
     }
     if (job.is_for_disabled === true || specialSet.has('disabled')) {
-        specialFlags.push(lang === 'uz' ? 'Nogironligi borlar uchun' : 'Для людей с инвалидностью');
+        specialFlags.push(lang === 'uz' ? "Nogironligi bo'lgan shaxslar ham mos kelishi mumkin" : 'Могут подойти люди с инвалидностью');
     }
     if (job.is_for_graduates === true || specialSet.has('graduates')) {
-        specialFlags.push(lang === 'uz' ? 'Bitiruvchilar uchun' : 'Для выпускников');
+        specialFlags.push(lang === 'uz' ? 'Bitiruvchilar ham mos kelishi mumkin' : 'Могут подойти выпускники');
     }
     if (specialFlags.length > 0) {
         lines.push(`🔹 | ${lang === 'uz' ? "Qo'shimcha mezonlar" : 'Дополнительные критерии'}: ${specialFlags.join(', ')}`);
@@ -979,6 +982,8 @@ export function formatFullJobCard(job: any, lang: BotLang): string {
         lines.push('');
         lines.push(`🛎️ | ${lang === 'uz' ? 'Qulayliklar' : 'Условия'}`);
         lines.push(...perks.map(item => `- ${item}`));
+    } else if (benefits) {
+        lines.push(`🛎️ | ${lang === 'uz' ? 'Qulayliklar' : 'Условия'}: ${benefits}`);
     }
 
     const hasContacts = job.contact_phone || job.contact_email || job.contact_telegram || hrName || job.phone || job.email;
