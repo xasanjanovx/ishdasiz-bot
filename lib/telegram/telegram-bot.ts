@@ -4,7 +4,7 @@
  */
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { sendMessage, editMessage, answerCallbackQuery, isUserSubscribed, sendLocation, deleteMessage, sendSticker } from './telegram-api';
+import { sendMessage, editMessage, answerCallbackQuery, isUserSubscribed, sendLocation, deleteMessage } from './telegram-api';
 import * as keyboards from './keyboards';
 import {
     botTexts,
@@ -32,15 +32,6 @@ const MAX_LOGIN_ATTEMPTS = 5;
 const LOCKOUT_MINUTES = 15;
 
 type StickerTone = 'loading' | 'announce' | 'success' | 'warning' | 'error';
-
-// Premium stickers chosen from user-provided sets (serious/icon style only).
-const SERIOUS_STICKERS: Record<StickerTone, string> = {
-    loading: 'CAACAgQAAxUAAWmPFeoL9yAU6NlwofRyJFD546QmAAJjEAACyw2IUdo9lI0ErdlMOgQ', // TgAndroidIcons 🔎
-    announce: 'CAACAgQAAxUAAWmPFeoKBn_H-wzpiXroegIvpogPAAKGEgACmi4ZUKNMzHe46WeSOgQ', // TgAndroidIcons 📢
-    success: 'CAACAgIAAxUAAWmPFep4rf4pg5BsDDK9k_L1WCwiAAKfJAACuenISJL2-m2ABOeAOgQ', // Golden_Icons ✅
-    warning: 'CAACAgIAAxUAAWmPFepswAZognLVVvMeNOqkgEhgAAL6IQAC79vBSAAB-hCcxLp0wToE', // Golden_Icons ⚠️
-    error: 'CAACAgIAAxUAAWmPFeo1DO1TjCPbX9EM73Gs0A0_AAL9IgACeAXASD4zh472qgbdOgQ' // Golden_Icons ❗️
-};
 
 // ============================================
 // FSM States
@@ -1491,6 +1482,7 @@ export class TelegramBot {
         options: { replyMarkup?: any; parseMode?: 'HTML' | 'Markdown' | 'MarkdownV2' } = {}
     ): Promise<void> {
         const safeText = text && String(text).trim().length > 0 ? text : botTexts.error[session.lang || 'uz'];
+        const promptParseMode = options.parseMode ?? 'HTML';
         let latestData = (session.data && typeof session.data === 'object') ? session.data : {};
         try {
             const { data: latest } = await this.supabase
@@ -1516,15 +1508,25 @@ export class TelegramBot {
         let result: any = null;
         try {
             result = await sendMessage(chatId, safeText, {
-                parseMode: options.parseMode ?? 'HTML',
+                parseMode: promptParseMode,
                 replyMarkup: options.replyMarkup
             });
         } catch (err: any) {
-            // Fallback for malformed HTML/Markdown content so the flow does not break.
-            const fallbackText = this.stripHtmlTags(safeText);
-            result = await sendMessage(chatId, fallbackText, {
-                replyMarkup: options.replyMarkup
-            });
+            try {
+                // Keep markup, disable premium only.
+                result = await sendMessage(chatId, safeText, {
+                    parseMode: promptParseMode,
+                    replyMarkup: options.replyMarkup,
+                    disablePremiumEmoji: true
+                });
+            } catch {
+                // Last-resort fallback for truly broken markup.
+                const fallbackText = this.stripHtmlTags(safeText);
+                result = await sendMessage(chatId, fallbackText, {
+                    replyMarkup: options.replyMarkup,
+                    disablePremiumEmoji: true
+                });
+            }
         }
         const messageId = result?.message_id;
         if (messageId) {
@@ -1568,21 +1570,26 @@ export class TelegramBot {
         tone: StickerTone,
         options: { caption?: string; replyMarkup?: any; parseMode?: 'HTML' | 'Markdown' | 'MarkdownV2' } = {}
     ): Promise<any | null> {
-        const stickerId = SERIOUS_STICKERS[tone];
-        if (!stickerId) return null;
+        const toneLabel: Record<StickerTone, string> = {
+            loading: '⏳',
+            announce: '📢',
+            success: '✅',
+            warning: '⚠️',
+            error: '❌'
+        };
+        const text = options.caption && String(options.caption).trim().length > 0
+            ? options.caption
+            : toneLabel[tone];
         try {
-            return await sendSticker(chatId, stickerId, {
-                caption: options.caption,
+            if (!options.caption && tone !== 'loading') {
+                await this.sendTransientMessage(chatId, text, 900);
+                return null;
+            }
+            return await sendMessage(chatId, text, {
                 parseMode: options.parseMode,
                 replyMarkup: options.replyMarkup
             });
         } catch {
-            if (options.caption) {
-                return await sendMessage(chatId, options.caption, {
-                    parseMode: options.parseMode,
-                    replyMarkup: options.replyMarkup
-                });
-            }
             return null;
         }
     }
@@ -1649,7 +1656,7 @@ export class TelegramBot {
         const until = new Date(bannedUntil);
         if (Number.isNaN(until.getTime())) return false;
         if (until.getTime() > Date.now()) {
-            await sendMessage(chatId, '🚫 Sizning akkauntingiz vaqtinchalik bloklangan.');
+            await this.sendPrompt(chatId, session, '🚫 Sizning akkauntingiz vaqtinchalik bloklangan.');
             return true;
         }
         return false;
@@ -1668,7 +1675,7 @@ export class TelegramBot {
             if (session.user_id) {
                 await this.supabase.from('users').update({ locked_until: banUntil }).eq('id', session.user_id);
             }
-            await sendMessage(chatId, '🚫 Qoidabuzarlik 3 marta aniqlandi. Akkauntingiz bloklandi.');
+            await this.sendPrompt(chatId, session, '🚫 Qoidabuzarlik 3 marta aniqlandi. Akkauntingiz bloklandi.');
             return;
         }
 
@@ -2213,7 +2220,7 @@ export class TelegramBot {
             });
         } else if (value === 'sms') {
             if (!phone) {
-                await sendMessage(chatId, botTexts.error[lang]);
+                await this.sendPrompt(chatId, session, botTexts.error[lang]);
                 return;
             }
             await this.startSMSAuth(chatId, phone, session);
@@ -2628,6 +2635,7 @@ export class TelegramBot {
 
     private async handleStart(chatId: number, session: TelegramSession): Promise<void> {
         const lang = session.lang || 'uz';
+        await this.clearRoleSwitchArtifacts(chatId, session);
         await this.setSession(session, { state: BotState.AWAITING_LANG });
         await this.sendPrompt(chatId, session, botTexts.selectLanguage[lang], { replyMarkup: keyboards.languageKeyboard() });
     }
@@ -2649,7 +2657,7 @@ export class TelegramBot {
         const lang = session.lang;
         const normalized = phone.replace(/\D/g, '').slice(-9);
         if (normalized.length !== 9) {
-            await sendMessage(chatId, botTexts.error[lang]);
+            await this.sendPrompt(chatId, session, botTexts.error[lang]);
             return;
         }
         const fullPhone = `+998${normalized}`;
@@ -2684,7 +2692,7 @@ export class TelegramBot {
                 const errorMessage = isModerationError
                     ? '⚠️ SMS shablon tasdiqlanmagan.'
                     : botTexts.error[lang];
-                await sendMessage(chatId, errorMessage);
+                await this.sendPrompt(chatId, session, errorMessage);
                 return;
             }
 
@@ -2698,7 +2706,7 @@ export class TelegramBot {
             console.error('ESKIZ Error:', e);
             // Fallback to fake OTP for dev if needed or just error
             // For now standard error
-            await sendMessage(chatId, botTexts.error[lang]);
+            await this.sendPrompt(chatId, session, botTexts.error[lang]);
         }
     }
 
@@ -2739,14 +2747,14 @@ export class TelegramBot {
         const lang = session.lang;
         const phone = session.phone;
         if (!phone) {
-            await sendMessage(chatId, botTexts.error[lang]);
+            await this.sendPrompt(chatId, session, botTexts.error[lang]);
             return;
         }
         const flow = session.data?.password_flow || 'login';
 
         if (flow === 'create') {
             if (password.length < 6) {
-                await sendMessage(chatId, botTexts.passwordTooShort[lang]);
+                await this.sendPrompt(chatId, session, botTexts.passwordTooShort[lang]);
                 return;
             }
             const firstEntry = String(session.data?.password_create_first || '').trim();
@@ -2781,7 +2789,7 @@ export class TelegramBot {
                 .eq('phone', phone);
             if (updateError) {
                 console.error('Create password error:', updateError);
-                await sendMessage(chatId, botTexts.error[lang]);
+                await this.sendPrompt(chatId, session, botTexts.error[lang]);
                 return;
             }
             await this.setSession(session, { data: { ...session.data, password_flow: null, password_create_first: null } });
@@ -2797,19 +2805,19 @@ export class TelegramBot {
             .single();
 
         if (error || !user) {
-            await sendMessage(chatId, botTexts.passwordInvalid[lang]);
+            await this.sendPrompt(chatId, session, botTexts.passwordInvalid[lang]);
             return;
         }
 
         if (user.locked_until && new Date(user.locked_until) > new Date()) {
             const remainingMs = new Date(user.locked_until).getTime() - Date.now();
             const remainingMin = Math.ceil(remainingMs / 60000);
-            await sendMessage(chatId, `${botTexts.accountLocked[lang]} (${remainingMin} min)`);
+            await this.sendPrompt(chatId, session, `${botTexts.accountLocked[lang]} (${remainingMin} min)`);
             return;
         }
 
         if (!user.password_hash) {
-            await sendMessage(chatId, botTexts.passwordInvalid[lang]);
+            await this.sendPrompt(chatId, session, botTexts.passwordInvalid[lang]);
             return;
         }
 
@@ -2822,7 +2830,7 @@ export class TelegramBot {
                     .from('users')
                     .update({ login_attempts: newAttempts, locked_until: lockedUntil.toISOString() })
                     .eq('id', user.id);
-                await sendMessage(chatId, botTexts.accountLocked[lang]);
+                await this.sendPrompt(chatId, session, botTexts.accountLocked[lang]);
                 return;
             }
 
@@ -2831,7 +2839,7 @@ export class TelegramBot {
                 .update({ login_attempts: newAttempts })
                 .eq('id', user.id);
 
-            await sendMessage(chatId, botTexts.passwordInvalid[lang]);
+            await this.sendPrompt(chatId, session, botTexts.passwordInvalid[lang]);
             return;
         }
 
@@ -3191,7 +3199,7 @@ export class TelegramBot {
             if (messageId) {
                 await editMessage(chatId, messageId, promptText, options);
             } else {
-                await sendMessage(chatId, promptText, options);
+                await this.sendPrompt(chatId, session, promptText, options);
             }
             return;
         }
@@ -3253,7 +3261,7 @@ export class TelegramBot {
         if (messageId) {
             await editMessage(chatId, messageId, promptText, options);
         } else {
-            await sendMessage(chatId, promptText, options);
+            await this.sendPrompt(chatId, session, promptText, options);
         }
     }
 
@@ -3331,7 +3339,7 @@ export class TelegramBot {
             if (messageId) {
                 await editMessage(chatId, messageId, botTexts.askCategory[lang], options);
             } else {
-                await sendMessage(chatId, botTexts.askCategory[lang], options);
+                await this.sendPrompt(chatId, session, botTexts.askCategory[lang], options);
             }
             return;
         }
@@ -3395,7 +3403,7 @@ export class TelegramBot {
             if (messageId) {
                 await editMessage(chatId, messageId, botTexts.askEmploymentType[lang], options);
             } else {
-                await sendMessage(chatId, botTexts.askEmploymentType[lang], options);
+                await this.sendPrompt(chatId, session, botTexts.askEmploymentType[lang], options);
             }
             return;
         }
@@ -3416,7 +3424,7 @@ export class TelegramBot {
         if (messageId) {
             await editMessage(chatId, messageId, botTexts.askExperience[lang], options);
         } else {
-            await sendMessage(chatId, botTexts.askExperience[lang], options);
+            await this.sendPrompt(chatId, session, botTexts.askExperience[lang], options);
         }
     }
 
@@ -3439,7 +3447,7 @@ export class TelegramBot {
                     await this.sendPrompt(chatId, session, text, options);
                 }
             } else {
-                await sendMessage(chatId, text, options);
+                await this.sendPrompt(chatId, session, text, options);
             }
             return;
         }
@@ -3462,7 +3470,7 @@ export class TelegramBot {
                 await this.sendPrompt(chatId, session, promptText, options);
             }
         } else {
-            await sendMessage(chatId, promptText, options);
+            await this.sendPrompt(chatId, session, promptText, options);
         }
     }
 
@@ -3573,7 +3581,7 @@ export class TelegramBot {
                 if (messageId) {
                     await editMessage(chatId, messageId, botTexts.askCategory[lang], options);
                 } else {
-                    await sendMessage(chatId, botTexts.askCategory[lang], options);
+                    await this.sendPrompt(chatId, session, botTexts.askCategory[lang], options);
                 }
                 return;
             }
@@ -3591,7 +3599,7 @@ export class TelegramBot {
                 if (messageId) {
                     await editMessage(chatId, messageId, botTexts.askEmploymentType[lang], options);
                 } else {
-                    await sendMessage(chatId, botTexts.askEmploymentType[lang], options);
+                    await this.sendPrompt(chatId, session, botTexts.askEmploymentType[lang], options);
                 }
                 return;
             }
@@ -3656,7 +3664,7 @@ export class TelegramBot {
         if (messageId) {
             await editMessage(chatId, messageId, botTexts.categorySelected[lang], options);
         } else {
-            await sendMessage(chatId, botTexts.categorySelected[lang], options);
+            await this.sendPrompt(chatId, session, botTexts.categorySelected[lang], options);
         }
     }
 
@@ -3696,7 +3704,7 @@ export class TelegramBot {
             if (messageId) {
                 await editMessage(chatId, messageId, botTexts.askEducation[lang], options);
             } else {
-                await sendMessage(chatId, botTexts.askEducation[lang], options);
+                await this.sendPrompt(chatId, session, botTexts.askEducation[lang], options);
             }
             return;
         }
@@ -3854,7 +3862,7 @@ export class TelegramBot {
             if (messageId) {
                 await editMessage(chatId, messageId, botTexts.askGender[lang], options);
             } else {
-                await sendMessage(chatId, botTexts.askGender[lang], options);
+                await this.sendPrompt(chatId, session, botTexts.askGender[lang], options);
             }
             return;
         }
@@ -4011,7 +4019,7 @@ export class TelegramBot {
             if (messageId) {
                 await editMessage(chatId, messageId, botTexts.askSalary[lang], options);
             } else {
-                await sendMessage(chatId, botTexts.askSalary[lang], options);
+                await this.sendPrompt(chatId, session, botTexts.askSalary[lang], options);
             }
             return;
         }
@@ -5773,7 +5781,7 @@ export class TelegramBot {
         // AI JOB CREATION
         if (state === BotState.AI_JOB_INPUT) {
             try {
-                await sendMessage(chatId, lang === 'uz' ? "🤖 AI ma'lumotlarni tayyorlamoqda..." : '🤖 AI обрабатывает вакансию...');
+                await this.sendTransientMessage(chatId, lang === 'uz' ? "🤖 AI ma'lumotlarni tayyorlamoqda..." : '🤖 AI обрабатывает вакансию...', 800);
                 const result = await extractVacancyData(text);
                 const aiDescription = this.buildJobDescriptionFromSections(result.sections);
                 const meta = result.meta || {};
@@ -6625,7 +6633,7 @@ export class TelegramBot {
         const lang = session.lang;
         const { data: resume } = await this.supabase.from('resumes').select('*').eq('id', resumeId).maybeSingle();
         if (!resume) {
-            await sendMessage(chatId, botTexts.error[lang]);
+            await this.sendPrompt(chatId, session, botTexts.error[lang]);
             return;
         }
 
@@ -6648,7 +6656,7 @@ export class TelegramBot {
         }
         const { data: resume } = await this.supabase.from('resumes').select('*').eq('id', resumeId).maybeSingle();
         if (!resume) {
-            await sendMessage(chatId, botTexts.error[lang]);
+            await this.sendPrompt(chatId, session, botTexts.error[lang]);
             return;
         }
 
@@ -7012,7 +7020,7 @@ export class TelegramBot {
         const resumeId = await this.saveResume(session, resumeData, session.data?.active_resume_id || null);
 
         if (!resumeId) {
-            await sendMessage(chatId, botTexts.error[lang]);
+            await this.sendPrompt(chatId, session, botTexts.error[lang]);
             return;
         }
 
@@ -7037,7 +7045,7 @@ export class TelegramBot {
 
         const { data: resume } = await this.supabase.from('resumes').select('*').eq('id', resumeId).maybeSingle();
         if (!resume) {
-            await sendMessage(chatId, botTexts.resumeSaved[lang], { replyMarkup: keyboards.mainMenuKeyboard(lang, 'seeker') });
+            await this.sendPrompt(chatId, session, botTexts.resumeSaved[lang], { replyMarkup: keyboards.mainMenuKeyboard(lang, 'seeker') });
             return;
         }
 
@@ -7218,7 +7226,7 @@ export class TelegramBot {
             data: { ...session.data, auto_job_list: matched }
         });
 
-        await sendMessage(chatId,
+        await this.sendPrompt(chatId, session,
             lang === 'uz'
                 ? `🔔 Mos vakansiyalar topildi (90%+).`
                 : `🔔 Найдены подходящие вакансии (90%+).`,
@@ -7229,7 +7237,7 @@ export class TelegramBot {
     private async handleResumeSearchSelect(chatId: number, resumeId: string, session: TelegramSession): Promise<void> {
         const { data: resume } = await this.supabase.from('resumes').select('*').eq('id', resumeId).maybeSingle();
         if (!resume) {
-            await sendMessage(chatId, botTexts.error[session.lang]);
+            await this.sendPrompt(chatId, session, botTexts.error[session.lang]);
             return;
         }
         await this.startJobSearchByResume(chatId, session, resume);
@@ -9079,7 +9087,7 @@ export class TelegramBot {
             currentSkills.splice(index, 1);
             const updatedData = { ...session.data, resume: { ...session.data?.resume, skills: currentSkills } };
             await this.setSession(session, { data: updatedData });
-            await sendMessage(chatId, botTexts.skillDeleted[lang], {
+            await this.sendPrompt(chatId, session, botTexts.skillDeleted[lang], {
                 replyMarkup: keyboards.skillsInlineKeyboard(lang, currentSkills.length > 0)
             });
         }
@@ -9236,14 +9244,15 @@ export class TelegramBot {
                 // ignore
             }
         }
-        if (session.data?.last_prompt_message_id) {
+        const lastPromptMessageId = session.data?.last_prompt_message_id;
+        if (lastPromptMessageId) {
             try {
-                await deleteMessage(chatId, session.data.last_prompt_message_id);
+                await deleteMessage(chatId, lastPromptMessageId);
             } catch {
                 // ignore
             }
         }
-        if (lastWorkerMessageId || session.data?.last_prompt_message_id) {
+        if (lastWorkerMessageId || lastPromptMessageId) {
             await this.setSession(session, {
                 data: {
                     ...session.data,
@@ -9256,11 +9265,20 @@ export class TelegramBot {
 
     private async showMainMenu(chatId: number, session: TelegramSession): Promise<void> {
         await this.clearFlowCancelKeyboard(chatId, session);
+        const lastWorkerMessageId = session.data?.last_worker_match_message_id;
+        if (lastWorkerMessageId) {
+            try {
+                await deleteMessage(chatId, lastWorkerMessageId);
+            } catch {
+                // ignore
+            }
+        }
         const updatedData = {
             ...session.data,
             clean_inputs: false,
             search_region_options: [],
-            search_region_origin: null
+            search_region_origin: null,
+            last_worker_match_message_id: null
         };
         await this.setSession(session, { state: BotState.MAIN_MENU, data: updatedData });
         const lang = session.lang;
@@ -9668,7 +9686,7 @@ export class TelegramBot {
 
         if (error) {
             console.error('Applications fetch error:', error);
-            await sendMessage(chatId, botTexts.error[lang], { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
+            await this.sendPrompt(chatId, session, botTexts.error[lang], { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
             return;
         }
 
@@ -9734,14 +9752,14 @@ export class TelegramBot {
         }
 
         if (error || !app) {
-            await sendMessage(chatId, botTexts.error[lang], { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
+            await this.sendPrompt(chatId, session, botTexts.error[lang], { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
             return;
         }
 
         const employerJobs = await this.getEmployerJobs(session, 400);
         const allowedJobIds = new Set((employerJobs || []).map((job: any) => String(job?.id || '')));
         if (!allowedJobIds.has(String(app?.job_id || ''))) {
-            await sendMessage(chatId, botTexts.error[lang], { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
+            await this.sendPrompt(chatId, session, botTexts.error[lang], { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
             return;
         }
 
@@ -11147,6 +11165,14 @@ export class TelegramBot {
                 // ignore
             }
         }
+        const lastPromptMessageId = session.data?.last_prompt_message_id;
+        if (lastPromptMessageId) {
+            try {
+                await deleteMessage(chatId, lastPromptMessageId);
+            } catch {
+                // ignore
+            }
+        }
 
         const scope = String(session.data?.worker_scope || 'district');
         const regionList = Array.isArray(session.data?.worker_region_resume_list) ? session.data.worker_region_resume_list : [];
@@ -11183,7 +11209,8 @@ export class TelegramBot {
             data: {
                 ...session.data,
                 currentWorkerIndex: safeIndex,
-                last_worker_match_message_id: sent?.message_id || null
+                last_worker_match_message_id: sent?.message_id || null,
+                last_prompt_message_id: null
             }
         });
     }
@@ -11969,7 +11996,7 @@ export class TelegramBot {
         }
 
         if (alreadyApplied) {
-            await sendMessage(chatId, botTexts.applicationExists[lang]);
+            await this.sendPrompt(chatId, session, botTexts.applicationExists[lang]);
             return;
         }
 
@@ -11984,7 +12011,7 @@ export class TelegramBot {
         if (session.user_id) payload.user_id = session.user_id;
 
         if (!payload.phone) {
-            await sendMessage(chatId, botTexts.error[lang]);
+            await this.sendPrompt(chatId, session, botTexts.error[lang]);
             return;
         }
 
@@ -12006,7 +12033,7 @@ export class TelegramBot {
             const fallbackInsert = await this.supabase.from('job_applications').insert(payload);
             if (fallbackInsert.error) {
                 console.error('Apply error:', fallbackInsert.error);
-                await sendMessage(chatId, botTexts.error[lang]);
+                await this.sendPrompt(chatId, session, botTexts.error[lang]);
                 return;
             }
             try {
@@ -12028,7 +12055,7 @@ export class TelegramBot {
             await this.notifyEmployerAboutApplication(insertedApplicationId, jobId, resumeRecord.full_name || 'Nomzod');
         }
 
-        await sendMessage(chatId, botTexts.applicationSent[lang], { replyMarkup: keyboards.removeKeyboard() });
+        await this.sendPrompt(chatId, session, botTexts.applicationSent[lang], { replyMarkup: keyboards.removeKeyboard() });
     }
 
     // PROFILE

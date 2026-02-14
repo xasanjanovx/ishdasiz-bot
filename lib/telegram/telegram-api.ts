@@ -9,6 +9,88 @@ const MAX_RETRIES = 3;
 const BACKOFF_BASE_MS = 500;
 let DRY_RUN_MESSAGE_ID = 700000;
 
+// Premium custom emoji IDs (user-provided). Mapped only to business/neutral semantics.
+const PREMIUM_EMOJI_IDS = {
+    search: '3089780562001395745',
+    document: '4648605080554045438',
+    company: '6829398536396734420',
+    salary: '5271091265042120292',
+    location: '7489288727785635926',
+    contact: '3499844080710451248',
+    success: '1590429039703621659',
+    warning: '3396165696185434098',
+    error: '164517760200605720',
+    ai: '3089780562001395827',
+    interface: '623648548654677984'
+} as const;
+
+const PREMIUM_EMOJI_REPLACEMENTS: Array<{ chars: string[]; id: string }> = [
+    { chars: ['🔎', '🔍'], id: PREMIUM_EMOJI_IDS.search },
+    { chars: ['🧾', '📄', '📝', '📋', '🪪'], id: PREMIUM_EMOJI_IDS.document },
+    { chars: ['🏢', '🏭', '💼'], id: PREMIUM_EMOJI_IDS.company },
+    { chars: ['💰'], id: PREMIUM_EMOJI_IDS.salary },
+    { chars: ['📍', '📌'], id: PREMIUM_EMOJI_IDS.location },
+    { chars: ['📞', '📱', '☎️', '☎', '💬'], id: PREMIUM_EMOJI_IDS.contact },
+    { chars: ['✅'], id: PREMIUM_EMOJI_IDS.success },
+    { chars: ['⚠️', '⚠', 'ℹ️', 'ℹ', '❗️', '❗'], id: PREMIUM_EMOJI_IDS.warning },
+    { chars: ['❌', '🚫'], id: PREMIUM_EMOJI_IDS.error },
+    { chars: ['🤖'], id: PREMIUM_EMOJI_IDS.ai },
+    {
+        chars: [
+            '🏠', '⭐', '⚙️', '⚙', '📨', '📩', '📢', '🆘', '👤', '👥', '🎓', '🧠', '📊', '📆',
+            '📅', '⏰', '🕒', '🌐', '🗣️', '🛎️', '🔹', '🧭', '🚻', '🚪', '🔄', '▶️', '❓', '📭',
+            '📥', '✨', '🚀'
+        ],
+        id: PREMIUM_EMOJI_IDS.interface
+    }
+];
+
+const PREMIUM_MODE_RAW = String(process.env.TELEGRAM_PREMIUM_MODE || 'auto').toLowerCase();
+const PREMIUM_MODE: 'auto' | 'on' | 'off' = PREMIUM_MODE_RAW === 'on' || PREMIUM_MODE_RAW === 'off'
+    ? PREMIUM_MODE_RAW
+    : 'auto';
+let premiumRuntimeDisabled = PREMIUM_MODE === 'off';
+let premiumDisableLogged = false;
+
+function escapeRegex(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function applyPremiumEmoji(text: string): string {
+    if (!text || typeof text !== 'string') return text;
+    if (text.includes('emoji-id="')) return text;
+
+    let output = text;
+    for (const replacement of PREMIUM_EMOJI_REPLACEMENTS) {
+        const pattern = new RegExp(replacement.chars.map(escapeRegex).join('|'), 'g');
+        output = output.replace(pattern, (matched) => `<tg-emoji emoji-id="${replacement.id}">${matched}</tg-emoji>`);
+    }
+    return output;
+}
+
+function isEntityTextError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+    return message.includes('entity_text_invalid')
+        || message.includes("can't parse entities")
+        || message.includes('document_invalid');
+}
+
+function shouldUsePremiumEmoji(options: { disablePremiumEmoji?: boolean; parseMode?: 'HTML' | 'Markdown' | 'MarkdownV2' }): boolean {
+    if (options.disablePremiumEmoji) return false;
+    if (options.parseMode && options.parseMode !== 'HTML') return false;
+    return !premiumRuntimeDisabled;
+}
+
+function tripPremiumCircuit(error: unknown): void {
+    if (PREMIUM_MODE === 'on') return;
+    if (premiumRuntimeDisabled) return;
+    premiumRuntimeDisabled = true;
+    if (premiumDisableLogged) return;
+    premiumDisableLogged = true;
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn('[BOT] Premium emoji disabled for current process:', message);
+}
+
 function sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -137,19 +219,39 @@ export async function sendMessage(
         parseMode?: 'HTML' | 'Markdown' | 'MarkdownV2';
         replyMarkup?: any;
         disableWebPagePreview?: boolean;
+        disablePremiumEmoji?: boolean;
     } = {}
 ): Promise<any> {
     const safeText = typeof text === 'string' && text.trim().length > 0
         ? text
         : 'Xabar yuborilmadi.';
-    const autoParse = options.parseMode ?? (/[<][biu]|<\/[biu]>/.test(safeText) ? 'HTML' : undefined);
-    return callTelegramAPI('sendMessage', {
+    const shouldDecorate = shouldUsePremiumEmoji(options);
+    const premiumText = shouldDecorate ? applyPremiumEmoji(safeText) : safeText;
+    const hasHtmlMarkup = /<\/?(?:b|i|u|s|code|pre|blockquote|a|tg-emoji)\b/i.test(premiumText);
+    const autoParse = options.parseMode ?? (hasHtmlMarkup ? 'HTML' : undefined);
+    const payload = {
         chat_id: chatId,
-        text: safeText,
+        text: premiumText,
         ...(autoParse ? { parse_mode: autoParse } : {}),
         reply_markup: options.replyMarkup,
         disable_web_page_preview: options.disableWebPagePreview
-    });
+    };
+
+    try {
+        return await callTelegramAPI('sendMessage', payload);
+    } catch (error) {
+        if (!shouldDecorate || !isEntityTextError(error)) throw error;
+        tripPremiumCircuit(error);
+        const fallbackHasHtml = /<\/?(?:b|i|u|s|code|pre|blockquote|a)\b/i.test(safeText);
+        const fallbackParse = options.parseMode ?? (fallbackHasHtml ? 'HTML' : undefined);
+        return callTelegramAPI('sendMessage', {
+            chat_id: chatId,
+            text: safeText,
+            ...(fallbackParse ? { parse_mode: fallbackParse } : {}),
+            reply_markup: options.replyMarkup,
+            disable_web_page_preview: options.disableWebPagePreview
+        });
+    }
 }
 
 /**
@@ -168,14 +270,38 @@ export async function sendSticker(
     if (!sticker || typeof sticker !== 'string') {
         throw new Error('Sticker file_id is required');
     }
-    return callTelegramAPI('sendSticker', {
+    const shouldDecorate = shouldUsePremiumEmoji({ parseMode: options.parseMode });
+    const caption = (typeof options.caption === 'string' && shouldDecorate)
+        ? applyPremiumEmoji(options.caption)
+        : options.caption;
+    const parseMode = options.parseMode
+        ?? (caption && caption.includes('<tg-emoji') ? 'HTML' : undefined);
+    const payload = {
         chat_id: chatId,
         sticker,
-        ...(options.caption ? { caption: options.caption } : {}),
-        ...(options.parseMode ? { parse_mode: options.parseMode } : {}),
+        ...(caption ? { caption } : {}),
+        ...(parseMode ? { parse_mode: parseMode } : {}),
         ...(options.replyMarkup ? { reply_markup: options.replyMarkup } : {}),
         ...(typeof options.disableNotification === 'boolean' ? { disable_notification: options.disableNotification } : {})
-    });
+    };
+
+    try {
+        return await callTelegramAPI('sendSticker', payload);
+    } catch (error) {
+        if (!caption || !shouldDecorate || !isEntityTextError(error)) throw error;
+        tripPremiumCircuit(error);
+        const plainCaption = options.caption;
+        const plainHasHtml = typeof plainCaption === 'string' && /<\/?(?:b|i|u|s|code|pre|blockquote|a)\b/i.test(plainCaption);
+        const plainParseMode = options.parseMode ?? (plainHasHtml ? 'HTML' : undefined);
+        return callTelegramAPI('sendSticker', {
+            chat_id: chatId,
+            sticker,
+            ...(plainCaption ? { caption: plainCaption } : {}),
+            ...(plainParseMode ? { parse_mode: plainParseMode } : {}),
+            ...(options.replyMarkup ? { reply_markup: options.replyMarkup } : {}),
+            ...(typeof options.disableNotification === 'boolean' ? { disable_notification: options.disableNotification } : {})
+        });
+    }
 }
 
 /**
@@ -214,17 +340,33 @@ export async function editMessage(
     const safeText = typeof text === 'string' && text.trim().length > 0
         ? text
         : 'Xabar yangilanmadi.';
+    const shouldDecorate = shouldUsePremiumEmoji({ parseMode: options.parseMode });
+    const premiumText = shouldDecorate ? applyPremiumEmoji(safeText) : safeText;
     const parseMode = options.parseMode ?? 'HTML';
     const inlineMarkup = options.replyMarkup && typeof options.replyMarkup === 'object' && 'inline_keyboard' in options.replyMarkup
         ? options.replyMarkup
         : undefined;
-    return callTelegramAPI('editMessageText', {
+    const payload = {
         chat_id: chatId,
         message_id: messageId,
-        text: safeText,
+        text: premiumText,
         ...(parseMode ? { parse_mode: parseMode } : {}),
         ...(inlineMarkup ? { reply_markup: inlineMarkup } : {})
-    });
+    };
+
+    try {
+        return await callTelegramAPI('editMessageText', payload);
+    } catch (error) {
+        if (!shouldDecorate || !isEntityTextError(error)) throw error;
+        tripPremiumCircuit(error);
+        return callTelegramAPI('editMessageText', {
+            chat_id: chatId,
+            message_id: messageId,
+            text: safeText,
+            ...(parseMode ? { parse_mode: parseMode } : {}),
+            ...(inlineMarkup ? { reply_markup: inlineMarkup } : {})
+        });
+    }
 }
 
 /**

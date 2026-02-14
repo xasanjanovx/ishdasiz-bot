@@ -17,8 +17,8 @@ export type BotLang = 'uz' | 'ru';
 export const botTexts = {
     // Language
     selectLanguage: {
-        uz: '<b>Assalomu alaykum!</b>\nBotdan foydalanish tilini tanlang.',
-        ru: '<b>Здравствуйте!</b>\nВыберите язык для использования бота.'
+        uz: '<b>Assalomu alaykum!</b>\n<i>Botdan foydalanish tilini tanlang.</i>',
+        ru: '<b>Здравствуйте!</b>\n<i>Выберите язык для использования бота.</i>'
     },
     languageChanged: {
         uz: '✅ Til o‘zgartirildi.',
@@ -28,11 +28,11 @@ export const botTexts = {
     // Start / help
     startWelcome: {
         uz: "<b>• Assalomu alaykum | ISHDASIZ platformasiga xush kelibsiz!</b>\n\n<b>Bu yerda siz:</b>\n<blockquote><i>🚀 | Ish yoki xodimni tez topishingiz\n🧾 | Rezyume va vakansiyalarni bir joyda boshqarishingiz\n⚡️ | Tanlov jarayonini samarali tashkil etishingiz\n🤖 | Sun’iy intellekt yordamidan foydalanishingiz mumkin.</i></blockquote>\n\n<i>Foydalanish uchun <b>“Kirish”</b> ni bosing.</i>",
-        ru: "Здравствуйте | Добро пожаловать в <b>ISHDASIZ</b>!\n\nЗдесь вы можете:\n| 🎯 Быстро найти работу или сотрудника\n| 🧾 Управлять резюме и вакансиями в одном месте\n| ⚡ Упростить процесс подбора\n| 🤖 Использовать помощь ИИ\n\nПолезные команды:\n| ▶️ /start — начать\n| 🔄 /role — сменить роль (соискатель / работодатель)\n| 🚪 /logout — выйти из аккаунта\n| ❓ /help — помощь по использованию"
+        ru: "<b>Здравствуйте | Добро пожаловать в ISHDASIZ!</b>\n\n<b>Здесь вы можете:</b>\n<blockquote><i>🎯 | Быстро найти работу или сотрудника\n🧾 | Управлять резюме и вакансиями в одном месте\n⚡ | Организовать подбор эффективнее\n🤖 | Использовать помощь ИИ.</i></blockquote>\n\n<i>Для продолжения нажмите <b>«Войти»</b>.</i>"
     },
     helpText: {
-        uz: "❓ <b>Yordam</b>\n\nBot imkoniyatlari:\n| 🔎 Vakansiyalarni rezyume bo‘yicha qidirish\n| ⭐ Saqlab qo‘yish va keyin ko‘rish\n| 🧾 Rezyumeni to‘ldirish va tahrirlash\n| 📢 Vakansiya joylash va arizalarni boshqarish\n\nBuyruqlar:\n| ▶️ /start — boshlash\n| 🔄 /role — rolni almashtirish\n| 🚪 /logout — chiqish\n| ❓ /help — yordam\n\nAdmin: @ishdasiz_admin",
-        ru: "❓ <b>Помощь</b>\n\nВозможности бота:\n| 🔎 Поиск вакансий по резюме\n| ⭐ Сохранение вакансий\n| 🧾 Создание и редактирование резюме\n| 📢 Размещение вакансий и управление откликами\n\nКоманды:\n| ▶️ /start — начать\n| 🔄 /role — сменить роль\n| 🚪 /logout — выйти\n| ❓ /help — помощь\n\nАдмин: @ishdasiz_admin"
+        uz: "❓ <b>Yordam</b>\n\n<b>Bot imkoniyatlari:</b>\n<blockquote><i>🔎 | Vakansiyalarni rezyume bo‘yicha qidirish\n⭐ | Saqlab qo‘yish va keyin ko‘rish\n🧾 | Rezyumeni to‘ldirish va tahrirlash\n📢 | Vakansiya joylash va arizalarni boshqarish</i></blockquote>\n\n<b>Buyruqlar:</b>\n<blockquote><i>▶️ /start — boshlash\n🔄 /role — rolni almashtirish\n🚪 /logout — chiqish\n❓ /help — yordam</i></blockquote>\n\n<i>Admin: @ishdasiz_admin</i>",
+        ru: "❓ <b>Помощь</b>\n\n<b>Возможности бота:</b>\n<blockquote><i>🔎 | Поиск вакансий по резюме\n⭐ | Сохранение вакансий\n🧾 | Резюме: заполнение и редактирование\n📢 | Публикация вакансий и управление откликами</i></blockquote>\n\n<b>Команды:</b>\n<blockquote><i>▶️ /start — начать\n🔄 /role — сменить роль\n🚪 /logout — выйти\n❓ /help — помощь</i></blockquote>\n\n<i>Админ: @ishdasiz_admin</i>"
     },
     logoutDone: {
         uz: '🚪 Siz akkauntdan chiqdingiz.',
@@ -77,28 +77,28 @@ export const botTexts = {
         ru: '<b>🔐 Повторите пароль</b>\n<i>Введите тот же пароль для подтверждения.</i>'
     },
     passwordInvalid: {
-        uz: '❌ Parol noto‘g‘ri.',
-        ru: '❌ Неверный пароль.'
+        uz: '<b>❌ Parol noto‘g‘ri.</b>\n<i>Iltimos, qayta kiriting.</i>',
+        ru: '<b>❌ Неверный пароль.</b>\n<i>Пожалуйста, введите снова.</i>'
     },
     passwordTooShort: {
-        uz: "❌ Parol kamida 6 ta belgidan iborat bo'lishi kerak.",
-        ru: '❌ Пароль должен содержать минимум 6 символов.'
+        uz: "<b>❌ Parol juda qisqa.</b>\n<i>Kamida 6 ta belgi kiriting.</i>",
+        ru: '<b>❌ Пароль слишком короткий.</b>\n<i>Введите минимум 6 символов.</i>'
     },
     passwordMismatch: {
-        uz: "❌ Parollar mos kelmadi. Qaytadan urinib ko'ring.",
-        ru: '❌ Пароли не совпали. Попробуйте снова.'
+        uz: "<b>❌ Parollar mos kelmadi.</b>\n<i>Qaytadan urinib ko‘ring.</i>",
+        ru: '<b>❌ Пароли не совпали.</b>\n<i>Попробуйте ещё раз.</i>'
     },
     passwordCreated: {
-        uz: '✅ Parol saqlandi.',
-        ru: '✅ Пароль сохранён.'
+        uz: '<b>✅ Parol saqlandi.</b>',
+        ru: '<b>✅ Пароль сохранён.</b>'
     },
     passwordNotSet: {
-        uz: "Parol hali o‘rnatilmagan. SMS orqali kiring va parol o‘rnating.",
-        ru: 'Пароль ещё не создан. Войдите через SMS и создайте пароль.'
+        uz: "<b>ℹ️ Parol hali o‘rnatilmagan.</b>\n<i>SMS orqali kiring va parol o‘rnating.</i>",
+        ru: '<b>ℹ️ Пароль ещё не создан.</b>\n<i>Войдите через SMS и создайте пароль.</i>'
     },
     accountLocked: {
-        uz: '❌ Akkaunt vaqtincha bloklandi.',
-        ru: '❌ Аккаунт временно заблокирован.'
+        uz: '<b>❌ Akkaunt vaqtincha bloklandi.</b>',
+        ru: '<b>❌ Аккаунт временно заблокирован.</b>'
     },
     loginSuccess: {
         uz: '✅ Xush kelibsiz!',
@@ -203,8 +203,8 @@ export const botTexts = {
         ru: '<b>📆 | График работы (дни)</b>'
     },
     askSubscriptionFrequency: {
-        uz: '🔔 | Xabarnoma chastotasi:',
-        ru: '🔔 | Частота уведомлений:'
+        uz: '<b>🔔 | Xabarnoma chastotasi</b>\n<i>Mos variantni tanlang.</i>',
+        ru: '<b>🔔 | Частота уведомлений</b>\n<i>Выберите подходящий вариант.</i>'
     },
     askTitle: {
         uz: '<b>🧾 | Qaysi lavozimda ishlamoqchisiz?</b>\n<i>Masalan: Ingliz tili o\'qituvchisi, Shifokor, Operator, Dasturchi</i>',
@@ -291,32 +291,32 @@ export const botTexts = {
         ru: '<b>📍 | Пожалуйста, отправьте локацию.</b>\n<i>Если вы за ПК, можно отправить через скрепку «Локация».</i>'
     },
     locationAccepted: {
-        uz: '✅ Joylashuv qabul qilindi.',
-        ru: '✅ Локация принята.'
+        uz: '<b>✅ Joylashuv qabul qilindi.</b>',
+        ru: '<b>✅ Локация принята.</b>'
     },
     locationSkipped: {
-        uz: '✅ Joylashuv o‘tkazib yuborildi.',
-        ru: '✅ Локация пропущена.'
+        uz: '<b>✅ Joylashuv o‘tkazib yuborildi.</b>',
+        ru: '<b>✅ Локация пропущена.</b>'
     },
 
     // Main menu
     mainMenu: {
         uz: '🏠 | <b>Asosiy menyu</b>\n<i>Kerakli bo‘limni tanlang.</i>',
-        ru: '🏠 | Главное меню\nВыберите нужный раздел.'
+        ru: '🏠 | <b>Главное меню</b>\n<i>Выберите нужный раздел.</i>'
     },
 
     // Jobs
     searchingJobs: {
-        uz: '🔎 Mos vakansiyalar qidirilmoqda...',
-        ru: '🔎 Идёт поиск подходящих вакансий...'
+        uz: '<b>🔎 | Mos vakansiyalar qidirilmoqda...</b>',
+        ru: '<b>🔎 | Идёт поиск подходящих вакансий...</b>'
     },
     noJobsFound: {
-        uz: '❌ Afsuski, hozircha mos vakansiyalar yo‘q.',
-        ru: '❌ Подходящих вакансий пока нет.'
+        uz: '<b>❌ Afsuski, hozircha mos vakansiyalar yo‘q.</b>',
+        ru: '<b>❌ Подходящих вакансий пока нет.</b>'
     },
     noJobsByProfession: {
-        uz: "ℹ️ Tanlangan kasb bo'yicha aniq vakansiya topilmadi. Sizga mos kelishi mumkin bo'lgan vakansiyalarni ko'rishingiz mumkin.",
-        ru: 'ℹ️ Точных вакансий по выбранной профессии не найдено. Можно посмотреть вакансии, которые могут вам подойти.'
+        uz: "<b>ℹ️ Tanlangan kasb bo‘yicha aniq vakansiya topilmadi.</b>\n<i>Sizga mos kelishi mumkin bo‘lgan vakansiyalar ko‘rsatiladi.</i>",
+        ru: '<b>ℹ️ Точных вакансий по выбранной профессии не найдено.</b>\n<i>Показаны вакансии, которые могут вам подойти.</i>'
     },
     noDistrictJobs: {
         uz: '<b>ℹ️ Bu tumanda mos vakansiyalar topilmadi.</b>\nViloyatingizdagi boshqa tuman/shaharlarda vakansiyalar mavjud:',
@@ -355,12 +355,12 @@ export const botTexts = {
         ru: '⚠️ Сначала создайте резюме.'
     },
     jobsFound: {
-        uz: (count: number) => `✅ ${count} ta vakansiya topildi`,
-        ru: (count: number) => `✅ Найдено ${count} вакансий`
+        uz: (count: number) => `<b>✅ ${count} ta vakansiya topildi</b>`,
+        ru: (count: number) => `<b>✅ Найдено ${count} вакансий</b>`
     },
     searchModePrompt: {
-        uz: '🔎 | Rezyume bo‘yicha qidiruv:',
-        ru: '🔎 | Поиск по резюме:'
+        uz: '<b>🔎 | Rezyume bo‘yicha qidiruv</b>',
+        ru: '<b>🔎 | Поиск по резюме</b>'
     },
     savedEmpty: {
         uz: '⭐ Saqlanganlar bo‘limi hozircha bo‘sh.',
@@ -375,20 +375,20 @@ export const botTexts = {
         ru: '🗑️ Удалено из сохранённых.'
     },
     applicationSent: {
-        uz: '✅ Ariza muvaffaqiyatli yuborildi.',
-        ru: '✅ Заявка успешно отправлена.'
+        uz: '<b>✅ Ariza muvaffaqiyatli yuborildi.</b>',
+        ru: '<b>✅ Заявка успешно отправлена.</b>'
     },
     applicationAlertEmployer: {
         uz: (fullName: string, jobTitle: string) => `📩 | Yangi ariza kelib tushdi.\n\n👤 | Nomzod: <b>${fullName}</b>\n💼 | Vakansiya: <b>${jobTitle}</b>\n\nArizani ko‘rish uchun tugmani bosing.`,
         ru: (fullName: string, jobTitle: string) => `📩 | Новый отклик по вакансии.\n\n👤 | Кандидат: <b>${fullName}</b>\n💼 | Вакансия: <b>${jobTitle}</b>\n\nНажмите кнопку, чтобы открыть отклик.`
     },
     applicationExists: {
-        uz: '№️⃣ Siz ushbu vakansiyaga avval ariza yuborgansiz.',
-        ru: '№️⃣ Вы уже отправляли отклик на эту вакансию.'
+        uz: '<b>№️⃣ Siz ushbu vakansiyaga avval ariza yuborgansiz.</b>',
+        ru: '<b>№️⃣ Вы уже отправляли отклик на эту вакансию.</b>'
     },
     offersTitle: {
-        uz: '📨 | Takliflar bo‘limi',
-        ru: '📨 | Раздел приглашений'
+        uz: '<b>📨 | Takliflar bo‘limi</b>',
+        ru: '<b>📨 | Раздел приглашений</b>'
     },
     noOffers: {
         uz: "📭 | Hozircha takliflar yo'q.\n\nYangi ishga takliflar shu yerda ko‘rinadi.",
@@ -399,12 +399,12 @@ export const botTexts = {
         ru: (candidateName: string, jobTitle: string) => `📨 | Отправить приглашение на работу?\n\n👤 | Кандидат: <b>${candidateName}</b>\n💼 | Вакансия: <b>${jobTitle}</b>`
     },
     offerSentEmployer: {
-        uz: "✅ | Ishga taklif yuborildi.",
-        ru: '✅ | Приглашение отправлено.'
+        uz: '<b>✅ | Ishga taklif yuborildi.</b>',
+        ru: '<b>✅ | Приглашение отправлено.</b>'
     },
     offerAlreadySent: {
-        uz: "ℹ️ | Bu nomzodga ushbu vakansiya bo'yicha taklif allaqachon yuborilgan.",
-        ru: 'ℹ️ | Этому кандидату уже отправлено приглашение по данной вакансии.'
+        uz: "<b>ℹ️ | Bu nomzodga ushbu vakansiya bo‘yicha taklif allaqachon yuborilgan.</b>",
+        ru: '<b>ℹ️ | Этому кандидату уже отправлено приглашение по данной вакансии.</b>'
     },
     offerReceivedSeeker: {
         uz: (companyName: string, jobTitle: string) => `<b>📩 | Tabriklaymiz! Sizni ishga taklif qilishdi.</b>\n\n🏢 | Tashkilot: <b>${companyName}</b>\n💼 | Vakansiya: <b>${jobTitle}</b>\n\nKo‘rish va bog‘lanish uchun quyidagi tugmani bosing.`,
@@ -413,8 +413,8 @@ export const botTexts = {
 
     // Profile / settings
     settings: {
-        uz: '⚙️ Sozlamalar',
-        ru: '⚙️ Настройки'
+        uz: '<b>⚙️ | Sozlamalar</b>\n<i>Kerakli bo‘limni tanlang.</i>',
+        ru: '<b>⚙️ | Настройки</b>\n<i>Выберите нужный раздел.</i>'
     },
     error: {
         uz: '❌ Tizimda xatolik yuz berdi. Iltimos, keyinroq urinib ko‘ring.',
@@ -429,14 +429,14 @@ export const botTexts = {
         ru: (score: number) => `<b>Совпадение: ${score}%</b>`
     },
     resumeMenu: {
-        uz: '🧾 | Rezyume\n\nRezyumeni ko‘rish yoki tahrirlash:',
-        ru: '🧾 | Резюме\n\nПросмотр или редактирование:'
+        uz: '<b>🧾 | Rezyume</b>\n\n<i>Rezyumeni ko‘rish yoki tahrirlash:</i>',
+        ru: '<b>🧾 | Резюме</b>\n\n<i>Просмотр или редактирование:</i>'
     },
 
     // Roles / employer
     selectRole: {
-        uz: '👥 | Platformaga kim sifatida kirmoqchisiz?',
-        ru: '👥 | Выберите роль:'
+        uz: '👥 | <b>Platformaga kim sifatida kirmoqchisiz?</b>\n<i>Kerakli rolni tanlang.</i>',
+        ru: '👥 | <b>Кто вы на платформе?</b>\n<i>Выберите нужную роль.</i>'
     },
     roleSeeker: {
         uz: 'Ish qidiruvchi',
@@ -448,15 +448,15 @@ export const botTexts = {
     },
     employerWelcome: {
         uz: "<b>🏢 | Ish beruvchi bo'limiga xush kelibsiz.</b>\n\n<i>Vakansiyalaringizni boshqarish, arizalarni ko‘rish va mos ishchilarni topish uchun menyudan bo‘lim tanlang.</i>",
-        ru: '🏢 Добро пожаловать в кабинет работодателя.\n\nВыберите раздел в меню: управляйте вакансиями, откликами и подбором кандидатов.'
+        ru: "<b>🏢 | Добро пожаловать в кабинет работодателя.</b>\n\n<i>Выберите раздел меню: управляйте вакансиями, откликами и подбором кандидатов.</i>"
     },
     employerMainMenu: {
         uz: "🏢 | <b>Ish beruvchi menyusi</b>\n<i>Vakansiya, ariza va ishchi qidiruvi bo‘yicha bo‘limni tanlang.</i>",
-        ru: '🏢 | Панель работодателя\nВыберите нужный раздел по вакансиям и кандидатам.'
+        ru: "🏢 | <b>Панель работодателя</b>\n<i>Выберите нужный раздел по вакансиям и кандидатам.</i>"
     },
     employerProfileIntro: {
-        uz: '🏢 | Ish beruvchi profili',
-        ru: '🏢 | Профиль работодателя'
+        uz: '<b>🏢 | Ish beruvchi profili</b>',
+        ru: '<b>🏢 | Профиль работодателя</b>'
     },
     companyNamePrompt: {
         uz: '<b>🏢 | Tashkilot nomini kiriting</b>\n<i>Masalan: “Andijon Textile MCHJ”</i>',
@@ -491,8 +491,8 @@ export const botTexts = {
         ru: '<b>📝 Коротко о компании</b>\n<i>Например: “Текстильная компания, 120+ сотрудников”</i>'
     },
     jobCreateMode: {
-        uz: '📢 | Vakansiya kiritish usulini tanlang:',
-        ru: '📢 Выберите способ создания вакансии:'
+        uz: '<b>📢 | Vakansiya kiritish usulini tanlang</b>',
+        ru: '<b>📢 | Выберите способ создания вакансии</b>'
     },
     aiJobPrompt: {
         uz: '🤖 Vakansiya matnini yuboring. AI avtomatik to‘ldiradi.',
@@ -535,8 +535,8 @@ export const botTexts = {
         ru: '<b>📊 | Возраст</b>\n<i>Например: 18-35</i>\n<i>Если не важно, выберите “Не важно”.</i>'
     },
     jobAgeInvalid: {
-        uz: '❗ Yoshni to‘g‘ri kiriting. Faqat shu formatda: 18-35',
-        ru: '❗ Введите возраст корректно. Только в формате: 18-35'
+        uz: '<b>❗ Yosh oralig‘i noto‘g‘ri.</b>\n<i>Faqat shu formatda kiriting: 18-35</i>',
+        ru: '<b>❗ Возраст указан неверно.</b>\n<i>Используйте только формат: 18-35</i>'
     },
     jobSpecialCriteriaPrompt: {
         uz: "<b>✨ | Nomzod uchun qo'shimcha mezonlar (ixtiyoriy)</b>\n<i>Agar vakansiya talaba, bitiruvchi yoki nogironligi bo‘lgan nomzodlarga ham mos kelishi mumkin bo‘lsa, belgilang.</i>",
@@ -565,8 +565,8 @@ export const botTexts = {
         ru: '<b>📝 Какого сотрудника вы ищете? (должность)</b>\n<i>Введите минимум 3 буквы.</i>\n<i>Например: Руководитель, Главный бухгалтер, HR-менеджер, SMM-менеджер, Разработчик</i>'
     },
     postJobCategory: {
-        uz: '🧭 Vakansiya sohasini tanlang:',
-        ru: '🧭 Выберите сферу вакансии:'
+        uz: '<b>🧭 | Vakansiya sohasini tanlang</b>',
+        ru: '<b>🧭 | Выберите сферу вакансии</b>'
     },
     postJobSalary: {
         uz: '<b>💰 | Minimal maosh qancha taklif qilasiz?</b>\n<i>Masalan: 3 000 000</i>',
@@ -597,12 +597,12 @@ export const botTexts = {
         ru: '⏳ Идёт поиск подходящих кандидатов...'
     },
     postJobConfirm: {
-        uz: (title: string) => `Vakansiyani tekshiring va tasdiqlang:\n\n"${title}"`,
-        ru: (title: string) => `Проверьте и подтвердите вакансию:\n\n"${title}"`
+        uz: (title: string) => `<b>📌 | Vakansiyani tekshiring va tasdiqlang</b>\n\n<i>“${title}”</i>`,
+        ru: (title: string) => `<b>📌 | Проверьте и подтвердите вакансию</b>\n\n<i>«${title}»</i>`
     },
     jobPublished: {
-        uz: '✅ | Vakansiya joylandi!\n\n🔎 Endi “Ishchi topish” orqali mos nomzodlarni ko‘rishingiz mumkin.',
-        ru: '✅ Вакансия успешно опубликована!\n\n👥 Теперь можно перейти в “Найти кандидатов” и посмотреть подходящих кандидатов.'
+        uz: '<b>✅ | Vakansiya joylandi!</b>\n\n<i>Endi “Ishchi topish” orqali mos nomzodlarni ko‘rishingiz mumkin.</i>',
+        ru: '<b>✅ | Вакансия успешно опубликована!</b>\n\n<i>Теперь можно перейти в «Найти кандидатов» и посмотреть подходящих кандидатов.</i>'
     },
     myVacancies: {
         uz: 'Sizning vakansiyalaringiz:',
@@ -613,8 +613,8 @@ export const botTexts = {
         ru: 'У вас пока нет вакансий.'
     },
     employerNoVacanciesHint: {
-        uz: "ℹ️ Hali vakansiya yo'q.",
-        ru: 'ℹ️ Пока нет вакансий.'
+        uz: "<b>ℹ️ Hali vakansiya yo‘q.</b>\n<i>Yangi vakansiya joylash orqali boshlang.</i>",
+        ru: '<b>ℹ️ Пока нет вакансий.</b>\n<i>Начните с публикации новой вакансии.</i>'
     },
     minThreeChars: {
         uz: '❗ Kamida 3 ta harf kiriting.',
@@ -623,20 +623,20 @@ export const botTexts = {
 
     // Subscriptions
     subscriptionRequired: {
-        uz: 'Davom etish uchun @ishdasiz kanaliga obuna bo‘ling.',
-        ru: 'Для продолжения подпишитесь на канал @ishdasiz.'
+        uz: '<b>🔔 Davom etish uchun kanalga obuna bo‘ling.</b>\n<i>@ishdasiz</i>',
+        ru: '<b>🔔 Для продолжения подпишитесь на канал.</b>\n<i>@ishdasiz</i>'
     },
     subscriptionSettings: {
-        uz: '🔔 | Obuna sozlamalari',
-        ru: '🔔 | Настройки подписки'
+        uz: '<b>🔔 | Obuna sozlamalari</b>',
+        ru: '<b>🔔 | Настройки подписки</b>'
     },
     subscriptionSaved: {
-        uz: '✅ Obuna saqlandi.',
-        ru: '✅ Подписка сохранена.'
+        uz: '<b>✅ Obuna saqlandi.</b>',
+        ru: '<b>✅ Подписка сохранена.</b>'
     },
     subscriptionDisabled: {
-        uz: "✅ Obuna o'chirildi.",
-        ru: '✅ Подписка отключена.'
+        uz: "<b>✅ Obuna o‘chirildi.</b>",
+        ru: '<b>✅ Подписка отключена.</b>'
     },
     checkSubscription: {
         uz: 'Tekshirish',
