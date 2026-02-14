@@ -309,6 +309,7 @@ const MODERN_PROFESSIONS: Array<{ id: string; title_uz: string; title_ru: string
 // ============================================
 export class TelegramBot {
     private supabase: SupabaseClient;
+    private userUpdateQueue: Map<number, Promise<void>> = new Map();
     private regionsCache: { data: RegionRef[]; loadedAt: number } = { data: [], loadedAt: 0 };
     private categoriesCache: { data: CategoryRef[]; loadedAt: number } = { data: [], loadedAt: 0 };
     private fieldsCache: { data: OsonishField[]; loadedAt: number } = { data: [], loadedAt: 0 };
@@ -1373,6 +1374,65 @@ export class TelegramBot {
         return text.replace(/@ishdasiz\b/g, channelTag);
     }
 
+    private async enqueueUserUpdate(userId: number, handler: () => Promise<void>): Promise<void> {
+        const previous = this.userUpdateQueue.get(userId) || Promise.resolve();
+        const current = previous
+            .catch(() => undefined)
+            .then(async () => {
+                await handler();
+            });
+
+        this.userUpdateQueue.set(userId, current);
+
+        try {
+            await current;
+        } finally {
+            if (this.userUpdateQueue.get(userId) === current) {
+                this.userUpdateQueue.delete(userId);
+            }
+        }
+    }
+
+    private collectActiveCallbackMessageIds(session: TelegramSession): number[] {
+        const data = session.data || {};
+        const ids = [
+            data.last_prompt_message_id,
+            data.lastPromptMessageId,
+            data.last_job_message_id,
+            data.last_job_location_message_id,
+            data.last_job_location_text_message_id,
+            data.last_worker_match_message_id
+        ];
+
+        return ids
+            .map((value: any) => Number(value))
+            .filter((value: number) => Number.isInteger(value) && value > 0);
+    }
+
+    private isFlowSensitiveCallbackAction(action: string): boolean {
+        const sensitive = new Set([
+            'lang', 'auth', 'role',
+            'region', 'district', 'distpage', 'category', 'field', 'fieldpage',
+            'jobexperience', 'experience', 'jobeducation', 'education', 'educont', 'jobgender', 'gender',
+            'special', 'salary', 'jobsalary', 'jobsalarymax', 'jobage', 'salarymax',
+            'employment', 'workmode', 'workingdays', 'workinghours',
+            'joblang', 'reslang', 'jobbenefit',
+            'aboutai', 'jobdescai', 'skip', 'skills', 'workend', 'eduend', 'workplace',
+            'back', 'menu', 'action', 'job', 'jobmode',
+            'fav', 'apply', 'profile', 'settings', 'subs', 'ai', 'sub', 'searchmode',
+            'resume_new', 'resumeedit', 'cancel', 'resume', 'mcat', 'search', 'searchregion', 'searchdist'
+        ]);
+        return sensitive.has(action);
+    }
+
+    private shouldIgnoreStaleCallback(session: TelegramSession, action: string, callbackMessageId?: number): boolean {
+        if (!callbackMessageId) return false;
+        if (!this.isFlowSensitiveCallbackAction(action)) return false;
+        const activeIds = this.collectActiveCallbackMessageIds(session);
+        if (!activeIds.length) return false;
+        return !activeIds.includes(callbackMessageId);
+    }
+
     private async trackUpdate(session: TelegramSession, updateId?: number, messageId?: number, callbackId?: string): Promise<void> {
         if (!updateId && !messageId && !callbackId) return;
 
@@ -1498,20 +1558,16 @@ export class TelegramBot {
         }
 
         const lastPromptId = latestData?.last_prompt_message_id || session.data?.last_prompt_message_id;
-        if (lastPromptId) {
-            try {
-                await deleteMessage(chatId, lastPromptId);
-            } catch (err) {
-                // ignore delete errors
-            }
-        }
+
         let result: any = null;
+        let lastSendError: any = null;
         try {
             result = await sendMessage(chatId, safeText, {
                 parseMode: promptParseMode,
                 replyMarkup: options.replyMarkup
             });
         } catch (err: any) {
+            lastSendError = err;
             try {
                 // Keep markup, disable premium only.
                 result = await sendMessage(chatId, safeText, {
@@ -1519,16 +1575,47 @@ export class TelegramBot {
                     replyMarkup: options.replyMarkup,
                     disablePremiumEmoji: true
                 });
-            } catch {
+            } catch (secondErr) {
+                lastSendError = secondErr;
                 // Last-resort fallback for truly broken markup.
-                const fallbackText = this.stripHtmlTags(safeText);
-                result = await sendMessage(chatId, fallbackText, {
-                    replyMarkup: options.replyMarkup,
-                    disablePremiumEmoji: true
-                });
+                try {
+                    const fallbackText = this.stripHtmlTags(safeText);
+                    result = await sendMessage(chatId, fallbackText, {
+                        replyMarkup: options.replyMarkup,
+                        disablePremiumEmoji: true
+                    });
+                } catch (finalErr) {
+                    lastSendError = finalErr;
+                    // Final guard to avoid blank screen.
+                    result = await sendMessage(
+                        chatId,
+                        session.lang === 'uz'
+                            ? "⚠️ Xabarni yuklashda xatolik bo'ldi. Iltimos, davom eting."
+                            : '⚠️ Ошибка загрузки сообщения. Продолжайте, пожалуйста.',
+                        {
+                            replyMarkup: options.replyMarkup,
+                            disablePremiumEmoji: true
+                        }
+                    );
+                }
             }
         }
         const messageId = result?.message_id;
+        if (!messageId) {
+            if (lastSendError) {
+                console.error('[BOT] sendPrompt failed to send message:', lastSendError);
+            }
+            return;
+        }
+
+        if (lastPromptId && lastPromptId !== messageId) {
+            try {
+                await deleteMessage(chatId, lastPromptId);
+            } catch {
+                // ignore delete errors
+            }
+        }
+
         if (messageId) {
             const updatedData = { ...(session.data || {}), ...(latestData || {}), last_prompt_message_id: messageId };
             session.data = updatedData;
@@ -1750,41 +1837,43 @@ export class TelegramBot {
             return;
         }
 
-        const session = await this.getOrCreateSession(userId);
-        if (!session) {
-            console.log('[BOT] No session, skipping');
-            return;
-        }
-
-        await this.syncTelegramUsernameFromUpdate(session, telegramUsernameRaw);
-
-        console.log('[BOT] Session state:', session.state, 'lang:', session.lang);
-
-        if (this.isDuplicateUpdate(session, updateId, messageId, callbackId)) {
-            console.log('[BOT] Duplicate update, skipping');
-            return;
-        }
-
-        await this.trackUpdate(session, updateId, messageId, callbackId);
-
-        try {
-            if (message) {
-                console.log('[BOT] Calling handleMessage for text:', message.text?.slice(0, 50));
-                await this.handleMessage(message, session);
-                if (session.data?.clean_inputs && typeof message.message_id === 'number') {
-                    try {
-                        await deleteMessage(message.chat.id, message.message_id);
-                    } catch {
-                        // ignore delete errors
-                    }
-                }
-            } else if (callback) {
-                console.log('[BOT] Calling handleCallbackQuery for data:', callback.data);
-                await this.handleCallbackQuery(callback, session);
+        await this.enqueueUserUpdate(userId, async () => {
+            const session = await this.getOrCreateSession(userId);
+            if (!session) {
+                console.log('[BOT] No session, skipping');
+                return;
             }
-        } catch (err) {
-            console.error('[BOT] Error in handleUpdate:', err);
-        }
+
+            await this.syncTelegramUsernameFromUpdate(session, telegramUsernameRaw);
+
+            console.log('[BOT] Session state:', session.state, 'lang:', session.lang);
+
+            if (this.isDuplicateUpdate(session, updateId, messageId, callbackId)) {
+                console.log('[BOT] Duplicate update, skipping');
+                return;
+            }
+
+            await this.trackUpdate(session, updateId, messageId, callbackId);
+
+            try {
+                if (message) {
+                    console.log('[BOT] Calling handleMessage for text:', message.text?.slice(0, 50));
+                    await this.handleMessage(message, session);
+                    if (session.data?.clean_inputs && typeof message.message_id === 'number') {
+                        try {
+                            await deleteMessage(message.chat.id, message.message_id);
+                        } catch {
+                            // ignore delete errors
+                        }
+                    }
+                } else if (callback) {
+                    console.log('[BOT] Calling handleCallbackQuery for data:', callback.data);
+                    await this.handleCallbackQuery(callback, session);
+                }
+            } catch (err) {
+                console.error('[BOT] Error in handleUpdate:', err);
+            }
+        });
     }
 
     async handleMessage(msg: TelegramMessage, sessionOverride?: TelegramSession): Promise<void> {
@@ -1879,6 +1968,20 @@ export class TelegramBot {
             const action = parts[0];
             const value = parts[1];
             const extra = parts.slice(2).join(':');
+            const callbackMessageId = typeof message?.message_id === 'number' ? message.message_id : undefined;
+
+            if (this.shouldIgnoreStaleCallback(session, action, callbackMessageId)) {
+                try {
+                    await answerCallbackQuery(id, {
+                        text: session.lang === 'uz'
+                            ? "Bu tugma eskirgan. Iltimos, oxirgi oynadagi tugmalardan foydalaning."
+                            : 'Эта кнопка устарела. Используйте кнопки в последнем сообщении.'
+                    });
+                } catch {
+                    // ignore
+                }
+                return;
+            }
 
             switch (action) {
                 case 'lang': await this.handleLangSelect(chatId, value as BotLang, session); break;
@@ -10921,6 +11024,9 @@ export class TelegramBot {
             full_name: item.resume?.full_name || null,
             title: item.resume?.title || item.resume?.field_title || null,
             user_id: item.resume?.user_id || null,
+            district_id: item.resume?.district_id ?? null,
+            district_name: item.resume?.district_name || null,
+            region_id: item.resume?.region_id ?? null,
             score: Number(item.score || 0),
             strictScore: Number(item.strictScore || item.score || 0),
             aiScore: typeof item.aiScore === 'number' ? Number(item.aiScore) : null,
@@ -10945,6 +11051,7 @@ export class TelegramBot {
         }
 
         if (!districtList.length && regionList.length > 0) {
+            const districtHint = await this.buildRegionDistrictHint(regionList, lang);
             await this.setSession(session, {
                 state: BotState.EMPLOYER_MAIN_MENU,
                 data: {
@@ -10966,8 +11073,8 @@ export class TelegramBot {
             const areaLabelUz = districtLabel || (regionLabel || "tanlangan hudud");
             const areaLabelRu = districtLabel || (regionLabel || 'выбранном регионе');
             const notice = lang === 'uz'
-                ? `<b>ℹ️ | ${areaLabelUz} hududida mos nomzod topilmadi.</b>\n\n<b>${regionCount} ta nomzod</b> viloyat bo'yicha topildi.`
-                : `<b>ℹ️ | В зоне «${areaLabelRu}» подходящие кандидаты не найдены.</b>\n\n<b>По области найдено: ${regionCount}</b>.`;
+                ? `<b>ℹ️ | ${areaLabelUz} hududida mos nomzod topilmadi.</b>\n\n<b>${regionCount} ta nomzod</b> viloyat bo'yicha topildi.${districtHint ? `\n\n${districtHint}` : ''}`
+                : `<b>ℹ️ | В зоне «${areaLabelRu}» подходящие кандидаты не найдены.</b>\n\n<b>По области найдено: ${regionCount}</b>.${districtHint ? `\n\n${districtHint}` : ''}`;
             await this.sendSeriousSticker(chatId, 'warning');
             await this.sendPrompt(chatId, session, notice, {
                 replyMarkup: keyboards.workerRegionFallbackKeyboard(lang, {
@@ -11017,6 +11124,9 @@ export class TelegramBot {
             full_name?: string | null;
             title?: string | null;
             user_id?: string | null;
+            district_id?: any;
+            district_name?: string | null;
+            region_id?: any;
             score?: number | null;
             strictScore?: number | null;
             aiScore?: number | null;
@@ -11035,12 +11145,13 @@ export class TelegramBot {
                 const regionLabel = String(session.data?.worker_target_region_name || '').trim();
                 const areaLabelUz = districtLabel || regionLabel || "tanlangan hudud";
                 const areaLabelRu = districtLabel || regionLabel || 'выбранном регионе';
+                const districtHint = await this.buildRegionDistrictHint(regionList, lang);
                 await this.sendPrompt(
                     chatId,
                     session,
                     lang === 'uz'
-                        ? `<b>ℹ️ | ${areaLabelUz} hududida mos nomzod topilmadi.</b>\n\n<b>${regionList.length} ta nomzod</b> viloyat bo'yicha topildi.`
-                        : `<b>ℹ️ | В зоне «${areaLabelRu}» подходящие кандидаты не найдены.</b>\n\n<b>По области найдено: ${regionList.length}</b>.`,
+                        ? `<b>ℹ️ | ${areaLabelUz} hududida mos nomzod topilmadi.</b>\n\n<b>${regionList.length} ta nomzod</b> viloyat bo'yicha topildi.${districtHint ? `\n\n${districtHint}` : ''}`
+                        : `<b>ℹ️ | В зоне «${areaLabelRu}» подходящие кандидаты не найдены.</b>\n\n<b>По области найдено: ${regionList.length}</b>.${districtHint ? `\n\n${districtHint}` : ''}`,
                     {
                         replyMarkup: keyboards.workerRegionFallbackKeyboard(lang, {
                             showRegionSearch: true,
@@ -11937,6 +12048,57 @@ export class TelegramBot {
 
         if (!row) return null;
         return lang === 'uz' ? row.name_uz : row.name_ru;
+    }
+
+    private async buildRegionDistrictHint(
+        candidates: Array<{ district_id?: any; district_name?: string | null }>,
+        lang: BotLang,
+        limit: number = 5
+    ): Promise<string | null> {
+        const grouped = new Map<string, { districtId: any; districtName: string | null; count: number }>();
+        for (const candidate of candidates || []) {
+            const districtId = candidate?.district_id ?? null;
+            const districtNameRaw = String(candidate?.district_name || '').trim();
+            const key = districtId !== null && districtId !== undefined
+                ? `id:${String(districtId)}`
+                : (districtNameRaw ? `name:${districtNameRaw.toLowerCase()}` : '');
+            if (!key) continue;
+            const current = grouped.get(key);
+            if (current) {
+                current.count += 1;
+                if (!current.districtName && districtNameRaw) current.districtName = districtNameRaw;
+                continue;
+            }
+            grouped.set(key, {
+                districtId,
+                districtName: districtNameRaw || null,
+                count: 1
+            });
+        }
+
+        if (!grouped.size) return null;
+
+        const groupedValues = Array.from(grouped.values());
+        for (const entry of groupedValues) {
+            if (!entry.districtName && entry.districtId !== null && entry.districtId !== undefined) {
+                entry.districtName = await this.getDistrictNameById(entry.districtId, lang);
+            }
+        }
+
+        const ranked = groupedValues
+            .filter(entry => Boolean(entry.districtName))
+            .sort((a, b) => b.count - a.count)
+            .slice(0, Math.max(1, limit));
+
+        if (!ranked.length) return null;
+
+        const labels = ranked
+            .map(entry => `${entry.districtName} (${entry.count})`)
+            .join(', ');
+
+        return lang === 'uz'
+            ? `<i>Viloyatdagi mos tuman/shaharlar: ${this.escapeHtml(labels)}</i>`
+            : `<i>Подходящие районы/города по области: ${this.escapeHtml(labels)}</i>`;
     }
 
     private async handleJobNavigation(chatId: number, direction: string, session: TelegramSession, messageId?: number): Promise<void> {
