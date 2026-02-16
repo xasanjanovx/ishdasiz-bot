@@ -13,6 +13,8 @@ interface InlineButton {
     callback_data?: string;
     url?: string;
     web_app?: { url: string };
+    icon_custom_emoji_id?: string;
+    style?: 'primary' | 'success' | 'danger';
 }
 
 interface ReplyButton {
@@ -20,6 +22,8 @@ interface ReplyButton {
     request_contact?: boolean;
     request_location?: boolean;
     web_app?: { url: string };
+    icon_custom_emoji_id?: string;
+    style?: 'primary' | 'success' | 'danger';
 }
 
 interface RegionItem {
@@ -105,18 +109,139 @@ const SALARY_RANGES = [
     { value: '10000000', label_uz: '10 mln+', label_ru: '10 млн+' }
 ];
 
+const REPLY_ICON_BY_EMOJI: Record<string, string> = {
+    '🇺🇿': '5438400294432028834',
+    '🇷🇺': '5436252471481611724',
+    '🔐': '5350619413533958825',
+    '📱': '5407025283456835913',
+    '🔎': '5188311512791393083',
+    '🧾': '5458458113826910668',
+    '📨': '5406631276042002796',
+    '⭐': '5274046919809704653',
+    '⚙': '5350396951407895212',
+    '⚙️': '5350396951407895212',
+    '🆘': '5895407084131848348',
+    '📢': '5330513091073427682',
+    '📋': '5877597667231534929',
+    '👥': '5422518677897512402',
+    '🏢': '5264733042710181045',
+    '📍': '5415742696973158126'
+};
+
+const INLINE_ICON_BY_EMOJI: Record<string, string> = {
+    '⬅': '5258236805890710909',
+    '⬅️': '5258236805890710909',
+    '➡': '5877468380125990242',
+    '➡️': '5877468380125990242',
+    '⏭': '5884123981706956210',
+    '⏭️': '5884123981706956210',
+    '✅': '5389061359403039918',
+    '❌': '5852812849780362931',
+    '✉': '5253742260054409879',
+    '✉️': '5253742260054409879',
+    '🌐': '5188381825701021648',
+    '🔄': '5877410604225924969',
+    '✏': '5879841310902324730',
+    '✏️': '5879841310902324730',
+    '🗑': '5841541824803509441',
+    '🗑️': '5841541824803509441',
+    '📍': '5350301517234586704',
+    '🏙': '5406686715479860449',
+    '🏙️': '5406686715479860449',
+    '🧠': '6257767895732848636',
+    '💼': '5458809519461136265',
+    '🎓': '5375163339154399459',
+    '👤': '5422721499138136676',
+    '📅': '5967782394080530708',
+    '⭐': '5436093373008066004',
+    '⭐️': '5436093373008066004',
+    '🆔': '5936017305585586269',
+    '🧩': '5213306719215577669',
+    '🔔': '5242628160297641831',
+    '🤝': '5357080225463149588',
+    '🟢': '5852777287451151788',
+    '⏸': '5359543311897998264',
+    '⏸️': '5359543311897998264',
+    '📨': '5406631276042002796',
+    '🏠': '5188561131995690450',
+    '📬': '5350421256627838238',
+    '🔥': '5420315771991497307',
+    '🎯': '5780530293945405228',
+    '📄': '5877301185639091664',
+    '📭': '5352896944496728039',
+    '🚀': '5458555944591981600',
+    '➕': '5406829076465861567',
+    '🤖': '5372981976804366741',
+    '⚪': '5348451945403137943',
+    '⚪️': '5348451945403137943',
+    '🟡': '5294234838058938175',
+    '🔴': '5291899179008798421',
+    '▫': '5978963495327108152',
+    '▫️': '5978963495327108152'
+};
+
 // ============================================
 // Helper Functions
 // ============================================
 function createInlineKeyboard(buttons: InlineButton[][]): object {
-    return { inline_keyboard: buttons };
+    return {
+        inline_keyboard: buttons.map((row) => row.map((button) => applyInlineButtonIcon(button)))
+    };
 }
 
 function createReplyKeyboard(buttons: ReplyButton[][], options: { resize?: boolean; one_time?: boolean } = {}): object {
     return {
-        keyboard: buttons,
+        keyboard: buttons.map((row) => row.map((button) => applyReplyButtonIcon(button))),
         resize_keyboard: options.resize ?? true,
         one_time_keyboard: options.one_time ?? false
+    };
+}
+
+function normalizeEmojiToken(token: string): string {
+    return token.replace(/\uFE0F/g, '');
+}
+
+function extractLeadingEmoji(text: string): string | null {
+    const source = String(text || '').trim();
+    if (!source) return null;
+    const match = source.match(/^(\p{Regional_Indicator}{2}|\p{Extended_Pictographic}(?:\uFE0F)?(?:\u200D\p{Extended_Pictographic}(?:\uFE0F)?)*)/u);
+    return match?.[1] || null;
+}
+
+function resolveEmojiId(token: string | null, map: Record<string, string>): string | undefined {
+    if (!token) return undefined;
+    return map[token] || map[normalizeEmojiToken(token)];
+}
+
+function stripLeadingEmojiFromButtonText(text: string): string {
+    const source = String(text || '');
+    const trimmedStart = source.trimStart();
+    if (!trimmedStart) return source;
+    const match = trimmedStart.match(/^(\p{Regional_Indicator}{2}|\p{Extended_Pictographic}(?:\uFE0F)?(?:\u200D\p{Extended_Pictographic}(?:\uFE0F)?)*)\s*(?:[|:：\-–—]\s*)?/u);
+    if (!match?.[0]) return source;
+    const stripped = trimmedStart.slice(match[0].length).trimStart();
+    return stripped.length > 0 ? stripped : source;
+}
+
+function applyInlineButtonIcon(button: InlineButton): InlineButton {
+    if (!button?.text || button.icon_custom_emoji_id) return button;
+    const id = resolveEmojiId(extractLeadingEmoji(button.text), INLINE_ICON_BY_EMOJI);
+    if (!id) return button;
+    return {
+        ...button,
+        text: stripLeadingEmojiFromButtonText(button.text),
+        icon_custom_emoji_id: id
+    };
+}
+
+function applyReplyButtonIcon(button: ReplyButton): ReplyButton {
+    if (!button?.text || button.icon_custom_emoji_id) return button;
+    const id = resolveEmojiId(extractLeadingEmoji(button.text), REPLY_ICON_BY_EMOJI);
+    if (!id) return button;
+    return {
+        ...button,
+        text: stripLeadingEmojiFromButtonText(button.text),
+        icon_custom_emoji_id: id
     };
 }
 
@@ -415,7 +540,9 @@ export function experienceKeyboard(lang: BotLang): object {
 // Education Level Keyboard
 // ============================================
 export function educationKeyboard(lang: BotLang): object {
-    const buttons: InlineButton[][] = EDUCATION_LEVELS.map(edu => [{
+    const buttons: InlineButton[][] = EDUCATION_LEVELS
+        .filter((edu) => edu.value !== 'any')
+        .map(edu => [{
         text: lang === 'uz' ? edu.label_uz : edu.label_ru,
         callback_data: `education:${edu.value}`
     }]);
@@ -842,10 +969,9 @@ export function seekerOffersKeyboard(
 }
 
 export function seekerOfferViewKeyboard(lang: BotLang, offerId: string, jobId?: string | null): object {
+    void offerId;
+    void jobId;
     const rows: InlineButton[][] = [];
-    if (jobId) {
-        rows.push([{ text: lang === 'uz' ? "💼 Vakansiyani ko'rish" : '💼 Открыть вакансию', callback_data: `offerjob:${jobId}` }]);
-    }
     rows.push([{ text: lang === 'uz' ? '⬅️ Takliflarga qaytish' : '⬅️ Назад к приглашениям', callback_data: 'offer:list' }]);
     rows.push([{ text: lang === 'uz' ? '🏠 Menyu' : '🏠 Меню', callback_data: 'menu:main' }]);
     return createInlineKeyboard(rows);

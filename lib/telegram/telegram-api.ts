@@ -1,7 +1,5 @@
-/**
- * Telegram Bot API Helper Library
- * Wrapper for Telegram Bot API calls
- */
+import { E, PREMIUM_EMOJI_BY_KEY } from './premium-emoji-config';
+
 
 const TELEGRAM_API_URL = 'https://api.telegram.org/bot';
 const DEFAULT_TIMEOUT_MS = 10000;
@@ -9,62 +7,162 @@ const MAX_RETRIES = 3;
 const BACKOFF_BASE_MS = 500;
 let DRY_RUN_MESSAGE_ID = 700000;
 
-// Premium custom emoji IDs (user-provided). Mapped only to business/neutral semantics.
-const PREMIUM_EMOJI_IDS = {
-    search: '3089780562001395745',
-    document: '4648605080554045438',
-    company: '6829398536396734420',
-    salary: '5271091265042120292',
-    location: '7489288727785635926',
-    contact: '3499844080710451248',
-    success: '1590429039703621659',
-    warning: '3396165696185434098',
-    error: '164517760200605720',
-    ai: '3089780562001395827',
-    interface: '623648548654677984'
-} as const;
+const blockedPremiumEmojiIds = new Set<string>();
 
 const PREMIUM_EMOJI_REPLACEMENTS: Array<{ chars: string[]; id: string }> = [
-    { chars: ['🔎', '🔍'], id: PREMIUM_EMOJI_IDS.search },
-    { chars: ['🧾', '📄', '📝', '📋', '🪪'], id: PREMIUM_EMOJI_IDS.document },
-    { chars: ['🏢', '🏭', '💼'], id: PREMIUM_EMOJI_IDS.company },
-    { chars: ['💰'], id: PREMIUM_EMOJI_IDS.salary },
-    { chars: ['📍', '📌'], id: PREMIUM_EMOJI_IDS.location },
-    { chars: ['📞', '📱', '☎️', '☎', '💬'], id: PREMIUM_EMOJI_IDS.contact },
-    { chars: ['✅'], id: PREMIUM_EMOJI_IDS.success },
-    { chars: ['⚠️', '⚠', 'ℹ️', 'ℹ', '❗️', '❗'], id: PREMIUM_EMOJI_IDS.warning },
-    { chars: ['❌', '🚫'], id: PREMIUM_EMOJI_IDS.error },
-    { chars: ['🤖'], id: PREMIUM_EMOJI_IDS.ai },
-    {
-        chars: [
-            '🏠', '⭐', '⚙️', '⚙', '📨', '📩', '📢', '🆘', '👤', '👥', '🎓', '🧠', '📊', '📆',
-            '📅', '⏰', '🕒', '🌐', '🗣️', '🛎️', '🔹', '🧭', '🚻', '🚪', '🔄', '▶️', '❓', '📭',
-            '📥', '✨', '🚀'
-        ],
-        id: PREMIUM_EMOJI_IDS.interface
-    }
+    { chars: ['\u{1F1FA}\u{1F1FF}'], id: '5438400294432028834' }, // ????
+    { chars: ['\u{1F1F7}\u{1F1FA}'], id: '5436252471481611724' }, // ????
+    { chars: ['\u{1F310}'], id: '5188381825701021648' }, // ??
+    { chars: ['\u{2705}'], id: '5389061359403039918' }, // ?
+    { chars: ['\u{1F4F1}'], id: '5407025283456835913' }, // ??
+    { chars: ['\u{1F4E8}', '\u{1F4E9}'], id: '5406631276042002796' }, // ??/??
+    { chars: ['\u{274C}'], id: '5852812849780362931' }, // ?
+    { chars: ['\u{23F3}'], id: '5287579571485422439' }, // ?
+    { chars: ['\u{1F510}'], id: '5350619413533958825' }, // ??
+    { chars: ['\u{26A0}\u{FE0F}', '\u{26A0}'], id: '5242713260779643386' }, // ??
+    { chars: ['\u{1F464}'], id: '5415742696973158126' }, // ??
+    { chars: ['\u{1F465}'], id: '5422518677897512402' }, // ??
+    { chars: ['\u{1F4CD}'], id: '5350301517234586704' }, // ??
+    { chars: ['\u{1F4BC}'], id: '5458809519461136265' }, // ??
+    { chars: ['\u{270F}\u{FE0F}', '\u{270F}'], id: '5879841310902324730' }, // ??
+    { chars: ['\u{2B50}'], id: '5274046919809704653' }, // ?
+    { chars: ['\u{2B50}\u{FE0F}'], id: '5436093373008066004' }, // ??
+    { chars: ['\u{1F393}'], id: '5375163339154399459' }, // ??
+    { chars: ['\u{1F9FE}', '\u{1F4CB}'], id: '5458458113826910668' }, // ??/??
+    { chars: ['\u{1F3E2}'], id: '5264733042710181045' }, // ??
+    { chars: ['\u{1F4C5}'], id: '5967782394080530708' }, // ??
+    { chars: ['\u{1F514}'], id: '5242628160297641831' }, // ??
+    { chars: ['\u{1F194}'], id: '5936017305585586269' }, // ??
+    { chars: ['\u{1F9E0}'], id: '6257767895732848636' }, // ??
+    { chars: ['\u{1F9E9}'], id: '5213306719215577669' }, // ??
+    { chars: ['\u{2B05}\u{FE0F}', '\u{2B05}'], id: '5258236805890710909' }, // ??
+    { chars: ['\u{27A1}\u{FE0F}', '\u{27A1}'], id: '5877468380125990242' }, // ??
+    { chars: ['\u{1F5D1}\u{FE0F}', '\u{1F5D1}'], id: '5841541824803509441' }, // ???
+    { chars: ['\u{23ED}\u{FE0F}', '\u{23ED}'], id: '5884123981706956210' }, // ??
+    { chars: ['\u{1F3E0}'], id: '5188561131995690450' }, // ??
+    { chars: ['\u{1F50E}', '\u{1F50D}'], id: '5188311512791393083' }, // ??/??
+    { chars: ['\u{1F4ED}'], id: '5352896944496728039' }, // ??
+    { chars: ['\u{1F4C4}'], id: '5877301185639091664' }, // ??
+    { chars: ['\u{1F525}'], id: '5420315771991497307' }, // ??
+    { chars: ['\u{1F3AF}'], id: '5780530293945405228' }, // ??
+    { chars: ['\u{1F4EC}'], id: '5350421256627838238' }, // ??
+    { chars: ['\u{2699}\u{FE0F}', '\u{2699}'], id: '5350396951407895212' }, // ??
+    { chars: ['\u{2795}'], id: '5406829076465861567' }, // ?
+    { chars: ['\u{1F916}'], id: '5372981976804366741' }, // ??
+    { chars: ['\u{1F680}'], id: '5458555944591981600' }, // ??
+    { chars: ['\u{2709}\u{FE0F}', '\u{2709}'], id: '5253742260054409879' }, // ??
+    { chars: ['\u{1F504}'], id: '5877410604225924969' }, // ??
+    { chars: ['\u{1F3D9}\u{FE0F}', '\u{1F3D9}'], id: '5406686715479860449' }, // ???
+    { chars: ['\u{1F91D}'], id: '5357080225463149588' }, // ??
+    { chars: ['\u{1F7E2}'], id: '5852777287451151788' }, // ??
+    { chars: ['\u{23F8}\u{FE0F}', '\u{23F8}'], id: '5359543311897998264' }, // ??
+    { chars: ['\u{26AA}\u{FE0F}', '\u{26AA}'], id: '5348451945403137943' }, // ?
+    { chars: ['\u{1F7E1}'], id: '5294234838058938175' }, // ??
+    { chars: ['\u{1F534}'], id: '5291899179008798421' }, // ??
+    { chars: ['\u{25AB}\u{FE0F}', '\u{25AB}'], id: '5978963495327108152' }, // ??
+    { chars: ['\u{1F198}'], id: '5895407084131848348' }, // ??
+    { chars: ['\u{1F4E2}'], id: '5330513091073427682' }, // ??
+    // Additional semantic coverage from 68-step E mapping
+    { chars: ['\u{1F44B}'], id: E.wave }, // 👋
+    { chars: ['\u{2139}\u{FE0F}', '\u{2139}'], id: E.info }, // ℹ️
+    { chars: ['\u{1F6AA}'], id: E.logout }, // 🚪
+    { chars: ['\u{1F513}'], id: E.unlock }, // 🔓
+    { chars: ['\u{1F511}'], id: E.key }, // 🔑
+    { chars: ['\u{1F195}'], id: E.new }, // 🆕
+    { chars: ['\u{1F6AB}'], id: E.ban }, // 🚫
+    { chars: ['\u{1F512}'], id: E.locked }, // 🔒
+    { chars: ['\u{1F5FA}\u{FE0F}', '\u{1F5FA}'], id: E.map }, // 🗺️
+    { chars: ['\u{1F4C2}'], id: E.folder }, // 📂
+    { chars: ['\u{1F614}'], id: E.sad }, // 😔
+    { chars: ['\u{2753}'], id: E.question }, // ❓
+    { chars: ['\u{1F4A1}'], id: E.idea }, // 💡
+    { chars: ['\u{1F382}'], id: E.cake }, // 🎂
+    { chars: ['\u{1F4CC}'], id: E.clip }, // 📌
+    { chars: ['\u{1F4B0}'], id: E.money }, // 💰
+    { chars: ['\u{1F4DD}'], id: E.note }, // 📝
+    { chars: ['\u{1F30D}'], id: E.lang }, // 🌍
+    { chars: ['\u{1F4C6}'], id: E.year }, // 📆
+    { chars: ['\u{1F3EB}'], id: E.school }, // 🏫
+    { chars: ['\u{1F4BE}'], id: E.save }, // 💾
+    { chars: ['\u{1F381}'], id: E.gift }, // 🎁
+    { chars: ['\u{1F6A8}'], id: E.alarm }, // 🚨
+    { chars: ['\u{1F4CA}'], id: E.chart }, // 📊
+    { chars: ['\u{1F4D8}'], id: E.book }, // 📘
+    { chars: ['\u{1F454}'], id: E.tie }, // 👔
+    { chars: ['\u{1F3ED}'], id: E.factory }, // 🏭
+    { chars: ['\u{23F0}'], id: E.clock }, // ⏰
+    { chars: ['\u{1F468}\u200D\u{1F4BC}'], id: E.hr }, // 👨‍💼
+    { chars: ['\u{1F4DE}', '\u{260E}\u{FE0F}', '\u{260E}'], id: E.call }, // 📞/☎️
+    { chars: ['\u{26D4}'], id: E.stop } // ⛔
 ];
-
 const PREMIUM_MODE_RAW = String(process.env.TELEGRAM_PREMIUM_MODE || 'auto').toLowerCase();
 const PREMIUM_MODE: 'auto' | 'on' | 'off' = PREMIUM_MODE_RAW === 'on' || PREMIUM_MODE_RAW === 'off'
     ? PREMIUM_MODE_RAW
     : 'auto';
 let premiumRuntimeDisabled = PREMIUM_MODE === 'off';
-let premiumDisableLogged = false;
 
 function escapeRegex(value: string): string {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function applyPremiumEmoji(text: string): string {
+function extractPremiumEmojiIds(text: string): string[] {
+    if (!text || typeof text !== 'string') return [];
+    const ids = new Set<string>();
+    const regex = /emoji-id="(\d+)"/g;
+    let match: RegExpExecArray | null = null;
+    while ((match = regex.exec(text)) !== null) {
+        if (match[1]) ids.add(match[1]);
+    }
+    return Array.from(ids);
+}
+
+function blockPremiumEmojiIdsFromText(text: string, context: string, preferredId?: string): void {
+    const ids = preferredId ? [preferredId] : extractPremiumEmojiIds(text);
+    if (!ids.length) return;
+    let added = 0;
+    for (const id of ids) {
+        if (!blockedPremiumEmojiIds.has(id)) {
+            blockedPremiumEmojiIds.add(id);
+            added += 1;
+        }
+    }
+    if (added > 0) {
+        console.warn(`[BOT] Blocked premium emoji id(s) after ${context}: ${ids.join(', ')}`);
+    }
+}
+
+function applyPremiumEmoji(text: string, premiumKey?: string): string {
     if (!text || typeof text !== 'string') return text;
     if (text.includes('emoji-id="')) return text;
 
+    let keyEmojiId: string | undefined;
+    let keyToken: string | undefined;
+    const keyPlaceholder = '__TG_PREMIUM_KEY_PLACEHOLDER__';
     let output = text;
+
+    if (premiumKey) {
+        keyEmojiId = PREMIUM_EMOJI_BY_KEY[premiumKey];
+        if (keyEmojiId && !blockedPremiumEmojiIds.has(keyEmojiId)) {
+            const match = output.match(/\p{Extended_Pictographic}(?:\uFE0F)?/u);
+            if (match?.[0]) {
+                keyToken = match[0];
+                const pattern = new RegExp(escapeRegex(keyToken), 'u');
+                output = output.replace(pattern, keyPlaceholder);
+            }
+        }
+    }
+
     for (const replacement of PREMIUM_EMOJI_REPLACEMENTS) {
-        const pattern = new RegExp(replacement.chars.map(escapeRegex).join('|'), 'g');
+        if (blockedPremiumEmojiIds.has(replacement.id)) continue;
+        const pattern = new RegExp(replacement.chars.map(escapeRegex).join('|'), 'gu');
         output = output.replace(pattern, (matched) => `<tg-emoji emoji-id="${replacement.id}">${matched}</tg-emoji>`);
     }
+
+    if (keyToken && keyEmojiId) {
+        const keyWrapped = `<tg-emoji emoji-id="${keyEmojiId}">${keyToken}</tg-emoji>`;
+        output = output.replace(keyPlaceholder, keyWrapped);
+    }
+
     return output;
 }
 
@@ -75,20 +173,133 @@ function isEntityTextError(error: unknown): boolean {
         || message.includes('document_invalid');
 }
 
-function shouldUsePremiumEmoji(options: { disablePremiumEmoji?: boolean; parseMode?: 'HTML' | 'Markdown' | 'MarkdownV2' }): boolean {
+function isButtonIconError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+    return message.includes('icon_custom_emoji_id')
+        || message.includes('inline keyboard button')
+        || message.includes('reply keyboard button')
+        || message.includes('keyboard button')
+        || message.includes('field "style"')
+        || message.includes("field 'style'");
+}
+
+const PREMIUM_ICON_FALLBACK_TEXT_BY_ID: Record<string, string> = {
+    '5438400294432028834': '🇺🇿',
+    '5436252471481611724': '🇷🇺',
+    '5350619413533958825': '🔐',
+    '5407025283456835913': '📱',
+    '5188311512791393083': '🔎',
+    '5458458113826910668': '🧾',
+    '5406631276042002796': '📨',
+    '5274046919809704653': '⭐',
+    '5350396951407895212': '⚙️',
+    '5895407084131848348': '🆘',
+    '5330513091073427682': '📢',
+    '5877597667231534929': '📋',
+    '5422518677897512402': '👥',
+    '5264733042710181045': '🏢',
+    '5415742696973158126': '📍',
+    '5258236805890710909': '⬅️',
+    '5877468380125990242': '➡️',
+    '5884123981706956210': '⏭️',
+    '5389061359403039918': '✅',
+    '5852812849780362931': '❌',
+    '5253742260054409879': '✉️',
+    '5188381825701021648': '🌐',
+    '5877410604225924969': '🔄',
+    '5879841310902324730': '✏️',
+    '5841541824803509441': '🗑️',
+    '5350301517234586704': '📍',
+    '5406686715479860449': '🏙️',
+    '6257767895732848636': '🧠',
+    '5458809519461136265': '💼',
+    '5375163339154399459': '🎓',
+    '5422721499138136676': '👤',
+    '5967782394080530708': '📅',
+    '5436093373008066004': '⭐️',
+    '5936017305585586269': '🆔',
+    '5213306719215577669': '🧩',
+    '5242628160297641831': '🔔',
+    '5357080225463149588': '🤝',
+    '5852777287451151788': '🟢',
+    '5359543311897998264': '⏸️',
+    '5188561131995690450': '🏠',
+    '5350421256627838238': '📬',
+    '5420315771991497307': '🔥',
+    '5780530293945405228': '🎯',
+    '5877301185639091664': '📄',
+    '5352896944496728039': '📭',
+    '5458555944591981600': '🚀',
+    '5406829076465861567': '➕',
+    '5372981976804366741': '🤖',
+    '5348451945403137943': '⚪️',
+    '5294234838058938175': '🟡',
+    '5291899179008798421': '🔴',
+    '5978963495327108152': '▫️'
+};
+
+function hasLeadingEmoji(value: string): boolean {
+    return /^(\p{Regional_Indicator}{2}|\p{Extended_Pictographic}(?:\uFE0F)?(?:\u200D\p{Extended_Pictographic}(?:\uFE0F)?)*)/u.test(
+        String(value || '').trim()
+    );
+}
+
+function addFallbackEmojiToText(text: string, iconId?: string): string {
+    const source = String(text || '');
+    if (!iconId) return source;
+    const emoji = PREMIUM_ICON_FALLBACK_TEXT_BY_ID[iconId];
+    if (!emoji) return source;
+    if (hasLeadingEmoji(source)) return source;
+    return source.trim() ? `${emoji} ${source}` : emoji;
+}
+
+function hasPremiumButtonFields(replyMarkup: any): boolean {
+    if (!replyMarkup || typeof replyMarkup !== 'object') return false;
+    const walkButtons = (rows: any[][] | undefined): boolean => {
+        if (!Array.isArray(rows)) return false;
+        for (const row of rows) {
+            if (!Array.isArray(row)) continue;
+            for (const button of row) {
+                if (!button || typeof button !== 'object') continue;
+                if ('icon_custom_emoji_id' in button || 'style' in button) return true;
+            }
+        }
+        return false;
+    };
+    return walkButtons(replyMarkup.inline_keyboard) || walkButtons(replyMarkup.keyboard);
+}
+
+function sanitizeReplyMarkup(replyMarkup: any): any {
+    if (!replyMarkup || typeof replyMarkup !== 'object') return replyMarkup;
+    const sanitizeButton = (button: any) => {
+        if (!button || typeof button !== 'object') return button;
+        const { icon_custom_emoji_id, style, ...rest } = button;
+        const maybeIconId = typeof icon_custom_emoji_id === 'string' ? icon_custom_emoji_id : undefined;
+        void style;
+        if (typeof rest.text === 'string') {
+            return { ...rest, text: addFallbackEmojiToText(rest.text, maybeIconId) };
+        }
+        return rest;
+    };
+    const result: any = { ...replyMarkup };
+    if (Array.isArray(replyMarkup.inline_keyboard)) {
+        result.inline_keyboard = replyMarkup.inline_keyboard.map((row: any[]) =>
+            Array.isArray(row) ? row.map((button) => sanitizeButton(button)) : row
+        );
+    }
+    if (Array.isArray(replyMarkup.keyboard)) {
+        result.keyboard = replyMarkup.keyboard.map((row: any[]) =>
+            Array.isArray(row) ? row.map((button) => sanitizeButton(button)) : row
+        );
+    }
+    return result;
+}
+
+function shouldUsePremiumEmoji(options: { disablePremiumEmoji?: boolean;
+        premiumKey?: string; parseMode?: 'HTML' | 'Markdown' | 'MarkdownV2' }): boolean {
     if (options.disablePremiumEmoji) return false;
     if (options.parseMode && options.parseMode !== 'HTML') return false;
     return !premiumRuntimeDisabled;
-}
-
-function tripPremiumCircuit(error: unknown): void {
-    if (PREMIUM_MODE === 'on') return;
-    if (premiumRuntimeDisabled) return;
-    premiumRuntimeDisabled = true;
-    if (premiumDisableLogged) return;
-    premiumDisableLogged = true;
-    const message = error instanceof Error ? error.message : String(error);
-    console.warn('[BOT] Premium emoji disabled for current process:', message);
 }
 
 function sleep(ms: number): Promise<void> {
@@ -220,13 +431,14 @@ export async function sendMessage(
         replyMarkup?: any;
         disableWebPagePreview?: boolean;
         disablePremiumEmoji?: boolean;
+        premiumKey?: string;
     } = {}
 ): Promise<any> {
     const safeText = typeof text === 'string' && text.trim().length > 0
         ? text
         : 'Xabar yuborilmadi.';
     const shouldDecorate = shouldUsePremiumEmoji(options);
-    const premiumText = shouldDecorate ? applyPremiumEmoji(safeText) : safeText;
+    const premiumText = shouldDecorate ? applyPremiumEmoji(safeText, options.premiumKey) : safeText;
     const hasHtmlMarkup = /<\/?(?:b|i|u|s|code|pre|blockquote|a|tg-emoji)\b/i.test(premiumText);
     const autoParse = options.parseMode ?? (hasHtmlMarkup ? 'HTML' : undefined);
     const payload = {
@@ -240,8 +452,20 @@ export async function sendMessage(
     try {
         return await callTelegramAPI('sendMessage', payload);
     } catch (error) {
-        if (!shouldDecorate || !isEntityTextError(error)) throw error;
-        tripPremiumCircuit(error);
+        let activeError: unknown = error;
+        if (isButtonIconError(activeError) && hasPremiumButtonFields(options.replyMarkup)) {
+            try {
+                return await callTelegramAPI('sendMessage', {
+                    ...payload,
+                    reply_markup: sanitizeReplyMarkup(options.replyMarkup)
+                });
+            } catch (retryError) {
+                activeError = retryError;
+            }
+        }
+        if (!shouldDecorate || !isEntityTextError(activeError)) throw activeError;
+        const preferredBlockedId = options.premiumKey ? PREMIUM_EMOJI_BY_KEY[options.premiumKey] : undefined;
+        blockPremiumEmojiIdsFromText(premiumText, 'sendMessage', preferredBlockedId);
         const fallbackHasHtml = /<\/?(?:b|i|u|s|code|pre|blockquote|a)\b/i.test(safeText);
         const fallbackParse = options.parseMode ?? (fallbackHasHtml ? 'HTML' : undefined);
         return callTelegramAPI('sendMessage', {
@@ -265,6 +489,7 @@ export async function sendSticker(
         parseMode?: 'HTML' | 'Markdown' | 'MarkdownV2';
         replyMarkup?: any;
         disableNotification?: boolean;
+        premiumKey?: string;
     } = {}
 ): Promise<any> {
     if (!sticker || typeof sticker !== 'string') {
@@ -272,7 +497,7 @@ export async function sendSticker(
     }
     const shouldDecorate = shouldUsePremiumEmoji({ parseMode: options.parseMode });
     const caption = (typeof options.caption === 'string' && shouldDecorate)
-        ? applyPremiumEmoji(options.caption)
+        ? applyPremiumEmoji(options.caption, options.premiumKey)
         : options.caption;
     const parseMode = options.parseMode
         ?? (caption && caption.includes('<tg-emoji') ? 'HTML' : undefined);
@@ -288,8 +513,20 @@ export async function sendSticker(
     try {
         return await callTelegramAPI('sendSticker', payload);
     } catch (error) {
-        if (!caption || !shouldDecorate || !isEntityTextError(error)) throw error;
-        tripPremiumCircuit(error);
+        let activeError: unknown = error;
+        if (isButtonIconError(activeError) && hasPremiumButtonFields(options.replyMarkup)) {
+            try {
+                return await callTelegramAPI('sendSticker', {
+                    ...payload,
+                    ...(options.replyMarkup ? { reply_markup: sanitizeReplyMarkup(options.replyMarkup) } : {})
+                });
+            } catch (retryError) {
+                activeError = retryError;
+            }
+        }
+        if (!caption || !shouldDecorate || !isEntityTextError(activeError)) throw activeError;
+        const preferredBlockedId = options.premiumKey ? PREMIUM_EMOJI_BY_KEY[options.premiumKey] : undefined;
+        blockPremiumEmojiIdsFromText(caption, 'sendSticker', preferredBlockedId);
         const plainCaption = options.caption;
         const plainHasHtml = typeof plainCaption === 'string' && /<\/?(?:b|i|u|s|code|pre|blockquote|a)\b/i.test(plainCaption);
         const plainParseMode = options.parseMode ?? (plainHasHtml ? 'HTML' : undefined);
@@ -335,13 +572,14 @@ export async function editMessage(
     options: {
         parseMode?: 'HTML' | 'Markdown' | 'MarkdownV2';
         replyMarkup?: any;
+        premiumKey?: string;
     } = {}
 ): Promise<any> {
     const safeText = typeof text === 'string' && text.trim().length > 0
         ? text
         : 'Xabar yangilanmadi.';
     const shouldDecorate = shouldUsePremiumEmoji({ parseMode: options.parseMode });
-    const premiumText = shouldDecorate ? applyPremiumEmoji(safeText) : safeText;
+    const premiumText = shouldDecorate ? applyPremiumEmoji(safeText, options.premiumKey) : safeText;
     const parseMode = options.parseMode ?? 'HTML';
     const inlineMarkup = options.replyMarkup && typeof options.replyMarkup === 'object' && 'inline_keyboard' in options.replyMarkup
         ? options.replyMarkup
@@ -357,8 +595,20 @@ export async function editMessage(
     try {
         return await callTelegramAPI('editMessageText', payload);
     } catch (error) {
-        if (!shouldDecorate || !isEntityTextError(error)) throw error;
-        tripPremiumCircuit(error);
+        let activeError: unknown = error;
+        if (isButtonIconError(activeError) && inlineMarkup && hasPremiumButtonFields(inlineMarkup)) {
+            try {
+                return await callTelegramAPI('editMessageText', {
+                    ...payload,
+                    reply_markup: sanitizeReplyMarkup(inlineMarkup)
+                });
+            } catch (retryError) {
+                activeError = retryError;
+            }
+        }
+        if (!shouldDecorate || !isEntityTextError(activeError)) throw activeError;
+        const preferredBlockedId = options.premiumKey ? PREMIUM_EMOJI_BY_KEY[options.premiumKey] : undefined;
+        blockPremiumEmojiIdsFromText(premiumText, 'editMessage', preferredBlockedId);
         return callTelegramAPI('editMessageText', {
             chat_id: chatId,
             message_id: messageId,
@@ -466,5 +716,6 @@ export async function isUserSubscribed(
     if (!member) return false;
     return ['member', 'administrator', 'creator'].includes(member.status);
 }
+
 
 

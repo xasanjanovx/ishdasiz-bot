@@ -227,7 +227,7 @@ export const botTexts = {
         ru: '<b>🗣️ | Выберите языки, которые знаете (необязательно)</b>\n<i>Отметьте через кнопки или впишите вручную.</i>\n<i>Затем нажмите “Продолжить”.</i>'
     },
     askSkills: {
-        uz: '<b>🧠 | Asosiy ko‘nikmalaringizni kiriting</b>\n<i>Ko‘nikmalarni vergul bilan yoki har birini alohida xabar qilib yuboring.</i>\n<i>Ko‘nikma yuborgach “Tayyor” tugmasini bosing.</i>',
+        uz: '<b>🧠 | Asosiy ko‘nikmalaringizni kiriting</b>\n<i>Masalan: Word, Excel, Telegram, Mijozlar bilan muloqot, Savdo, Jamoada ishlash.</i>\n<i>Ko‘nikmalarni vergul bilan yoki har birini alohida xabar qilib yuboring.</i>\n<i>Ko‘nikma yuborgach “Tayyor” tugmasini bosing.</i>',
         ru: '<b>🧠 | Введите основные навыки:</b>\n<i>Например: Excel, 1C, CRM, Продажи, Photoshop, Teamwork</i>\n<i>Можно отправлять по одному или через запятую.</i>\n\n<i>Кнопка “Готово” появится после первого навыка.</i>\n<i>Если навыков нет — нажмите “Пропустить”.</i>'
     },
     askWorkplace: {
@@ -407,8 +407,8 @@ export const botTexts = {
         ru: '<b>ℹ️ | Этому кандидату уже отправлено приглашение по данной вакансии.</b>'
     },
     offerReceivedSeeker: {
-        uz: (companyName: string, jobTitle: string) => `<b>📩 | Tabriklaymiz! Sizni ishga taklif qilishdi.</b>\n\n🏢 | Tashkilot: <b>${companyName}</b>\n💼 | Vakansiya: <b>${jobTitle}</b>\n\nKo‘rish va bog‘lanish uchun quyidagi tugmani bosing.`,
-        ru: (companyName: string, jobTitle: string) => `📩 | Поздравляем! Вас пригласили на работу.\n\n🏢 | Компания: <b>${companyName}</b>\n💼 | Вакансия: <b>${jobTitle}</b>\n\nДля просмотра и связи нажмите кнопку ниже.`
+        uz: (companyName: string, jobTitle: string) => `<b>📩 | Tabriklaymiz! Sizni ishga taklif qilishdi.</b>\n\n🏢 | Tashkilot: <b>${companyName}</b>\n💼 | Vakansiya: <b>${jobTitle}</b>\n\nVakansiya tafsilotlari quyida keltirilgan.`,
+        ru: (companyName: string, jobTitle: string) => `📩 | Поздравляем! Вас пригласили на работу.\n\n🏢 | Компания: <b>${companyName}</b>\n💼 | Вакансия: <b>${jobTitle}</b>\n\nДетали вакансии показаны ниже.`
     },
 
     // Profile / settings
@@ -585,8 +585,8 @@ export const botTexts = {
         ru: '<b>📌 | Требования и обязанности</b>\n<i>Например:</i>\n<i>- Выполнять конкретные задачи по должности</i>\n<i>- Опыт работы от 1 года</i>\n<i>- Ответственность и умение работать в команде</i>'
     },
     jobLocationPrompt: {
-        uz: "<b>📍 | Ish joyi lokatsiyasini yuboring</b>\n<i>Iloji bo‘lsa geolokatsiyani yuboring, bo‘lmasa “Orqaga”ni bosib davom eting.</i>",
-        ru: '<b>📍 | Отправьте геолокацию места работы</b>\n<i>Если не можете отправить, нажмите “Назад” и продолжайте.</i>'
+        uz: "<b>📍 | Ish joyi lokatsiyasini yuboring</b>\n<i>Bu bosqich majburiy: geolokatsiyani yuboring.</i>",
+        ru: '<b>📍 | Отправьте геолокацию места работы</b>\n<i>Это обязательный шаг: отправьте геолокацию.</i>'
     },
     fieldSearchLoading: {
         uz: '⏳ | Mos kasblar qidirilmoqda...',
