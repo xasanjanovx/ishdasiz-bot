@@ -31,8 +31,8 @@ export const botTexts = {
         ru: "<b>Здравствуйте | Добро пожаловать в ISHDASIZ!</b>\n\n<b>Здесь вы можете:</b>\n<blockquote><i>🎯 | Быстро найти работу или сотрудника\n🧾 | Управлять резюме и вакансиями в одном месте\n⚡ | Организовать подбор эффективнее\n🤖 | Использовать помощь ИИ.</i></blockquote>\n\n<i>Для продолжения нажмите <b>«Войти»</b>.</i>"
     },
     helpText: {
-        uz: "❓ <b>Yordam</b>\n\n<b>Bot imkoniyatlari:</b>\n<blockquote><i>🔎 | Vakansiyalarni rezyume bo‘yicha qidirish\n⭐ | Saqlab qo‘yish va keyin ko‘rish\n🧾 | Rezyumeni to‘ldirish va tahrirlash\n📢 | Vakansiya joylash va arizalarni boshqarish</i></blockquote>\n\n<b>Buyruqlar:</b>\n<blockquote><i>▶️ /start — boshlash\n🔄 /role — rolni almashtirish\n🚪 /logout — chiqish\n❓ /help — yordam\n🛡️ /admin — admin panel (faqat admin)</i></blockquote>\n\n<i>Admin: @ishdasiz_admin</i>",
-        ru: "❓ <b>Помощь</b>\n\n<b>Возможности бота:</b>\n<blockquote><i>🔎 | Поиск вакансий по резюме\n⭐ | Сохранение вакансий\n🧾 | Резюме: заполнение и редактирование\n📢 | Публикация вакансий и управление откликами</i></blockquote>\n\n<b>Команды:</b>\n<blockquote><i>▶️ /start — начать\n🔄 /role — сменить роль\n🚪 /logout — выйти\n❓ /help — помощь\n🛡️ /admin — админ-панель (только для админа)</i></blockquote>\n\n<i>Админ: @ishdasiz_admin</i>"
+        uz: "<b>❓ | Yordam</b>\n\n<i>Agar savol yoki muammo bo‘lsa, adminga yozing: @ishdasiz_admin</i>",
+        ru: "<b>❓ | Помощь</b>\n\n<i>Если есть вопрос или проблема, напишите админу: @ishdasiz_admin</i>"
     },
     logoutDone: {
         uz: '🚪 Siz akkauntdan chiqdingiz.',
@@ -227,7 +227,7 @@ export const botTexts = {
         ru: '<b>🗣️ | Выберите языки, которые знаете (необязательно)</b>\n<i>Отметьте через кнопки или впишите вручную.</i>\n<i>Затем нажмите “Продолжить”.</i>'
     },
     askSkills: {
-        uz: '<b>🧠 | Asosiy ko‘nikmalaringizni kiriting</b>\n<i>Masalan: Word, Excel, Telegram, Mijozlar bilan muloqot, Savdo, Jamoada ishlash.</i>\n<i>Ko‘nikmalarni vergul bilan yoki har birini alohida xabar qilib yuboring.</i>\n<i>Ko‘nikma yuborgach “Tayyor” tugmasini bosing.</i>',
+        uz: '<b>🧠 | Asosiy ko‘nikmalaringizni kiriting</b>\n<i>Masalan: Word, Excel, Mijozlar bilan muloqot.</i>\n<i>Ko‘nikmalarni o‘zingiz yozishingiz yoki AI tavsiyasi bilan davom etishingiz mumkin.</i>',
         ru: '<b>🧠 | Введите основные навыки:</b>\n<i>Например: Excel, 1C, CRM, Продажи, Photoshop, Teamwork</i>\n<i>Можно отправлять по одному или через запятую.</i>\n\n<i>Кнопка “Готово” появится после первого навыка.</i>\n<i>Если навыков нет — нажмите “Пропустить”.</i>'
     },
     askWorkplace: {

@@ -654,8 +654,19 @@ export function aboutSkipInlineKeyboard(lang: BotLang, backAction?: string): obj
     return createInlineKeyboard(rows);
 }
 
-export function skillsInlineKeyboard(lang: BotLang, hasSkills: boolean, backAction?: string): object {
+export function skillsInlineKeyboard(
+    lang: BotLang,
+    hasSkills: boolean,
+    backAction?: string,
+    hasSuggestions: boolean = false
+): object {
     const rows: InlineButton[][] = [];
+    if (hasSuggestions) {
+        rows.push([{
+            text: lang === 'uz' ? '✅ AI Tavsiyasi bilan davom etish' : '✅ Продолжить с AI-советом',
+            callback_data: 'skills:ai_apply'
+        }]);
+    }
     if (hasSkills) {
         rows.push([{ text: lang === 'uz' ? '➡️ Tayyor' : '➡️ Готово', callback_data: 'skills:done' }]);
     }
@@ -1366,7 +1377,7 @@ export function resumeSelectKeyboard(
 ): object {
     const rows: InlineButton[][] = resumes.map(r => {
         const title = r.title || (lang === 'uz' ? 'Rezyume' : 'Резюме');
-        return [{ text: title, callback_data: `resume_search:${r.id}` }];
+        return [{ text: `🟢 ${title}`, callback_data: `resume_search:${r.id}` }];
     });
     rows.push([{ text: lang === 'uz' ? "🧾 Yangi rezyume qo'shish" : '🧾 Добавить новое резюме', callback_data: 'resume_new' }]);
     rows.push([{ text: lang === 'uz' ? '🏠 Bosh menyu' : '🏠 Главное меню', callback_data: 'menu:main' }]);
@@ -1669,11 +1680,24 @@ export function resumeListKeyboard(
 ): object {
     const rows: InlineButton[][] = resumes.map(r => {
         const title = r.title || (lang === 'uz' ? 'Rezyume' : 'Резюме');
-        return [{ text: title, callback_data: `resume_view:${r.id}` }];
+        return [{ text: `🟢 ${title}`, callback_data: `resume_view:${r.id}` }];
     });
     rows.push([{ text: lang === 'uz' ? "🧾 Yangi rezyume qo'shish" : '🧾 Добавить новое резюме', callback_data: 'resume_new' }]);
     rows.push([{ text: lang === 'uz' ? '🏠 Bosh menyu' : '🏠 Главное меню', callback_data: 'menu:main' }]);
     return createInlineKeyboard(rows);
+}
+
+export function helpSupportKeyboard(lang: BotLang): object {
+    return createInlineKeyboard([
+        [{
+            text: lang === 'uz' ? '✉️ Adminga xabar' : '✉️ Написать админу',
+            url: 'https://t.me/ishdasiz_admin'
+        }],
+        [{
+            text: lang === 'uz' ? '🏠 Menyuga qaytish' : '🏠 Вернуться в меню',
+            callback_data: 'menu:main'
+        }]
+    ]);
 }
 
 export function resumeOptionsKeyboard(lang: BotLang): object {
