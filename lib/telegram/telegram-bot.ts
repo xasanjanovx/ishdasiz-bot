@@ -6527,7 +6527,6 @@ export class TelegramBot {
             return;
         }
         const isEmployer = session.data?.active_role === 'employer';
-        const activeRole = isEmployer ? 'employer' : 'seeker';
         const updatedData = {
             ...session.data,
             flow: null,
@@ -6552,8 +6551,11 @@ export class TelegramBot {
             state: isEmployer ? BotState.EMPLOYER_MAIN_MENU : BotState.MAIN_MENU,
             data: updatedData
         });
-        await this.sendPrompt(chatId, session, botTexts.mainMenu[lang], {
-            replyMarkup: isEmployer ? keyboards.employerMainMenuKeyboard(lang) : keyboards.mainMenuKeyboard(lang, activeRole)
+        await this.showMainMenu(chatId, {
+            ...session,
+            state: isEmployer ? BotState.EMPLOYER_MAIN_MENU : BotState.MAIN_MENU,
+            data: updatedData,
+            active_role: isEmployer ? 'employer' : 'job_seeker'
         });
     }
 
@@ -6598,9 +6600,13 @@ export class TelegramBot {
         }
 
         if (target === 'employer_menu') {
-            await this.setSession(session, { state: BotState.EMPLOYER_MAIN_MENU });
-            await this.sendPrompt(chatId, session, botTexts.employerMainMenu[lang], {
-                replyMarkup: keyboards.employerMainMenuKeyboard(lang)
+            const nextData = { ...session.data, active_role: 'employer' };
+            await this.setSession(session, { state: BotState.EMPLOYER_MAIN_MENU, data: nextData });
+            await this.showMainMenu(chatId, {
+                ...session,
+                state: BotState.EMPLOYER_MAIN_MENU,
+                data: nextData,
+                active_role: 'employer'
             });
             return;
         }
@@ -10015,24 +10021,28 @@ export class TelegramBot {
             if (isEmployer) {
                 return [
                     '<b>👋 | Здравствуйте, уважаемый работодатель!</b>',
-                    '<i>Здесь вы можете быстро размещать вакансии, получать отклики и находить подходящих сотрудников.</i>'
+                    '<i>Здесь вы можете быстро размещать вакансии, управлять откликами и находить подходящих сотрудников.</i>',
+                    '<i>Для старта нажмите <b><i>📢 Разместить вакансию</i></b>, для поиска кандидатов — <b><i>👥 Найти кандидатов</i></b>.</i>'
                 ].join('\n');
             }
             return [
                 '<b>👋 | Здравствуйте, уважаемый пользователь!</b>',
-                '<i>Здесь вы можете быстро и удобно находить подходящие вакансии.</i>'
+                '<i>Здесь вы можете быстро и удобно находить подходящие вакансии.</i>',
+                '<i>Чтобы начать поиск, нажмите <b><i>🔎 Найти работу</i></b>.</i>'
             ].join('\n');
         }
 
         if (isEmployer) {
             return [
                 '<b>👋 | Assalomu alaykum, hurmatli ish beruvchi!</b>',
-                "<i>Bu yerda siz tez va qulay tarzda vakansiya joylashingiz, arizalarni ko'rishingiz va mos ishchilarni topishingiz mumkin.</i>"
+                "<i>Bu yerda siz tez va qulay tarzda vakansiya joylashingiz, arizalarni boshqarishingiz va mos ishchilarni topishingiz mumkin.</i>",
+                "<i>Boshlash uchun <b><i>📢 Vakansiya joylash</i></b>, nomzod qidirish uchun <b><i>👥 Ishchi topish</i></b> tugmasini bosing.</i>"
             ].join('\n');
         }
         return [
             '<b>👋 | Assalomu alaykum, hurmatli foydalanuvchi!</b>',
-            "<i>Bu yerda siz tez va qulay tarzda o'zingizga mos bo'sh ish o'rinlarini topishingiz mumkin.</i>"
+            "<i>Bu yerda siz tez va qulay tarzda o'zingizga mos bo'sh ish o'rinlarini topishingiz mumkin.</i>",
+            "<i>Ish o'rinlarini qidirish uchun <b><i>🔎 Ish topish</i></b> tugmasini bosing.</i>"
         ].join('\n');
     }
 
@@ -10752,12 +10762,12 @@ export class TelegramBot {
         const introText = this.buildMainMenuIntroText(lang, isEmployer);
         await this.clearLastJobArtifacts(chatId, session);
         if (isEmployer) {
-            await this.sendPrompt(chatId, session, `${introText}\n\n${botTexts.employerMainMenu[lang]}\n\n${statsText}`, {
+            await this.sendPrompt(chatId, session, `${introText}\n\n${statsText}`, {
                 replyMarkup: keyboards.employerMainMenuKeyboard(lang)
             });
             return;
         }
-        await this.sendPrompt(chatId, session, `${introText}\n\n${botTexts.mainMenu[lang]}\n\n${statsText}`, {
+        await this.sendPrompt(chatId, session, `${introText}\n\n${statsText}`, {
             replyMarkup: keyboards.mainMenuKeyboard(lang, 'seeker')
         });
     }
