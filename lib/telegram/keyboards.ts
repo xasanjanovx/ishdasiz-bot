@@ -201,8 +201,16 @@ function normalizeEmojiToken(token: string): string {
     return token.replace(/\uFE0F/g, '');
 }
 
+const BUTTON_ICON_MODE = String(process.env.TELEGRAM_BUTTON_ICON_MODE || 'icon_only').toLowerCase();
+const STRIP_TEXT_EMOJI_WITH_ICON = BUTTON_ICON_MODE === 'icon_only';
+const LEADING_DECORATORS_RE = /^[\s\u00A0\u200B\u200C\u200D•·▪▫◦‣∙●○]+/u;
+
+function trimLeadingDecorators(text: string): string {
+    return text.replace(LEADING_DECORATORS_RE, '');
+}
+
 function extractLeadingEmoji(text: string): string | null {
-    const source = String(text || '').trim();
+    const source = trimLeadingDecorators(String(text || '').trim());
     if (!source) return null;
     const match = source.match(/^(\p{Regional_Indicator}{2}|\p{Extended_Pictographic}(?:\uFE0F)?(?:\u200D\p{Extended_Pictographic}(?:\uFE0F)?)*)/u);
     return match?.[1] || null;
@@ -215,12 +223,17 @@ function resolveEmojiId(token: string | null, map: Record<string, string>): stri
 
 function stripLeadingEmojiFromButtonText(text: string): string {
     const source = String(text || '');
-    const trimmedStart = source.trimStart();
+    const trimmedStart = trimLeadingDecorators(source.trimStart());
     if (!trimmedStart) return source;
-    const match = trimmedStart.match(/^(\p{Regional_Indicator}{2}|\p{Extended_Pictographic}(?:\uFE0F)?(?:\u200D\p{Extended_Pictographic}(?:\uFE0F)?)*)\s*(?:[|:：\-–—]\s*)?/u);
+    const match = trimmedStart.match(/^(?:(\p{Regional_Indicator}{2}|\p{Extended_Pictographic}(?:\uFE0F)?(?:\u200D\p{Extended_Pictographic}(?:\uFE0F)?)*)\s*)+(?:[|:：\-–—]\s*)?/u);
     if (!match?.[0]) return source;
     const stripped = trimmedStart.slice(match[0].length).trimStart();
     return stripped.length > 0 ? stripped : source;
+}
+
+function getButtonTextWithIcon(text: string): string {
+    if (!STRIP_TEXT_EMOJI_WITH_ICON) return text;
+    return stripLeadingEmojiFromButtonText(text);
 }
 
 function applyInlineButtonIcon(button: InlineButton): InlineButton {
@@ -229,7 +242,7 @@ function applyInlineButtonIcon(button: InlineButton): InlineButton {
     if (!id) return button;
     return {
         ...button,
-        text: stripLeadingEmojiFromButtonText(button.text),
+        text: getButtonTextWithIcon(button.text),
         icon_custom_emoji_id: id
     };
 }
@@ -240,7 +253,7 @@ function applyReplyButtonIcon(button: ReplyButton): ReplyButton {
     if (!id) return button;
     return {
         ...button,
-        text: stripLeadingEmojiFromButtonText(button.text),
+        text: getButtonTextWithIcon(button.text),
         icon_custom_emoji_id: id
     };
 }
@@ -676,6 +689,29 @@ export function mainMenuKeyboard(lang: BotLang, role?: 'seeker' | 'employer'): o
     ]);
 }
 
+export function adminMenuKeyboard(lang: BotLang): object {
+    return createReplyKeyboard([
+        [
+            { text: lang === 'uz' ? '📊 Statistika' : '📊 Статистика' },
+            { text: lang === 'uz' ? '🚨 Qoidabuzarlar' : '🚨 Нарушители' }
+        ],
+        [
+            { text: lang === 'uz' ? '📣 Hammaga xabar yuborish' : '📣 Рассылка всем' }
+        ],
+        [
+            { text: lang === 'uz' ? '🏠 Asosiy menyu' : '🏠 Главное меню' }
+        ]
+    ]);
+}
+
+export function adminBroadcastConfirmKeyboard(lang: BotLang): object {
+    return createInlineKeyboard([
+        [{ text: lang === 'uz' ? '✅ Yuborish' : '✅ Отправить', callback_data: 'admin:bc_send' }],
+        [{ text: lang === 'uz' ? '⬅️ Orqaga' : '⬅️ Назад', callback_data: 'admin:menu' }],
+        [{ text: lang === 'uz' ? '❌ Bekor qilish' : '❌ Отмена', callback_data: 'admin:cancel' }]
+    ]);
+}
+
 // ============================================
 // Job Navigation Keyboard
 // ============================================
@@ -833,6 +869,13 @@ export function settingsKeyboard(lang: BotLang): object {
         [{ text: lang === 'uz' ? "🌐 Tilni o'zgartirish" : '🌐 Сменить язык', callback_data: 'settings:language' }],
         [{ text: lang === 'uz' ? '🔄 Rolni almashtirish' : '🔄 Сменить роль', callback_data: 'settings:switch_role' }],
         [{ text: lang === 'uz' ? '⬅️ Orqaga' : '⬅️ Назад', callback_data: 'menu:main' }]
+    ]);
+}
+
+export function roleSwitchConfirmKeyboard(lang: BotLang): object {
+    return createInlineKeyboard([
+        [{ text: lang === 'uz' ? '✅ Ha, rolni almashtirish' : '✅ Да, сменить роль', callback_data: 'roleswitch:yes' }],
+        [{ text: lang === 'uz' ? '❌ Yo‘q, bekor qilish' : '❌ Нет, отменить', callback_data: 'roleswitch:no' }]
     ]);
 }
 
@@ -1400,6 +1443,14 @@ export function resumeCompleteKeyboard(lang: BotLang): object {
     ]);
 }
 
+export function resumeChannelPostConfirmKeyboard(lang: BotLang): object {
+    return createInlineKeyboard([
+        [{ text: lang === 'uz' ? "✅ Ha, kanalda ham e'lon qilish" : '✅ Да, опубликовать и в канале', callback_data: 'resumepost:yes' }],
+        [{ text: lang === 'uz' ? "❌ Yo'q, faqat platformada" : '❌ Нет, только на платформе', callback_data: 'resumepost:no' }],
+        [{ text: lang === 'uz' ? '⬅️ Orqaga' : '⬅️ Назад', callback_data: 'back:skills' }]
+    ]);
+}
+
 // ============================================
 // Auto match suggestions (90%+)
 // ============================================
@@ -1506,7 +1557,7 @@ export function jobPublishedKeyboard(lang: BotLang, jobId?: string): object {
     return createInlineKeyboard(rows);
 }
 
-export function subscriptionRequiredKeyboard(lang: BotLang, channelUsername: string = 'ishdasiz'): object {
+export function subscriptionRequiredKeyboard(lang: BotLang, channelUsername: string = 'ishdasizbot'): object {
     const handle = channelUsername.startsWith('@') ? channelUsername.slice(1) : channelUsername;
     const channelLabel = `@${handle}`;
     return createInlineKeyboard([

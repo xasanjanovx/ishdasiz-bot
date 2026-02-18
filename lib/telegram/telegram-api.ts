@@ -100,6 +100,7 @@ const PREMIUM_MODE: 'auto' | 'on' | 'off' = PREMIUM_MODE_RAW === 'on' || PREMIUM
     ? PREMIUM_MODE_RAW
     : 'auto';
 let premiumRuntimeDisabled = PREMIUM_MODE === 'off';
+const BUTTON_TEXT_FALLBACK_MODE = String(process.env.TELEGRAM_BUTTON_TEXT_FALLBACK || 'off').toLowerCase() === 'on';
 
 function escapeRegex(value: string): string {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -277,7 +278,12 @@ function sanitizeReplyMarkup(replyMarkup: any): any {
         const maybeIconId = typeof icon_custom_emoji_id === 'string' ? icon_custom_emoji_id : undefined;
         void style;
         if (typeof rest.text === 'string') {
-            return { ...rest, text: addFallbackEmojiToText(rest.text, maybeIconId) };
+            return {
+                ...rest,
+                text: BUTTON_TEXT_FALLBACK_MODE
+                    ? addFallbackEmojiToText(rest.text, maybeIconId)
+                    : rest.text
+            };
         }
         return rest;
     };

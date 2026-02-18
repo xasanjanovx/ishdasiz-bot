@@ -31,8 +31,8 @@ export const botTexts = {
         ru: "<b>Здравствуйте | Добро пожаловать в ISHDASIZ!</b>\n\n<b>Здесь вы можете:</b>\n<blockquote><i>🎯 | Быстро найти работу или сотрудника\n🧾 | Управлять резюме и вакансиями в одном месте\n⚡ | Организовать подбор эффективнее\n🤖 | Использовать помощь ИИ.</i></blockquote>\n\n<i>Для продолжения нажмите <b>«Войти»</b>.</i>"
     },
     helpText: {
-        uz: "❓ <b>Yordam</b>\n\n<b>Bot imkoniyatlari:</b>\n<blockquote><i>🔎 | Vakansiyalarni rezyume bo‘yicha qidirish\n⭐ | Saqlab qo‘yish va keyin ko‘rish\n🧾 | Rezyumeni to‘ldirish va tahrirlash\n📢 | Vakansiya joylash va arizalarni boshqarish</i></blockquote>\n\n<b>Buyruqlar:</b>\n<blockquote><i>▶️ /start — boshlash\n🔄 /role — rolni almashtirish\n🚪 /logout — chiqish\n❓ /help — yordam</i></blockquote>\n\n<i>Admin: @ishdasiz_admin</i>",
-        ru: "❓ <b>Помощь</b>\n\n<b>Возможности бота:</b>\n<blockquote><i>🔎 | Поиск вакансий по резюме\n⭐ | Сохранение вакансий\n🧾 | Резюме: заполнение и редактирование\n📢 | Публикация вакансий и управление откликами</i></blockquote>\n\n<b>Команды:</b>\n<blockquote><i>▶️ /start — начать\n🔄 /role — сменить роль\n🚪 /logout — выйти\n❓ /help — помощь</i></blockquote>\n\n<i>Админ: @ishdasiz_admin</i>"
+        uz: "❓ <b>Yordam</b>\n\n<b>Bot imkoniyatlari:</b>\n<blockquote><i>🔎 | Vakansiyalarni rezyume bo‘yicha qidirish\n⭐ | Saqlab qo‘yish va keyin ko‘rish\n🧾 | Rezyumeni to‘ldirish va tahrirlash\n📢 | Vakansiya joylash va arizalarni boshqarish</i></blockquote>\n\n<b>Buyruqlar:</b>\n<blockquote><i>▶️ /start — boshlash\n🔄 /role — rolni almashtirish\n🚪 /logout — chiqish\n❓ /help — yordam\n🛡️ /admin — admin panel (faqat admin)</i></blockquote>\n\n<i>Admin: @ishdasiz_admin</i>",
+        ru: "❓ <b>Помощь</b>\n\n<b>Возможности бота:</b>\n<blockquote><i>🔎 | Поиск вакансий по резюме\n⭐ | Сохранение вакансий\n🧾 | Резюме: заполнение и редактирование\n📢 | Публикация вакансий и управление откликами</i></blockquote>\n\n<b>Команды:</b>\n<blockquote><i>▶️ /start — начать\n🔄 /role — сменить роль\n🚪 /logout — выйти\n❓ /help — помощь\n🛡️ /admin — админ-панель (только для админа)</i></blockquote>\n\n<i>Админ: @ishdasiz_admin</i>"
     },
     logoutDone: {
         uz: '🚪 Siz akkauntdan chiqdingiz.',
@@ -454,6 +454,40 @@ export const botTexts = {
         uz: "🏢 | <b>Ish beruvchi menyusi</b>\n<i>Vakansiya, ariza va ishchi qidiruvi bo‘yicha bo‘limni tanlang.</i>",
         ru: "🏢 | <b>Панель работодателя</b>\n<i>Выберите нужный раздел по вакансиям и кандидатам.</i>"
     },
+    adminMenuTitle: {
+        uz: '🛡️ | <b>Admin paneli</b>\n<i>Kerakli bo‘limni tanlang.</i>',
+        ru: '🛡️ | <b>Админ-панель</b>\n<i>Выберите нужный раздел.</i>'
+    },
+    adminAccessDenied: {
+        uz: "⛔ Sizda admin huquqi yo'q.",
+        ru: '⛔ У вас нет прав администратора.'
+    },
+    adminStatsTitle: {
+        uz: '📊 | <b>Bot statistikasi</b>',
+        ru: '📊 | <b>Статистика бота</b>'
+    },
+    adminNoOffenders: {
+        uz: '✅ Hozircha qoidabuzarlik qayd etilmagan.',
+        ru: '✅ Нарушений пока не зафиксировано.'
+    },
+    adminBroadcastPrompt: {
+        uz: "<b>📣 | Hammaga yuboriladigan xabarni yuboring</b>\n<i>Matn, rasm, video yoki fayl yuborishingiz mumkin. Xabar aynan o‘zi bilan jo‘natiladi.</i>",
+        ru: '<b>📣 | Отправьте сообщение для массовой рассылки</b>\n<i>Можно отправить текст, фото, видео или файл. Сообщение будет отправлено в исходном виде.</i>'
+    },
+    adminBroadcastConfirm: {
+        uz: '<b>📣 | Quyidagi xabarni yuborasizmi?</b>',
+        ru: '<b>📣 | Отправить следующее сообщение?</b>'
+    },
+    adminBroadcastStarted: {
+        uz: '⏳ | Xabar yuborish boshlandi...',
+        ru: '⏳ | Рассылка запущена...'
+    },
+    adminBroadcastDone: {
+        uz: (success: number, failed: number, blocked: number) =>
+            `<b>✅ | Xabar yuborish yakunlandi</b>\n\nYuborildi: <b>${success}</b>\nXatolik: <b>${failed}</b>\nBloklaganlar: <b>${blocked}</b>`,
+        ru: (success: number, failed: number, blocked: number) =>
+            `<b>✅ | Рассылка завершена</b>\n\nОтправлено: <b>${success}</b>\nОшибок: <b>${failed}</b>\nЗаблокировали бота: <b>${blocked}</b>`
+    },
     employerProfileIntro: {
         uz: '<b>🏢 | Ish beruvchi profili</b>',
         ru: '<b>🏢 | Профиль работодателя</b>'
@@ -623,8 +657,8 @@ export const botTexts = {
 
     // Subscriptions
     subscriptionRequired: {
-        uz: '<b>🔔 Davom etish uchun kanalga obuna bo‘ling.</b>\n<i>@ishdasiz</i>',
-        ru: '<b>🔔 Для продолжения подпишитесь на канал.</b>\n<i>@ishdasiz</i>'
+        uz: '<b>🔔 Davom etish uchun kanalga obuna bo‘ling.</b>\n<i>@ishdasizbot</i>',
+        ru: '<b>🔔 Для продолжения подпишитесь на канал.</b>\n<i>@ishdasizbot</i>'
     },
     subscriptionSettings: {
         uz: '<b>🔔 | Obuna sozlamalari</b>',
