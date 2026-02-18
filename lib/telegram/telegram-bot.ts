@@ -334,6 +334,10 @@ export class TelegramBot {
     private fieldsSearchCache: Map<string, { data: OsonishField[]; loadedAt: number }> = new Map();
     private professionCategoryCache: { map: Record<string, string>; loadedAt: number } = { map: {}, loadedAt: 0 };
     private jobsProfessionCache: { data: OsonishField[]; loadedAt: number } = { data: [], loadedAt: 0 };
+    private mainMenuStatsCache: { value: { jobs: number | null; resumes: number | null; usersX2: number | null } | null; loadedAt: number } = {
+        value: null,
+        loadedAt: 0
+    };
     private readonly referenceTtlMs = 10 * 60 * 1000;
 
     constructor() {
@@ -7205,7 +7209,7 @@ export class TelegramBot {
             data: listData
         });
 
-        await this.sendPrompt(chatId, session, botTexts.resumeMenu[lang], {
+        await this.sendPrompt(chatId, session, this.buildResumeHubText(lang, resumes.length), {
             replyMarkup: keyboards.resumeListKeyboard(lang, resumes)
         });
     }
@@ -8018,7 +8022,7 @@ export class TelegramBot {
             return;
         }
 
-        await this.sendPrompt(chatId, session, botTexts.resumeMenu[lang], {
+        await this.sendPrompt(chatId, session, this.buildResumeSearchSelectionText(lang, resumes.length), {
             replyMarkup: keyboards.resumeSelectKeyboard(lang, resumes)
         });
     }
@@ -9952,6 +9956,126 @@ export class TelegramBot {
         return null;
     }
 
+    private async safePublicActiveResumesCount(): Promise<number | null> {
+        const variants: Array<(query: any) => any> = [
+            (query) => query.eq('is_public', true).eq('status', 'active'),
+            (query) => query.eq('is_public', true),
+            (query) => query.eq('status', 'active')
+        ];
+        for (const scope of variants) {
+            const count = await this.safeTableCount('resumes', scope);
+            if (count !== null) return count;
+        }
+        return null;
+    }
+
+    private async getMainMenuStats(forceRefresh: boolean = false): Promise<{ jobs: number | null; resumes: number | null; usersX2: number | null }> {
+        const ttlMs = 45 * 1000;
+        const cacheFresh = !forceRefresh
+            && this.mainMenuStatsCache.value
+            && (Date.now() - this.mainMenuStatsCache.loadedAt) < ttlMs;
+        if (cacheFresh && this.mainMenuStatsCache.value) {
+            return this.mainMenuStatsCache.value;
+        }
+
+        const [jobsActive, resumesPublic, usersTotal] = await Promise.all([
+            this.safeActiveJobsCount(),
+            this.safePublicActiveResumesCount(),
+            this.safeTableCount('users')
+        ]);
+
+        const stats = {
+            jobs: jobsActive,
+            resumes: resumesPublic,
+            usersX2: typeof usersTotal === 'number' ? usersTotal * 2 : null
+        };
+        this.mainMenuStatsCache = { value: stats, loadedAt: Date.now() };
+        return stats;
+    }
+
+    private buildMainMenuStatsText(
+        lang: BotLang,
+        stats: { jobs: number | null; resumes: number | null; usersX2: number | null }
+    ): string {
+        if (lang === 'ru') {
+            return [
+                '<b>📊 | Сейчас на платформе</b>',
+                `<blockquote>📢 Вакансии: ${this.formatCountValue(stats.jobs)}\n🧾 Резюме: ${this.formatCountValue(stats.resumes)}\n👥 Пользователи: ${this.formatCountValue(stats.usersX2)}</blockquote>`
+            ].join('\n');
+        }
+
+        return [
+            '<b>📊 | Platformada hozir</b>',
+            `<blockquote>📢 Vakansiyalar: ${this.formatCountValue(stats.jobs)}\n🧾 Rezyumelar: ${this.formatCountValue(stats.resumes)}\n👥 Foydalanuvchilar: ${this.formatCountValue(stats.usersX2)}</blockquote>`
+        ].join('\n');
+    }
+
+    private buildMainMenuIntroText(lang: BotLang, isEmployer: boolean): string {
+        if (lang === 'ru') {
+            if (isEmployer) {
+                return [
+                    '<b>👋 | Здравствуйте, уважаемый работодатель!</b>',
+                    '<i>Здесь вы можете быстро размещать вакансии, получать отклики и находить подходящих сотрудников.</i>'
+                ].join('\n');
+            }
+            return [
+                '<b>👋 | Здравствуйте, уважаемый пользователь!</b>',
+                '<i>Здесь вы можете быстро и удобно находить подходящие вакансии.</i>'
+            ].join('\n');
+        }
+
+        if (isEmployer) {
+            return [
+                '<b>👋 | Assalomu alaykum, hurmatli ish beruvchi!</b>',
+                "<i>Bu yerda siz tez va qulay tarzda vakansiya joylashingiz, arizalarni ko'rishingiz va mos ishchilarni topishingiz mumkin.</i>"
+            ].join('\n');
+        }
+        return [
+            '<b>👋 | Assalomu alaykum, hurmatli foydalanuvchi!</b>',
+            "<i>Bu yerda siz tez va qulay tarzda o'zingizga mos bo'sh ish o'rinlarini topishingiz mumkin.</i>"
+        ].join('\n');
+    }
+
+    private buildResumeHubText(lang: BotLang, totalResumes: number): string {
+        if (lang === 'ru') {
+            return [
+                '<b>🧾 | Резюме</b>',
+                '',
+                `<i>У вас резюме: ${totalResumes} шт.</i>`,
+                '<i>Здесь можно открыть, редактировать и удалять резюме.</i>',
+                '<i>Также можно добавить новое резюме.</i>'
+            ].join('\n');
+        }
+
+        return [
+            '<b>🧾 | Rezyume</b>',
+            '',
+            `<i>Sizda rezyume soni: ${totalResumes} ta.</i>`,
+            '<i>Bu yerda rezyumeni ko‘rish, tahrirlash va o‘chirish mumkin.</i>',
+            "<i>Yangi rezyume ham qo'shishingiz mumkin.</i>"
+        ].join('\n');
+    }
+
+    private buildResumeSearchSelectionText(lang: BotLang, totalResumes: number): string {
+        if (lang === 'ru') {
+            return [
+                '<b>🔎 | Поиск работы по резюме</b>',
+                '',
+                `<i>Выберите резюме для поиска подходящих вакансий.</i>`,
+                `<i>Доступно резюме: ${totalResumes} шт.</i>`,
+                '<i>Можно выбрать существующее или добавить новое.</i>'
+            ].join('\n');
+        }
+
+        return [
+            "<b>🔎 | Rezyume bo'yicha ish qidirish</b>",
+            '',
+            '<i>Mos ishlarni topish uchun rezyumeni tanlang.</i>',
+            `<i>Sizda mavjud rezyume: ${totalResumes} ta.</i>`,
+            "<i>Mavjudini tanlang yoki yangi rezyume qo'shing.</i>"
+        ].join('\n');
+    }
+
     private async fetchTelegramSessionsForAdmin(maxRows: number = 50000): Promise<Array<{
         telegram_user_id: number;
         user_id?: string | null;
@@ -10623,12 +10747,19 @@ export class TelegramBot {
         await this.setSession(session, { state: BotState.MAIN_MENU, data: updatedData });
         const lang = session.lang;
         const isEmployer = session.data?.active_role === 'employer';
+        const stats = await this.getMainMenuStats();
+        const statsText = this.buildMainMenuStatsText(lang, stats);
+        const introText = this.buildMainMenuIntroText(lang, isEmployer);
         await this.clearLastJobArtifacts(chatId, session);
         if (isEmployer) {
-            await this.sendPrompt(chatId, session, botTexts.employerMainMenu[lang], { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
+            await this.sendPrompt(chatId, session, `${introText}\n\n${botTexts.employerMainMenu[lang]}\n\n${statsText}`, {
+                replyMarkup: keyboards.employerMainMenuKeyboard(lang)
+            });
             return;
         }
-        await this.sendPrompt(chatId, session, botTexts.mainMenu[lang], { replyMarkup: keyboards.mainMenuKeyboard(lang, 'seeker') });
+        await this.sendPrompt(chatId, session, `${introText}\n\n${botTexts.mainMenu[lang]}\n\n${statsText}`, {
+            replyMarkup: keyboards.mainMenuKeyboard(lang, 'seeker')
+        });
     }
 
     private async handleAction(chatId: number, action: string, session: TelegramSession): Promise<void> {

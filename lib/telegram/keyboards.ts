@@ -1368,6 +1368,7 @@ export function resumeSelectKeyboard(
         const title = r.title || (lang === 'uz' ? 'Rezyume' : 'Резюме');
         return [{ text: title, callback_data: `resume_search:${r.id}` }];
     });
+    rows.push([{ text: lang === 'uz' ? "🧾 Yangi rezyume qo'shish" : '🧾 Добавить новое резюме', callback_data: 'resume_new' }]);
     rows.push([{ text: lang === 'uz' ? '🏠 Bosh menyu' : '🏠 Главное меню', callback_data: 'menu:main' }]);
     return createInlineKeyboard(rows);
 }
