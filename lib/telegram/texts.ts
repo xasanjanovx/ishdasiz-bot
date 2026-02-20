@@ -7,6 +7,7 @@ import {
     formatLanguages,
     getEducationLabel,
     getExperienceLabel,
+    getMappedValue,
     getGenderLabel,
     getWorkingDaysLabel,
     getWorkModeLabel
@@ -808,6 +809,28 @@ export function formatFullJobCard(job: any, lang: BotLang): string {
         else if (ageMin) ageLabel = `${ageMin}+ ${lang === 'uz' ? 'yosh' : 'лет'}`;
         else if (ageMax) ageLabel = lang === 'uz' ? `${ageMax} yoshgacha` : `до ${ageMax} лет`;
     }
+    const rawTestPeriodId = job?.test_period_id ?? raw?.test_period_id ?? raw?.test_periodId ?? null;
+    const rawTrialText = (
+        job?.trial_period
+        ?? job?.probation_period
+        ?? raw?.test_period
+        ?? raw?.probation_period
+        ?? raw?.sinov_muddati
+        ?? null
+    );
+    let trialLabel: string | null = null;
+    if (rawTestPeriodId !== null && rawTestPeriodId !== undefined && String(rawTestPeriodId).trim().length > 0) {
+        const mapped = getMappedValue('test_period', Number(rawTestPeriodId), lang);
+        if (mapped !== null && mapped !== undefined) {
+            trialLabel = String(mapped).trim();
+        }
+    }
+    if (!trialLabel && rawTrialText !== null && rawTrialText !== undefined) {
+        const rawTrial = String(rawTrialText).trim();
+        if (rawTrial.length > 0) {
+            trialLabel = rawTrial;
+        }
+    }
 
     let languagesSource: any = job.languages ?? raw?.languages ?? raw?.language_ids ?? raw?.language;
     if (typeof languagesSource === 'string') {
@@ -878,6 +901,9 @@ export function formatFullJobCard(job: any, lang: BotLang): string {
 
     const edu = normalize(educationLabel || null);
     if (edu) lines.push(`🎓 | ${lang === 'uz' ? "Ma'lumot" : 'Образование'}: ${edu}`);
+
+    const trial = normalize(trialLabel || null);
+    if (trial) lines.push(`⏳ | ${lang === 'uz' ? 'Sinov muddati' : 'Испытательный срок'}: ${trial}`);
 
     const gender = normalize(genderLabel || null);
     const genderAnyValues = new Set(['any', 'ahamiyatsiz', 'не важно', 'любой', 'любая', "ahamiyatga ega emas"]);
@@ -999,7 +1025,16 @@ export function formatFullJobCard(job: any, lang: BotLang): string {
         lines.push(`🛎️ | ${lang === 'uz' ? 'Qulayliklar' : 'Условия'}`);
         lines.push(...perks.map(item => `- ${item}`));
     } else if (benefits) {
-        lines.push(`🛎️ | ${lang === 'uz' ? 'Qulayliklar' : 'Условия'}: ${benefits}`);
+        const benefitItems = String(benefits)
+            .split(/[,\n;]+/g)
+            .map(item => item.trim())
+            .filter(Boolean);
+        lines.push(`🛎️ | ${lang === 'uz' ? 'Qulayliklar' : 'Условия'}:`);
+        if (benefitItems.length > 0) {
+            lines.push(...benefitItems.map(item => `- ${item}`));
+        } else {
+            lines.push(`- ${benefits}`);
+        }
     }
 
     const hasContacts = job.contact_phone || job.contact_telegram || job.phone;

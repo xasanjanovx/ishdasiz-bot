@@ -155,8 +155,8 @@ const INLINE_ICON_BY_EMOJI: Record<string, string> = {
     '🎓': '5375163339154399459',
     '👤': '5422721499138136676',
     '📅': '5967782394080530708',
-    '⭐': '5436093373008066004',
-    '⭐️': '5436093373008066004',
+    '⭐': '5274046919809704653',
+    '⭐️': '5274046919809704653',
     '🆔': '5936017305585586269',
     '🧩': '5213306719215577669',
     '🔔': '5242628160297641831',
@@ -512,7 +512,7 @@ export function fieldsKeyboard(
         const nav: InlineButton[] = [];
         if (safePage > 0) {
             nav.push({
-                text: '⬅️',
+                text: lang === 'uz' ? 'Oldingi' : 'Назад',
                 callback_data: `fieldpage:${safePage - 1}`
             });
         }
@@ -529,7 +529,7 @@ export function fieldsKeyboard(
         }
         if (safePage < totalPages - 1) {
             nav.push({
-                text: '➡️',
+                text: lang === 'uz' ? 'Keyingi' : 'Далее',
                 callback_data: `fieldpage:${safePage + 1}`
             });
         }
@@ -760,7 +760,7 @@ export function jobNavigationKeyboard(
         {
             text: isFavorite
                 ? (lang === 'uz' ? "🗑️ Saqlangandan olib tashlash" : '🗑️ Удалить из сохранённых')
-                : (lang === 'uz' ? "💾 Saqlab qo'yish" : '💾 Сохранить'),
+                : (lang === 'uz' ? "⭐ Saqlab qo'yish" : '⭐ Сохранить'),
             callback_data: `fav:${jobId}`
         }
     ]);

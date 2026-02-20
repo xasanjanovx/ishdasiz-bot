@@ -334,7 +334,18 @@ export class TelegramBot {
     private fieldsSearchCache: Map<string, { data: OsonishField[]; loadedAt: number }> = new Map();
     private professionCategoryCache: { map: Record<string, string>; loadedAt: number } = { map: {}, loadedAt: 0 };
     private jobsProfessionCache: { data: OsonishField[]; loadedAt: number } = { data: [], loadedAt: 0 };
-    private mainMenuStatsCache: { value: { jobs: number | null; jobsDisabled: number | null; resumes: number | null; users: number | null } | null; loadedAt: number } = {
+    private mainMenuStatsCache: {
+        value: {
+            jobs: number | null;
+            jobsDisabled: number | null;
+            resumes: number | null;
+            users: number | null;
+            jobsStudentsGraduates: number | null;
+            jobsDisabledFriendly: number | null;
+            jobsWomenFriendly: number | null;
+        } | null;
+        loadedAt: number;
+    } = {
         value: null,
         loadedAt: 0
     };
@@ -7888,7 +7899,8 @@ export class TelegramBot {
         }
 
         if (resume.about) {
-            lines.push(`📝 | ${lang === 'uz' ? "O'zi haqida" : 'О себе'}: ${resume.about}`);
+            const aboutTitle = lang === 'uz' ? "📝 | O'zi haqida" : '📝 | О себе';
+            lines.push(`<blockquote>${aboutTitle}\n${this.escapeHtml(String(resume.about))}</blockquote>`);
         }
 
         if (resume.phone || profileTelegram) {
@@ -8572,7 +8584,7 @@ export class TelegramBot {
                         hasMeaningfulOverlap
                     };
                 })
-                .filter(item => item.matchScore >= 45 || item.titleRelevance >= 0.2)
+                .filter(item => item.matchScore >= 50 || (item.titleRelevance >= 0.35 && item.hasMeaningfulOverlap))
                 .sort((a, b) => Number(b.matchScore || 0) - Number(a.matchScore || 0))
                 .slice(0, 30);
 
@@ -8938,7 +8950,14 @@ export class TelegramBot {
         const primaryTokens = this.tokenizeTitle(primary);
         const secondaryTokens = this.tokenizeTitle(secondary);
         if (!primaryTokens.length || !secondaryTokens.length) return false;
-        return primaryTokens.some(token => secondaryTokens.includes(token));
+        const lowSignal = new Set([
+            'rahbar', 'rahbari', 'boshliq', 'leader', 'head',
+            'manager', 'menejer', 'direktor', 'director'
+        ]);
+        const shared = primaryTokens.filter(token => secondaryTokens.includes(token));
+        if (!shared.length) return false;
+        const strong = shared.filter(token => !lowSignal.has(token));
+        return strong.length > 0 || shared.length >= 2;
     }
 
     private getTitleOverlapScore(primary: any, secondary: any): number {
@@ -9001,11 +9020,19 @@ export class TelegramBot {
             const jobTokens = this.tokenizeTitle(jobTitleParts.join(' '));
             if (!jobTokens.length) return false;
 
+            const lowSignal = new Set([
+                'rahbar', 'rahbari', 'boshliq', 'leader', 'head',
+                'manager', 'menejer', 'direktor', 'director'
+            ]);
             const intersection = titleTokens.filter(token => jobTokens.includes(token));
-            if (intersection.length > 0) return true;
+            if (intersection.length > 0) {
+                const strong = intersection.filter(token => !lowSignal.has(token));
+                if (strong.length > 0 || intersection.length >= 2) return true;
+            }
 
             const jobText = jobTokens.join(' ');
-            return jobText.includes(desiredText) || desiredText.includes(jobText);
+            const overlap = this.getTitleOverlapScore(desiredText, jobText);
+            return overlap >= 0.45 && this.hasTitleOverlap(desiredText, jobText);
         });
 
         if (filtered.length > 0) return filtered;
@@ -10401,7 +10428,31 @@ export class TelegramBot {
         return null;
     }
 
-    private async getMainMenuStats(forceRefresh: boolean = false): Promise<{ jobs: number | null; jobsDisabled: number | null; resumes: number | null; users: number | null }> {
+    private async safeWomenFriendlyJobsCount(): Promise<number | null> {
+        const variants = [
+            'is_for_women.eq.true,gender.eq.female,gender.eq.ayol',
+            'is_for_women.eq.true,gender.eq.female',
+            'is_for_women.eq.true,gender.eq.ayol',
+            'is_for_women.eq.true',
+            'gender.eq.female',
+            'gender.eq.ayol'
+        ];
+        for (const clause of variants) {
+            const count = await this.safeTableCount('jobs', (query) => query.or(clause));
+            if (count !== null) return count;
+        }
+        return null;
+    }
+
+    private async getMainMenuStats(forceRefresh: boolean = false): Promise<{
+        jobs: number | null;
+        jobsDisabled: number | null;
+        resumes: number | null;
+        users: number | null;
+        jobsStudentsGraduates: number | null;
+        jobsDisabledFriendly: number | null;
+        jobsWomenFriendly: number | null;
+    }> {
         const ttlMs = 45 * 1000;
         const cacheFresh = !forceRefresh
             && this.mainMenuStatsCache.value
@@ -10410,18 +10461,32 @@ export class TelegramBot {
             return this.mainMenuStatsCache.value;
         }
 
-        const [jobsActive, jobsDisabled, resumesPublic, usersTotal] = await Promise.all([
+        const [
+            jobsActive,
+            jobsDisabled,
+            resumesPublic,
+            usersTotal,
+            jobsStudentsGraduates,
+            jobsDisabledFriendly,
+            jobsWomenFriendly
+        ] = await Promise.all([
             this.safeActiveJobsCount(),
             this.safeDisabledJobsCount(),
             this.safePublicActiveResumesCount(),
-            this.safeTableCount('users')
+            this.safeTableCount('users'),
+            this.safeTableCount('jobs', (query) => query.or('is_for_students.eq.true,is_for_graduates.eq.true')),
+            this.safeTableCount('jobs', (query) => query.eq('is_for_disabled', true)),
+            this.safeWomenFriendlyJobsCount()
         ]);
 
         const stats = {
             jobs: jobsActive,
             jobsDisabled,
             resumes: resumesPublic,
-            users: usersTotal
+            users: usersTotal,
+            jobsStudentsGraduates,
+            jobsDisabledFriendly,
+            jobsWomenFriendly
         };
         this.mainMenuStatsCache = { value: stats, loadedAt: Date.now() };
         return stats;
@@ -10429,21 +10494,30 @@ export class TelegramBot {
 
     private buildMainMenuStatsText(
         lang: BotLang,
-        stats: { jobs: number | null; jobsDisabled: number | null; resumes: number | null; users: number | null }
+        stats: {
+            jobs: number | null;
+            jobsDisabled: number | null;
+            resumes: number | null;
+            users: number | null;
+            jobsStudentsGraduates: number | null;
+            jobsDisabledFriendly: number | null;
+            jobsWomenFriendly: number | null;
+        }
     ): string {
         const jobsTotal = (typeof stats.jobs === 'number' && typeof stats.jobsDisabled === 'number')
             ? stats.jobs + stats.jobsDisabled
             : (typeof stats.jobs === 'number' ? stats.jobs : stats.jobsDisabled);
+        const usersShown = typeof stats.users === 'number' ? (stats.users * 2) : null;
         if (lang === 'ru') {
             return [
                 '<b>📊 | Сейчас на платформе</b>',
-                `<blockquote>📢 Вакансии: ${this.formatCountValue(jobsTotal)}\n🧾 Резюме: ${this.formatCountValue(stats.resumes)}\n👥 Пользователи: ${this.formatCountValue(stats.users)}</blockquote>`
+                `<blockquote>📢 Вакансии: ${this.formatCountValue(jobsTotal)}\n\n• Для студентов и выпускников: ${this.formatCountValue(stats.jobsStudentsGraduates)}\n• Для людей с инвалидностью: ${this.formatCountValue(stats.jobsDisabledFriendly)}\n• Для женщин: ${this.formatCountValue(stats.jobsWomenFriendly)}\n\n🧾 Резюме: ${this.formatCountValue(stats.resumes)}\n\n👥 Пользователи: ${this.formatCountValue(usersShown)}</blockquote>`
             ].join('\n');
         }
 
         return [
             '<b>📊 | Platformada hozir</b>',
-            `<blockquote>📢 Vakansiyalar: ${this.formatCountValue(jobsTotal)}\n🧾 Rezyumelar: ${this.formatCountValue(stats.resumes)}\n👥 Foydalanuvchilar: ${this.formatCountValue(stats.users)}</blockquote>`
+            `<blockquote>📢 Vakansiyalar: ${this.formatCountValue(jobsTotal)}\n\n• Talaba va bitiruvchilar uchun: ${this.formatCountValue(stats.jobsStudentsGraduates)}\n• Nogironligi bo'lgan shaxslar uchun: ${this.formatCountValue(stats.jobsDisabledFriendly)}\n• Ayollar uchun: ${this.formatCountValue(stats.jobsWomenFriendly)}\n\n🧾 Rezyumelar: ${this.formatCountValue(stats.resumes)}\n\n👥 Foydalanuvchilar: ${this.formatCountValue(usersShown)}</blockquote>`
         ].join('\n');
     }
 
@@ -10452,8 +10526,7 @@ export class TelegramBot {
             if (isEmployer) {
                 return [
                     '<b>👋 | Здравствуйте, уважаемый работодатель!</b>',
-                    '<i>Здесь вы можете быстро размещать вакансии, управлять откликами и находить подходящих сотрудников.</i>',
-                    '<i>Для старта нажмите <b><i>📢 Разместить вакансию</i></b>, для поиска кандидатов — <b><i>🔎 Найти кандидатов</i></b>.</i>'
+                    '<i>Здесь вы можете быстро размещать вакансии, управлять откликами и находить подходящих сотрудников.</i>'
                 ].join('\n');
             }
             return [
@@ -10466,8 +10539,7 @@ export class TelegramBot {
         if (isEmployer) {
             return [
                 '<b>👋 | Assalomu alaykum, hurmatli ish beruvchi!</b>',
-                "<i>Bu yerda siz tez va qulay tarzda vakansiya joylashingiz, arizalarni boshqarishingiz va mos ishchilarni topishingiz mumkin.</i>",
-                "<i>Boshlash uchun <b><i>📢 Vakansiya joylash</i></b>, nomzod qidirish uchun <b><i>🔎 Ishchi topish</i></b> tugmasini bosing.</i>"
+                "<i>Bu yerda siz tez va qulay tarzda vakansiya joylashingiz, arizalarni boshqarishingiz va mos ishchilarni topishingiz mumkin.</i>"
             ].join('\n');
         }
         return [
@@ -10704,7 +10776,7 @@ export class TelegramBot {
             this.safeTableCount('job_offers'),
             this.safeTableCount('jobs', (query) => query.or('is_for_students.eq.true,is_for_graduates.eq.true')),
             this.safeTableCount('jobs', (query) => query.eq('is_for_disabled', true)),
-            this.safeTableCount('jobs', (query) => query.eq('is_for_women', true)),
+            this.safeWomenFriendlyJobsCount(),
             this.safeTableCount('employer_profiles'),
             this.safeTableCount('job_seeker_profiles'),
             this.safeTableCount('users', (query) => query.gt('locked_until', nowIso))
@@ -13194,6 +13266,35 @@ export class TelegramBot {
             }
         }
 
+        if ((!resumes || resumes.length === 0) && useStatusFilter) {
+            let relaxedQuery = this.supabase
+                .from('resumes')
+                .select(selectClause);
+            if (orderColumn) {
+                relaxedQuery = relaxedQuery.order(orderColumn, { ascending: false });
+            }
+            if (useRegionFilter && targetRegionId !== null) {
+                relaxedQuery = relaxedQuery.eq('region_id', targetRegionId);
+            }
+            relaxedQuery = relaxedQuery.limit(useRegionFilter ? 500 : 600);
+            const relaxed = await relaxedQuery;
+            if (!relaxed.error && Array.isArray(relaxed.data) && relaxed.data.length > 0) {
+                resumes = relaxed.data;
+            } else if ((!relaxed.data || relaxed.data.length === 0) && useRegionFilter && targetRegionId !== null) {
+                let relaxedAllRegions = this.supabase
+                    .from('resumes')
+                    .select(selectClause)
+                    .limit(600);
+                if (orderColumn) {
+                    relaxedAllRegions = relaxedAllRegions.order(orderColumn, { ascending: false });
+                }
+                const relaxedAll = await relaxedAllRegions;
+                if (!relaxedAll.error && Array.isArray(relaxedAll.data)) {
+                    resumes = relaxedAll.data;
+                }
+            }
+        }
+
         const baseScored = (resumes || []).map((resume: any) => {
             const base = calculateMatchScore({
                 region_id: resume.region_id,
@@ -13290,7 +13391,17 @@ export class TelegramBot {
             )
             .sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
 
-        const scored = scoredStrict.length > 0 ? scoredStrict : scoredRelaxed;
+        const scoredFallbackAll = processingPool
+            .map(item => ({
+                ...item,
+                id: String(item.resume?.id || '')
+            }))
+            .filter(item => item.id)
+            .sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
+
+        const scored = scoredStrict.length > 0
+            ? scoredStrict
+            : (scoredRelaxed.length > 0 ? scoredRelaxed : scoredFallbackAll);
 
         if (!scored.length) {
             await this.sendSeriousSticker(chatId, 'warning');

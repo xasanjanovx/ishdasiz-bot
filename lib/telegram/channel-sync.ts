@@ -61,7 +61,12 @@ const EDUCATION_LABELS_UZ: Record<string, string> = {
   incomplete_higher: "Oliy (tugallanmagan)",
   higher: 'Oliy',
   master: 'Magistr',
-  phd: 'PhD'
+  phd: 'PhD',
+  '0': 'Ahamiyatsiz',
+  '1': "O'rta",
+  '2': "O'rta maxsus",
+  '3': 'Oliy',
+  '4': 'Magistr'
 };
 
 const WORK_MODE_LABELS_UZ: Record<string, string> = {
@@ -83,6 +88,13 @@ const WORKING_DAYS_LABELS_UZ: Record<string, string> = {
   full_week: "To'liq hafta",
   flexible: 'Moslashuvchan',
   shift_based: 'Navbatchilik asosida'
+};
+
+const TEST_PERIOD_LABELS_UZ: Record<string, string> = {
+  '1': "Sinov muddati yo'q",
+  '2': '1 oy',
+  '3': '2 oy',
+  '4': '3 oy'
 };
 
 function escapeHtml(value: unknown): string {
@@ -187,12 +199,22 @@ function normalizeLanguageLabel(value: string): string {
   if (raw === 'uz') return "O'zbek tili";
   if (raw === 'ru') return 'Rus tili';
   if (raw === 'en') return 'Ingliz tili';
-  return value;
+  return compactText(value);
+}
+
+function normalizeGenderLabel(value: unknown): string | null {
+  const raw = compactText(value).toLowerCase();
+  if (!raw) return null;
+  if (['male', 'erkak', 'm', '1'].includes(raw)) return 'Erkak';
+  if (['female', 'ayol', 'f', '2'].includes(raw)) return 'Ayol';
+  if (['any', 'ahamiyatsiz', 'ahamiyatga ega emas'].includes(raw)) return null;
+  return compactText(value);
 }
 
 function toDistrictHashtag(value: string | null | undefined): string | null {
   const raw = compactText(value);
   if (!raw) return null;
+
   const cleaned = raw
     .replace(/[’'`]/g, '')
     .replace(/[^\p{L}\p{N}\s]/gu, ' ')
@@ -200,15 +222,7 @@ function toDistrictHashtag(value: string | null | undefined): string | null {
     .trim();
   if (!cleaned) return null;
 
-  const stopWords = new Set([
-    'tumani',
-    'tuman',
-    'shahar',
-    'shahri',
-    'rayon',
-    'gorod'
-  ]);
-
+  const stopWords = new Set(['tumani', 'tuman', 'shahar', 'shahri', 'rayon', 'gorod']);
   const tokens = cleaned
     .split(' ')
     .map((token) => token.trim())
@@ -277,7 +291,7 @@ function channelFooter(regionSlug: string | null | undefined): string {
   if (!channel) return '';
   const handle = channel.startsWith('@') ? channel.slice(1) : channel;
   const promo = regionPromoLabel(regionSlug);
-  return `?? <a href="https://t.me/${handle}">ISHDASIZ</a> — ${escapeHtml(promo)}dagi eng yangi bo'sh ish o'rinlari!`;
+  return `🚀 <b><a href="https://t.me/${handle}">ISHDASIZ</a></b> — <i>${escapeHtml(promo)}dagi eng yangi bo'sh ish o'rinlari!</i>`;
 }
 
 function getCoordinates(entity: any): { lat: number | null; lon: number | null } {
@@ -286,6 +300,7 @@ function getCoordinates(entity: any): { lat: number | null; lon: number | null }
   const coordinatePair = Array.isArray(raw?.coordinates) && raw.coordinates.length >= 2
     ? { lat: raw.coordinates[0], lon: raw.coordinates[1] }
     : null;
+
   const lat =
     pickCoordinate(entity?.latitude)
     ?? pickCoordinate(raw?.latitude)
@@ -295,6 +310,7 @@ function getCoordinates(entity: any): { lat: number | null; lon: number | null }
     ?? pickCoordinate(rawLocation?.latitude)
     ?? pickCoordinate(rawLocation?.lat)
     ?? pickCoordinate(coordinatePair?.lat);
+
   const lon =
     pickCoordinate(entity?.longitude)
     ?? pickCoordinate(raw?.longitude)
@@ -306,6 +322,7 @@ function getCoordinates(entity: any): { lat: number | null; lon: number | null }
     ?? pickCoordinate(rawLocation?.lon)
     ?? pickCoordinate(rawLocation?.lng)
     ?? pickCoordinate(coordinatePair?.lon);
+
   return { lat, lon };
 }
 
@@ -326,6 +343,7 @@ function mapSpecialFlagsToText(special: string[]): string[] {
   if (normalized.has('students')) labels.push('Talabalar ham mos kelishi mumkin');
   if (normalized.has('graduates')) labels.push('Bitiruvchilar ham mos kelishi mumkin');
   if (normalized.has('disabled')) labels.push("Nogironligi bo'lgan shaxslar ham mos kelishi mumkin");
+  if (normalized.has('women')) labels.push('Ayollar ham mos kelishi mumkin');
   return labels;
 }
 
@@ -334,6 +352,25 @@ function sanitizeBullet(value: string): string {
     .replace(/^(?:[-•*]+\s*)+/, '')
     .replace(/[.;:,]+$/g, '')
     .trim();
+}
+
+function resolveTrialPeriodLabel(job: any, raw: any): string | null {
+  const testPeriodId = compactText(job?.test_period_id ?? raw?.test_period_id ?? raw?.test_periodId ?? '');
+  if (testPeriodId && TEST_PERIOD_LABELS_UZ[testPeriodId]) {
+    return TEST_PERIOD_LABELS_UZ[testPeriodId];
+  }
+  const text = compactText(job?.trial_period ?? job?.probation_period ?? raw?.test_period ?? raw?.probation_period ?? raw?.sinov_muddati ?? '');
+  return text || null;
+}
+
+function formatPhonePretty(value: string): string {
+  const raw = compactText(value).replace(/\s+/g, '');
+  if (!raw) return '';
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length === 12 && digits.startsWith('998')) {
+    return `+${digits.slice(0, 3)} ${digits.slice(3, 5)} ${digits.slice(5, 8)} ${digits.slice(8, 10)} ${digits.slice(10, 12)}`;
+  }
+  return raw;
 }
 
 export function getChannelByRegionSlug(regionSlug: string | null | undefined): string | null {
@@ -346,6 +383,7 @@ export function buildJobChannelMessage(job: any, regionSlug?: string | null): st
   const raw = job?.raw_source_json || {};
   const title = compactText(job?.title_uz || job?.title_ru || job?.title || job?.field_title || raw?.title || raw?.position_name || 'Vakansiya');
   const company = compactText(job?.company_name || 'Tashkilot');
+
   const regionName = compactText(job?.region_name || job?.districts?.regions?.name_uz || raw?.region_name_uz || raw?.region_name || '');
   const districtName = compactText(job?.district_name || job?.districts?.name_uz || raw?.district_name_uz || raw?.district_name || '');
   const location = [regionName, districtName].filter(Boolean).join(', ');
@@ -360,16 +398,25 @@ export function buildJobChannelMessage(job: any, regionSlug?: string | null): st
   const workMode = normalizeHumanValue(normalizeWorkMode(job?.work_mode || raw?.work_mode || raw?.work_format || ''));
   const employment = normalizeHumanValue(normalizeEmployment(job?.employment_type || raw?.employment_type || ''));
   const workingDays = normalizeHumanValue(normalizeWorkingDays(job?.working_days || raw?.working_days || ''));
-  const workingHours = normalizeHumanValue(compactText(job?.working_hours || raw?.working_hours || ''));
+  const workingHours = normalizeHumanValue(compactText(job?.working_hours || raw?.working_hours || '').replace(/(\d{2}:\d{2})(:\d{2})/g, '$1'));
 
-  const contactPhone = compactText(job?.contact_phone || job?.phone || raw?.contact_phone || raw?.phone || '');
+  const trialPeriod = resolveTrialPeriodLabel(job, raw);
+  const gender = normalizeGenderLabel(job?.gender ?? raw?.gender ?? null);
+  const ageRaw = compactText(job?.age || raw?.age || raw?.age_requirement || '');
+  const age = normalizeHumanValue(ageRaw);
+
+  const contactPhone = formatPhonePretty(job?.contact_phone || job?.phone || raw?.contact_phone || raw?.phone || '');
+  const contactTelegramRaw = compactText(job?.contact_telegram || raw?.telegram || raw?.contact_telegram || '');
+  const contactTelegram = contactTelegramRaw
+    ? (contactTelegramRaw.startsWith('@') ? contactTelegramRaw : `@${contactTelegramRaw}`)
+    : '';
 
   const languages = uniqueList(
     asList(job?.languages ?? raw?.languages ?? raw?.language_ids ?? raw?.language).map(normalizeLanguageLabel),
     6
   );
   const benefits = uniqueList(
-    asList(job?.benefits ?? raw?.benefits ?? raw?.ijtimoiy_paketlar ?? raw?.qulayliklar),
+    asList(job?.benefits ?? raw?.benefits ?? raw?.ijtimoiy_paketlar ?? raw?.qulayliklar).map(sanitizeBullet),
     6
   );
 
@@ -388,7 +435,11 @@ export function buildJobChannelMessage(job: any, regionSlug?: string | null): st
     ...asList(raw?.ish_vazifalari),
     ...asList(raw?.talablar),
     ...parseDescriptionItems(description)
-  ].map(sanitizeBullet), 3);
+  ]
+    .flatMap((item) => String(item || '').split(/\s+-\s+/g))
+    .map(sanitizeBullet), 4);
+
+  const specialFlags = mapSpecialFlagsToText(asList(job?.special ?? raw?.special));
 
   const finalRegionSlug = regionSlug || job?.districts?.regions?.slug || null;
   const tags = buildTags('job', finalRegionSlug, districtName || null);
@@ -401,49 +452,58 @@ export function buildJobChannelMessage(job: any, regionSlug?: string | null): st
   const footer = channelFooter(finalRegionSlug);
 
   const lines: string[] = [
-    `?? ${tags}`,
+    `📍 ${tags}`,
     '',
-    `<b>?? | Lavozim: ${escapeHtml(title)}</b>`,
+    `<b>💼 | Lavozim: ${escapeHtml(title)}</b>`,
     '',
-    '???????????????',
+    '━━━━━━━━━━━━━━━',
     '',
-    `?? Tashkilot: ${escapeHtml(company)}`,
-    location ? `?? Hudud: ${escapeHtml(location)}` : '',
-    address ? `?? Manzil: ${escapeHtml(address)}` : '',
-    mapUrl ? `?? <a href="${mapUrl}">Joylashuvni ko'rish</a>` : '',
+    `🏢 Tashkilot: ${escapeHtml(company)}`,
+    location ? `📍 Hudud: ${escapeHtml(location)}` : '',
+    address ? `📌 Manzil: ${escapeHtml(address)}` : '',
+    mapUrl ? `🗺️ <a href="${mapUrl}">Joylashuvni ko'rish</a>` : '',
     '',
-    `?? Maosh: ${escapeHtml(salary)}`,
-    `?? Tajriba: ${escapeHtml(experience)}`,
-    `?? Ma'lumot: ${escapeHtml(education)}`,
+    `💰 Maosh: ${escapeHtml(salary)}`,
+    `🧠 Tajriba: ${escapeHtml(experience)}`,
+    `🎓 Ma'lumot: ${escapeHtml(education)}`,
+    trialPeriod ? `⏳ Sinov muddati: ${escapeHtml(trialPeriod)}` : '',
+    gender ? `🚻 Jins talabi: ${escapeHtml(gender)}` : '',
+    age ? `📊 Yosh: ${escapeHtml(age)}` : ''
+  ];
+
+  if (specialFlags.length > 0) {
+    lines.push(`📌 Qo'shimcha mezonlar: ${escapeHtml(specialFlags.join(', '))}`);
+  }
+
+  lines.push(
     '',
-    '<b>?? Ish tartibi</b>',
+    '<b>🕒 Ish tartibi</b>',
     employment ? `• Bandlik: ${escapeHtml(employment)}` : '',
     workingDays ? `• Ish kunlari: ${escapeHtml(workingDays)}` : '',
     workingHours ? `• Ish vaqti: ${escapeHtml(workingHours)}` : '',
     workMode ? `• Ish shakli: ${escapeHtml(workMode)}` : ''
-  ];
+  );
 
   if (languages.length > 0) {
-    lines.push('', '<b>?? Talab etiladigan tillar</b>', escapeHtml(languages.join(' • ')));
+    lines.push('', '<b>🌐 Talab etiladigan tillar</b>', escapeHtml(languages.join(' • ')));
   }
 
-  lines.push('', '???????????????', '');
+  lines.push('', '━━━━━━━━━━━━━━━');
 
   if (requirementItems.length > 0) {
-    lines.push('<b>?? Asosiy vazifalar</b>');
-    lines.push(...requirementItems.map((item) => `?? ${escapeHtml(item)}`));
+    lines.push('', '<b>📌 Asosiy vazifalar</b>');
+    lines.push(...requirementItems.map((item) => `- ${escapeHtml(item)}`));
   }
 
   if (benefits.length > 0) {
-    lines.push('', '<b>?? Qulayliklar</b>');
-    lines.push(...benefits.map((item) => `? ${escapeHtml(sanitizeBullet(item))}`));
+    lines.push('', '<b>🎁 Qulayliklar</b>');
+    lines.push(...benefits.map((item) => `- ${escapeHtml(item)}`));
   }
 
-  lines.push('', '???????????????');
+  lines.push('', '━━━━━━━━━━━━━━━');
 
-  if (contactPhone) {
-    lines.push('', `?? Aloqa: ${escapeHtml(contactPhone)}`);
-  }
+  if (contactPhone) lines.push('', `📞 Aloqa: ${escapeHtml(contactPhone)}`);
+  if (contactTelegram) lines.push(`💬 Telegram: ${escapeHtml(contactTelegram)}`);
 
   if (footer) {
     lines.push('', footer);
@@ -467,58 +527,59 @@ export function buildResumeChannelMessage(resume: any, regionSlug?: string | nul
   const experience = years > 0 ? `${years} yil` : (EXPERIENCE_LABELS_UZ[expCode] || "Ko'rsatilmagan");
   const education = EDUCATION_LABELS_UZ[String(resume?.education_level || '').trim()] || compactText(resume?.education_level) || "Ko'rsatilmagan";
 
-  const genderRaw = normalizeHumanValue(compactText(resume?.gender || raw?.gender || ''));
+  const gender = normalizeGenderLabel(resume?.gender || raw?.gender || '');
   const birthDate = parseBirthDateToText(resume?.birth_date || raw?.birth_date || null);
   const specialFlags = mapSpecialFlagsToText(asList(resume?.special ?? raw?.special));
 
   const skills = uniqueList(asList(resume?.skills).map(sanitizeBullet), 8);
   const languages = uniqueList(asList(resume?.languages).map(normalizeLanguageLabel), 6);
-  const about = compactText(resume?.about || raw?.about || '').slice(0, 700);
+  const about = compactText(resume?.about || raw?.about || '').slice(0, 900);
 
-  const phone = compactText(resume?.phone || raw?.phone || '');
-  const telegram = compactText(resume?.telegram || resume?.contact_telegram || resume?.telegram_username || raw?.telegram || '');
+  const phone = formatPhonePretty(resume?.phone || raw?.phone || '');
+  const telegramRaw = compactText(resume?.telegram || resume?.contact_telegram || resume?.telegram_username || raw?.telegram || '');
+  const telegram = telegramRaw ? (telegramRaw.startsWith('@') ? telegramRaw : `@${telegramRaw}`) : '';
 
   const finalRegionSlug = regionSlug || resume?.districts?.regions?.slug || null;
   const tags = buildTags('resume', finalRegionSlug, districtName || null);
   const footer = channelFooter(finalRegionSlug);
 
   const lines: string[] = [
-    `?? ${tags}`,
+    `👤 ${tags}`,
     '',
-    `<b>?? | Lavozim: ${escapeHtml(title)}</b>`,
+    `<b>🧾 | Lavozim: ${escapeHtml(title)}</b>`,
     '',
-    '???????????????',
+    '━━━━━━━━━━━━━━━',
     '',
-    `?? Nomzod: ${escapeHtml(fullName)}`,
-    location ? `?? Hudud: ${escapeHtml(location)}` : '',
-    `?? Tajriba: ${escapeHtml(experience)}`,
-    `?? Ma'lumot: ${escapeHtml(education)}`,
-    `?? Kutilayotgan maosh: ${escapeHtml(salary)}`,
-    genderRaw ? `?? Jins: ${escapeHtml(genderRaw)}` : '',
-    birthDate ? `?? Tug'ilgan sana: ${escapeHtml(birthDate)}` : ''
+    `👤 Nomzod: ${escapeHtml(fullName)}`,
+    location ? `📍 Hudud: ${escapeHtml(location)}` : '',
+    `🧠 Tajriba: ${escapeHtml(experience)}`,
+    `🎓 Ma'lumot: ${escapeHtml(education)}`,
+    `💰 Kutilayotgan maosh: ${escapeHtml(salary)}`,
+    gender ? `🚻 Jins: ${escapeHtml(gender)}` : '',
+    birthDate ? `📅 Tug'ilgan sana: ${escapeHtml(birthDate)}` : ''
   ];
 
   if (specialFlags.length > 0) {
-    lines.push(`? Alohida toifalar: ${escapeHtml(specialFlags.join(', '))}`);
+    lines.push(`📌 Alohida toifalar: ${escapeHtml(specialFlags.join(', '))}`);
   }
 
   if (skills.length > 0) {
-    lines.push('', '<b>?? Asosiy ko\'nikmalar</b>');
-    lines.push(...skills.map((item) => `?? ${escapeHtml(item)}`));
+    lines.push('', '<b>🧩 Asosiy ko\'nikmalar</b>');
+    lines.push(...skills.map((item) => `- ${escapeHtml(item)}`));
   }
 
   if (languages.length > 0) {
-    lines.push('', '<b>?? Tillar</b>', escapeHtml(languages.join(' • ')));
+    lines.push('', '<b>🌐 Tillar</b>', escapeHtml(languages.join(' • ')));
   }
 
   if (about) {
-    lines.push('', '<b>?? O\'zi haqida</b>', escapeHtml(about));
+    lines.push('', `<blockquote><b>📝 O'zi haqida</b>\n${escapeHtml(about)}</blockquote>`);
   }
 
-  lines.push('', '???????????????');
+  lines.push('', '━━━━━━━━━━━━━━━');
 
-  if (phone) lines.push('', `?? Aloqa: ${escapeHtml(phone)}`);
-  if (telegram) lines.push(`?? Telegram: ${escapeHtml(telegram.startsWith('@') ? telegram : `@${telegram}`)}`);
+  if (phone) lines.push('', `📞 Aloqa: ${escapeHtml(phone)}`);
+  if (telegram) lines.push(`💬 Telegram: ${escapeHtml(telegram)}`);
 
   if (footer) {
     lines.push('', footer);
