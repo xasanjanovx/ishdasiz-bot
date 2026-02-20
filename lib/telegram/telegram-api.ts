@@ -13,10 +13,11 @@ const PREMIUM_EMOJI_REPLACEMENTS: Array<{ chars: string[]; id: string }> = [
     { chars: ['\u{1F1FA}\u{1F1FF}'], id: '5438400294432028834' }, // ????
     { chars: ['\u{1F1F7}\u{1F1FA}'], id: '5436252471481611724' }, // ????
     { chars: ['\u{1F310}'], id: '5188381825701021648' }, // ??
-    { chars: ['\u{2705}'], id: '5389061359403039918' }, // ?
+    { chars: ['\u{2705}'], id: '5260463209562776385' }, // ?
     { chars: ['\u{1F4F1}'], id: '5407025283456835913' }, // ??
     { chars: ['\u{1F4E8}', '\u{1F4E9}'], id: '5406631276042002796' }, // ??/??
     { chars: ['\u{274C}'], id: '5852812849780362931' }, // ?
+    { chars: ['\u{2611}\u{FE0F}', '\u{2611}'], id: '5260463209562776385' }, // ☑️
     { chars: ['\u{23F3}'], id: '5287579571485422439' }, // ?
     { chars: ['\u{1F510}'], id: '5350619413533958825' }, // ??
     { chars: ['\u{26A0}\u{FE0F}', '\u{26A0}'], id: '5242713260779643386' }, // ??
@@ -35,11 +36,17 @@ const PREMIUM_EMOJI_REPLACEMENTS: Array<{ chars: string[]; id: string }> = [
     { chars: ['\u{1F194}'], id: '5936017305585586269' }, // ??
     { chars: ['\u{1F9E0}'], id: '6257767895732848636' }, // ??
     { chars: ['\u{1F9E9}'], id: '5213306719215577669' }, // ??
+    { chars: ['\u{1F552}'], id: E.clock }, // 🕒
+    { chars: ['\u{1F6BB}'], id: E.group }, // 🚻
+    { chars: ['\u{1F4AC}'], id: E.send }, // 💬
+    { chars: ['\u{1F5E3}\u{FE0F}', '\u{1F5E3}'], id: '5188381825701021648' }, // 🗣️
+    { chars: ['\u{1F9ED}'], id: E.map }, // 🧭
+    { chars: ['\u{1F3F7}\u{FE0F}', '\u{1F3F7}'], id: E.clip }, // 🏷️
     { chars: ['\u{2B05}\u{FE0F}', '\u{2B05}'], id: '5258236805890710909' }, // ??
-    { chars: ['\u{27A1}\u{FE0F}', '\u{27A1}'], id: '5877468380125990242' }, // ??
+    { chars: ['\u{27A1}\u{FE0F}', '\u{27A1}'], id: '5260450573768990626' }, // ??
     { chars: ['\u{1F5D1}\u{FE0F}', '\u{1F5D1}'], id: '5841541824803509441' }, // ???
     { chars: ['\u{23ED}\u{FE0F}', '\u{23ED}'], id: '5884123981706956210' }, // ??
-    { chars: ['\u{1F3E0}'], id: '5188561131995690450' }, // ??
+    { chars: ['\u{1F3E0}'], id: '5204181485669597563' }, // ??
     { chars: ['\u{1F50E}', '\u{1F50D}'], id: '5188311512791393083' }, // ??/??
     { chars: ['\u{1F4ED}'], id: '5352896944496728039' }, // ??
     { chars: ['\u{1F4C4}'], id: '5877301185639091664' }, // ??
@@ -60,7 +67,7 @@ const PREMIUM_EMOJI_REPLACEMENTS: Array<{ chars: string[]; id: string }> = [
     { chars: ['\u{1F7E1}'], id: '5294234838058938175' }, // ??
     { chars: ['\u{1F534}'], id: '5291899179008798421' }, // ??
     { chars: ['\u{25AB}\u{FE0F}', '\u{25AB}'], id: '5978963495327108152' }, // ??
-    { chars: ['\u{1F198}'], id: '5895407084131848348' }, // ??
+    { chars: ['\u{1F198}'], id: '5251489485283140234' }, // ??
     { chars: ['\u{1F4E2}'], id: '5330513091073427682' }, // ??
     // Additional semantic coverage from 68-step E mapping
     { chars: ['\u{1F44B}'], id: E.wave }, // 👋
@@ -194,7 +201,7 @@ const PREMIUM_ICON_FALLBACK_TEXT_BY_ID: Record<string, string> = {
     '5406631276042002796': '📨',
     '5274046919809704653': '⭐',
     '5350396951407895212': '⚙️',
-    '5895407084131848348': '🆘',
+    '5251489485283140234': '🆘',
     '5330513091073427682': '📢',
     '5877597667231534929': '📋',
     '5422518677897512402': '👥',
@@ -203,7 +210,7 @@ const PREMIUM_ICON_FALLBACK_TEXT_BY_ID: Record<string, string> = {
     '5258236805890710909': '⬅️',
     '5877468380125990242': '➡️',
     '5884123981706956210': '⏭️',
-    '5389061359403039918': '✅',
+    '6307344346748290621': '✅',
     '5852812849780362931': '❌',
     '5253742260054409879': '✉️',
     '5188381825701021648': '🌐',
@@ -224,7 +231,7 @@ const PREMIUM_ICON_FALLBACK_TEXT_BY_ID: Record<string, string> = {
     '5357080225463149588': '🤝',
     '5852777287451151788': '🟢',
     '5359543311897998264': '⏸️',
-    '5188561131995690450': '🏠',
+    '5204181485669597563': '🏠',
     '5350421256627838238': '📬',
     '5420315771991497307': '🔥',
     '5780530293945405228': '🎯',
@@ -252,6 +259,50 @@ function addFallbackEmojiToText(text: string, iconId?: string): string {
     if (!emoji) return source;
     if (hasLeadingEmoji(source)) return source;
     return source.trim() ? `${emoji} ${source}` : emoji;
+}
+
+const BUTTON_LEADING_DECORATORS_RE = /^[\s\u00A0\u200B\u200C\u200D•·▪▫◦‣∙●○]+/u;
+function trimButtonDecorators(text: string): string {
+    return String(text || '').replace(BUTTON_LEADING_DECORATORS_RE, '');
+}
+
+function stripLeadingEmojiFromButtonText(text: string): string {
+    const source = trimButtonDecorators(String(text || '').trimStart());
+    if (!source) return String(text || '');
+    const match = source.match(/^(?:(\p{Regional_Indicator}{2}|\p{Extended_Pictographic}(?:\uFE0F)?(?:\u200D\p{Extended_Pictographic}(?:\uFE0F)?)*)\s*)+(?:[|:：\-–—]\s*)?/u);
+    if (!match?.[0]) {
+        const fallback = source
+            .replace(/^(?:\p{Regional_Indicator}{2}|\p{Extended_Pictographic}|\uFE0F|\u200D|\s)+/u, '')
+            .replace(/^[|:：\-–—]\s*/u, '')
+            .trimStart();
+        return fallback.length > 0 ? fallback : String(text || '');
+    }
+    const stripped = source.slice(match[0].length).trimStart();
+    return stripped || String(text || '');
+}
+
+function normalizeReplyMarkupButtonText(replyMarkup: any): any {
+    if (!replyMarkup || typeof replyMarkup !== 'object') return replyMarkup;
+    const normalizeButton = (button: any) => {
+        if (!button || typeof button !== 'object') return button;
+        if (!button.icon_custom_emoji_id || typeof button.text !== 'string') return button;
+        return {
+            ...button,
+            text: stripLeadingEmojiFromButtonText(button.text)
+        };
+    };
+    const result: any = { ...replyMarkup };
+    if (Array.isArray(replyMarkup.inline_keyboard)) {
+        result.inline_keyboard = replyMarkup.inline_keyboard.map((row: any[]) =>
+            Array.isArray(row) ? row.map((button) => normalizeButton(button)) : row
+        );
+    }
+    if (Array.isArray(replyMarkup.keyboard)) {
+        result.keyboard = replyMarkup.keyboard.map((row: any[]) =>
+            Array.isArray(row) ? row.map((button) => normalizeButton(button)) : row
+        );
+    }
+    return result;
 }
 
 function hasPremiumButtonFields(replyMarkup: any): boolean {
@@ -447,11 +498,12 @@ export async function sendMessage(
     const premiumText = shouldDecorate ? applyPremiumEmoji(safeText, options.premiumKey) : safeText;
     const hasHtmlMarkup = /<\/?(?:b|i|u|s|code|pre|blockquote|a|tg-emoji)\b/i.test(premiumText);
     const autoParse = options.parseMode ?? (hasHtmlMarkup ? 'HTML' : undefined);
+    const normalizedMarkup = normalizeReplyMarkupButtonText(options.replyMarkup);
     const payload = {
         chat_id: chatId,
         text: premiumText,
         ...(autoParse ? { parse_mode: autoParse } : {}),
-        reply_markup: options.replyMarkup,
+        reply_markup: normalizedMarkup,
         disable_web_page_preview: options.disableWebPagePreview
     };
 
@@ -459,11 +511,11 @@ export async function sendMessage(
         return await callTelegramAPI('sendMessage', payload);
     } catch (error) {
         let activeError: unknown = error;
-        if (isButtonIconError(activeError) && hasPremiumButtonFields(options.replyMarkup)) {
+        if (isButtonIconError(activeError) && hasPremiumButtonFields(normalizedMarkup)) {
             try {
                 return await callTelegramAPI('sendMessage', {
                     ...payload,
-                    reply_markup: sanitizeReplyMarkup(options.replyMarkup)
+                    reply_markup: sanitizeReplyMarkup(normalizedMarkup)
                 });
             } catch (retryError) {
                 activeError = retryError;
@@ -478,7 +530,7 @@ export async function sendMessage(
             chat_id: chatId,
             text: safeText,
             ...(fallbackParse ? { parse_mode: fallbackParse } : {}),
-            reply_markup: options.replyMarkup,
+            reply_markup: normalizedMarkup,
             disable_web_page_preview: options.disableWebPagePreview
         });
     }
@@ -507,12 +559,13 @@ export async function sendSticker(
         : options.caption;
     const parseMode = options.parseMode
         ?? (caption && caption.includes('<tg-emoji') ? 'HTML' : undefined);
+    const normalizedMarkup = normalizeReplyMarkupButtonText(options.replyMarkup);
     const payload = {
         chat_id: chatId,
         sticker,
         ...(caption ? { caption } : {}),
         ...(parseMode ? { parse_mode: parseMode } : {}),
-        ...(options.replyMarkup ? { reply_markup: options.replyMarkup } : {}),
+        ...(normalizedMarkup ? { reply_markup: normalizedMarkup } : {}),
         ...(typeof options.disableNotification === 'boolean' ? { disable_notification: options.disableNotification } : {})
     };
 
@@ -520,11 +573,11 @@ export async function sendSticker(
         return await callTelegramAPI('sendSticker', payload);
     } catch (error) {
         let activeError: unknown = error;
-        if (isButtonIconError(activeError) && hasPremiumButtonFields(options.replyMarkup)) {
+        if (isButtonIconError(activeError) && hasPremiumButtonFields(normalizedMarkup)) {
             try {
                 return await callTelegramAPI('sendSticker', {
                     ...payload,
-                    ...(options.replyMarkup ? { reply_markup: sanitizeReplyMarkup(options.replyMarkup) } : {})
+                    ...(normalizedMarkup ? { reply_markup: sanitizeReplyMarkup(normalizedMarkup) } : {})
                 });
             } catch (retryError) {
                 activeError = retryError;
@@ -541,7 +594,7 @@ export async function sendSticker(
             sticker,
             ...(plainCaption ? { caption: plainCaption } : {}),
             ...(plainParseMode ? { parse_mode: plainParseMode } : {}),
-            ...(options.replyMarkup ? { reply_markup: options.replyMarkup } : {}),
+            ...(normalizedMarkup ? { reply_markup: normalizedMarkup } : {}),
             ...(typeof options.disableNotification === 'boolean' ? { disable_notification: options.disableNotification } : {})
         });
     }
@@ -587,8 +640,9 @@ export async function editMessage(
     const shouldDecorate = shouldUsePremiumEmoji({ parseMode: options.parseMode });
     const premiumText = shouldDecorate ? applyPremiumEmoji(safeText, options.premiumKey) : safeText;
     const parseMode = options.parseMode ?? 'HTML';
-    const inlineMarkup = options.replyMarkup && typeof options.replyMarkup === 'object' && 'inline_keyboard' in options.replyMarkup
-        ? options.replyMarkup
+    const normalizedMarkup = normalizeReplyMarkupButtonText(options.replyMarkup);
+    const inlineMarkup = normalizedMarkup && typeof normalizedMarkup === 'object' && 'inline_keyboard' in normalizedMarkup
+        ? normalizedMarkup
         : undefined;
     const payload = {
         chat_id: chatId,

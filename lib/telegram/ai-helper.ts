@@ -68,7 +68,7 @@ export async function generateResumeWithAI(
 function buildUzbekPrompt(profile: ProfileData): string {
     return `Siz professional rezyume yozuvchi sifatida ishlaysiz.
 
-Quyidagi ma'lumotlar asosida qisqa va professional rezyume matni yarating:
+Quyidagi ma'lumotlar asosida qisqa va professional rezyume matni tuzing:
 
 Ism: ${profile.full_name || "Ko'rsatilmagan"}
 Shahar: ${profile.city || profile.region_name || "Ko'rsatilmagan"}

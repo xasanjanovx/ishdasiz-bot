@@ -27,7 +27,7 @@ export const botTexts = {
 
     // Start / help
     startWelcome: {
-        uz: "<b>• Assalomu alaykum | ISHDASIZ platformasiga xush kelibsiz!</b>\n\n<b>Bu yerda siz:</b>\n<blockquote><i>🚀 | Ish yoki xodimni tez topishingiz\n🧾 | Rezyume va vakansiyalarni bir joyda boshqarishingiz\n⚡️ | Tanlov jarayonini samarali tashkil etishingiz\n🤖 | Sun’iy intellekt yordamidan foydalanishingiz mumkin.</i></blockquote>\n\n<i>Foydalanish uchun <b>“Kirish”</b> ni bosing.</i>",
+        uz: "<b>• Assalomu Alaykum, hurmatli foydalanuvchi!</b>\n\n<i>Bot orqali tez va qulay tarzda <b>ISH</b> yoki <b>XODIM</b> topishingiz mumkin!\nHoziroq foydalanishni boshlang!</i>",
         ru: "<b>Здравствуйте | Добро пожаловать в ISHDASIZ!</b>\n\n<b>Здесь вы можете:</b>\n<blockquote><i>🎯 | Быстро найти работу или сотрудника\n🧾 | Управлять резюме и вакансиями в одном месте\n⚡ | Организовать подбор эффективнее\n🤖 | Использовать помощь ИИ.</i></blockquote>\n\n<i>Для продолжения нажмите <b>«Войти»</b>.</i>"
     },
     helpText: {
@@ -228,7 +228,7 @@ export const botTexts = {
     },
     askSkills: {
         uz: '<b>🧠 | Asosiy ko‘nikmalaringizni kiriting</b>\n<i>Masalan: Word, Excel, Mijozlar bilan muloqot.</i>\n<i>Ko‘nikmalarni o‘zingiz yozishingiz yoki AI tavsiyasi bilan davom etishingiz mumkin.</i>',
-        ru: '<b>🧠 | Введите основные навыки:</b>\n<i>Например: Excel, 1C, CRM, Продажи, Photoshop, Teamwork</i>\n<i>Можно отправлять по одному или через запятую.</i>\n\n<i>Кнопка “Готово” появится после первого навыка.</i>\n<i>Если навыков нет — нажмите “Пропустить”.</i>'
+        ru: '<b>🧠 | Укажите основные навыки</b>\n<i>Например: Excel, 1C, CRM.</i>\n<i>Можно написать вручную или продолжить с AI-рекомендацией.</i>'
     },
     askWorkplace: {
         uz: '<b>🏢 | Ishlagan joyingiz va lavozimingiz.</b>\n<i>Masalan: “24-maktab — Ingliz tili o‘qituvchisi”</i>',
@@ -549,8 +549,8 @@ export const botTexts = {
         ru: '<b>📅 График</b>\n<i>Например: 5-дневка или 6-дневка</i>'
     },
     jobWorkingHoursPrompt: {
-        uz: "<b>⏰ | Ish vaqti</b>\n<i>Quyidagi variantni tanlang yoki o'zingiz yozing.</i>",
-        ru: '<b>⏰ | Время работы</b>\n<i>Выберите вариант или введите вручную.</i>'
+        uz: "<b>⏰ | Ish vaqti</b>\n<i>Quyidagi variantni tanlang yoki o'zingiz yozing.</i>\n<i>Masalan: 07:30-16:30 yoki 14:00-22:00</i>",
+        ru: '<b>⏰ | Время работы</b>\n<i>Выберите вариант или введите вручную.</i>\n<i>Например: 07:30-16:30 или 14:00-22:00</i>'
     },
     jobExperiencePrompt: {
         uz: '<b>🧠 | Tajriba talabi</b>',
@@ -603,8 +603,8 @@ export const botTexts = {
         ru: '<b>🧭 | Выберите сферу вакансии</b>'
     },
     postJobSalary: {
-        uz: '<b>💰 | Minimal maosh qancha taklif qilasiz?</b>\n<i>Masalan: 3 000 000</i>',
-        ru: '<b>💰 Какую зарплату предлагаете?</b>\n<i>Например: 3 000 000 или “Договорная”.</i>\n<i>Можно нажать кнопку “Договорная”.</i>'
+        uz: '<b>💰 | Minimal maosh qancha taklif qilasiz?</b>\n<i>Masalan: 3 000 000</i>\n<i>Summani yozing yoki “Kelishiladi” tugmasini bosing.</i>',
+        ru: '<b>💰 Какую зарплату предлагаете?</b>\n<i>Например: 3 000 000.</i>\n<i>Введите сумму или нажмите кнопку “Договорная”.</i>'
     },
     postJobSalaryMax: {
         uz: '<b>💰 | Maksimal maosh (ixtiyoriy)</b>\n<i>Masalan: 8 000 000. Maksimum bo‘lmasa, “Davom etish”ni bosing.</i>',
@@ -619,16 +619,16 @@ export const botTexts = {
         ru: '<b>📌 | Требования и обязанности</b>\n<i>Например:</i>\n<i>- Выполнять конкретные задачи по должности</i>\n<i>- Опыт работы от 1 года</i>\n<i>- Ответственность и умение работать в команде</i>'
     },
     jobLocationPrompt: {
-        uz: "<b>📍 | Ish joyi lokatsiyasini yuboring</b>\n<i>Bu bosqich majburiy: geolokatsiyani yuboring.</i>",
-        ru: '<b>📍 | Отправьте геолокацию места работы</b>\n<i>Это обязательный шаг: отправьте геолокацию.</i>'
+        uz: "<b>📍 | Ish joyi lokatsiyasini yuboring</b>\n<i>Lokatsiyani tugma orqali yoki kompyuterda 📎 (skrepka) orqali yuborishingiz mumkin.</i>",
+        ru: '<b>📍 | Отправьте геолокацию места работы</b>\n<i>Можно отправить через кнопку или через 📎 (скрепку) в Telegram Desktop.</i>'
     },
     fieldSearchLoading: {
         uz: '⏳ | Mos kasblar qidirilmoqda...',
         ru: '⏳ Идёт поиск подходящих профессий...'
     },
     workerSearchLoading: {
-        uz: '🔎 | Mos ishchilar qidirilmoqda...',
-        ru: '⏳ Идёт поиск подходящих кандидатов...'
+        uz: '<b>🔎 | Mos ishchilar qidirilmoqda...</b>',
+        ru: '<b>⏳ Идёт поиск подходящих кандидатов...</b>'
     },
     postJobConfirm: {
         uz: (title: string) => `<b>📌 | Vakansiyani tekshiring va tasdiqlang</b>\n\n<i>“${title}”</i>`,
@@ -701,6 +701,12 @@ export function t(key: keyof typeof botTexts, lang: BotLang): string {
 }
 
 export function formatJobCard(job: any, lang: BotLang, matchScore?: number): string {
+    const escape = (value: unknown) => String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
     const na = lang === 'uz' ? "Ko'rsatilmagan" : 'Не указано';
     const rawTitle = job?.raw_source_json?.title || job?.raw_source_json?.position || job?.raw_source_json?.job_title || null;
     const title = lang === 'uz'
@@ -713,30 +719,21 @@ export function formatJobCard(job: any, lang: BotLang, matchScore?: number): str
         : salaryMin
             ? `${(salaryMin / 1e6).toFixed(1)} mln+`
             : (lang === 'uz' ? 'Kelishiladi' : 'Договорная');
-    const statusRaw = String(job?.status || job?.source_status || '').toLowerCase();
-    const hasStatus = statusRaw.length > 0;
-    const hasActiveFlag = typeof job?.is_active === 'boolean';
-    const isPaused = job?.is_active === false && (statusRaw === 'inactive' || statusRaw === 'paused' || statusRaw === 'on_hold');
-    const isFilled = statusRaw === 'filled' || statusRaw === 'closed' || statusRaw === 'archived';
-    const statusUnknown = !hasStatus && !hasActiveFlag;
-    const statusIcon = statusUnknown ? '⚪️' : (isFilled ? '🔴' : (isPaused ? '🟡' : '🟢'));
-    const statusLabel = statusUnknown
-        ? (lang === 'uz' ? "Noma'lum" : 'Неизвестно')
-        : (isFilled
-            ? (lang === 'uz' ? 'Yopilgan' : 'Закрыта')
-            : (isPaused
-                ? (lang === 'uz' ? 'Vaqtincha to‘xtatilgan' : 'Временно приостановлена')
-                : (lang === 'uz' ? 'Faol' : 'Активна')));
     const location = [job.region_name, job.district_name].filter(Boolean).join(', ');
     const titleLabel = lang === 'uz' ? 'Lavozim' : 'Должность';
-    const statusLine = statusUnknown ? '' : `\n${statusIcon} | ${lang === 'uz' ? 'Holat' : 'Статус'}: ${statusLabel}`;
-    let card = `💼 | ${titleLabel}: ${title || na}\n🏢 | ${job.company_name || (lang === 'uz' ? 'Tashkilot' : 'Компания')}${statusLine}\n💰 | ${salary}`;
+    let card = `<b>💼 | ${titleLabel}: ${escape(title || na)}</b>\n🏢 | ${escape(job.company_name || (lang === 'uz' ? 'Tashkilot' : 'Компания'))}\n💰 | ${salary}`;
     if (location) card += `\n📍 | ${location}`;
     if (matchScore !== undefined) card += `\n\n${botTexts.matchScore[lang](matchScore)}`;
     return card;
 }
 
 export function formatFullJobCard(job: any, lang: BotLang): string {
+    const escape = (value: unknown) => String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
     const raw = job.raw_source_json || {};
     const na = lang === 'uz' ? "Ko'rsatilmagan" : 'Не указано';
     const rawTitle = raw?.title || raw?.position || raw?.job_title || raw?.position_name || null;
@@ -780,9 +777,6 @@ export function formatFullJobCard(job: any, lang: BotLang): string {
 
     const location = [job.region_name, job.district_name].filter(Boolean).join(', ') || na;
     const address = job.address || raw?.address || raw?.work_address || null;
-    const lat = Number(job.latitude ?? raw?.latitude);
-    const lon = Number(job.longitude ?? raw?.longitude);
-    const hrName = job.hr_name || raw?.hr?.name || raw?.hr?.fio || null;
 
     const empTypeLabels: Record<string, { uz: string; ru: string }> = {
         full_time: { uz: "To'liq ish kuni", ru: 'Полный день' },
@@ -871,26 +865,9 @@ export function formatFullJobCard(job: any, lang: BotLang): string {
     };
 
     const lines: string[] = [];
-    const statusRaw = String(job?.status || job?.source_status || '').toLowerCase();
-    const hasStatus = statusRaw.length > 0;
-    const hasActiveFlag = typeof job?.is_active === 'boolean';
-    const isPaused = job?.is_active === false && (statusRaw === 'inactive' || statusRaw === 'paused' || statusRaw === 'on_hold');
-    const isFilled = statusRaw === 'filled' || statusRaw === 'closed' || statusRaw === 'archived';
-    const statusUnknown = !hasStatus && !hasActiveFlag;
-    const statusIcon = statusUnknown ? '⚪️' : (isFilled ? '🔴' : (isPaused ? '🟡' : '🟢'));
-    const statusLabel = statusUnknown
-        ? (lang === 'uz' ? "Noma'lum" : 'Неизвестно')
-        : (isFilled
-            ? (lang === 'uz' ? 'Yopilgan' : 'Закрыта')
-            : (isPaused
-                ? (lang === 'uz' ? 'Vaqtincha to‘xtatilgan' : 'Временно приостановлена')
-                : (lang === 'uz' ? 'Faol' : 'Активна')));
-    lines.push(`💼 | ${lang === 'uz' ? 'Lavozim' : 'Должность'}: ${title || na}`);
+    lines.push(`<b>💼 | ${lang === 'uz' ? 'Lavozim' : 'Должность'}: ${escape(title || na)}</b>`);
     lines.push('— — — — — — — — — — — — — — — —');
     lines.push(`🏢 | ${lang === 'uz' ? 'Tashkilot' : 'Компания'}: ${job.company_name || (lang === 'uz' ? 'Tashkilot' : 'Компания')}`);
-    if (!statusUnknown) {
-        lines.push(`${statusIcon} | ${lang === 'uz' ? 'Holat' : 'Статус'}: ${statusLabel}`);
-    }
     const locationLabel = normalize(location || null);
     if (locationLabel) lines.push(`📍 | ${lang === 'uz' ? 'Joylashuv' : 'Локация'}: ${locationLabel}`);
     if (address) lines.push(`📌 | ${lang === 'uz' ? 'Ish joy manzili' : 'Адрес'}: ${address}`);
@@ -903,9 +880,14 @@ export function formatFullJobCard(job: any, lang: BotLang): string {
     if (edu) lines.push(`🎓 | ${lang === 'uz' ? "Ma'lumot" : 'Образование'}: ${edu}`);
 
     const gender = normalize(genderLabel || null);
-    if (gender) lines.push(`🚻 | ${lang === 'uz' ? 'Jins talabi' : 'Требование по полу'}: ${gender}`);
+    const genderAnyValues = new Set(['any', 'ahamiyatsiz', 'не важно', 'любой', 'любая', "ahamiyatga ega emas"]);
+    if (gender && !genderAnyValues.has(String(gender).trim().toLowerCase())) {
+        lines.push(`🚻 | ${lang === 'uz' ? 'Jins talabi' : 'Требование по полу'}: ${gender}`);
+    }
 
-    if (ageLabel) lines.push(`📊 | ${lang === 'uz' ? 'Yosh' : 'Возраст'}: ${ageLabel}`);
+    const ageRaw = String(job?.age ?? raw?.age ?? raw?.age_requirement ?? '').trim().toLowerCase();
+    const ageAnyValues = new Set(['any', 'ahamiyatsiz', 'не важно', 'любой', 'любая', "ahamiyatga ega emas"]);
+    if (ageLabel && !ageAnyValues.has(ageRaw)) lines.push(`📊 | ${lang === 'uz' ? 'Yosh' : 'Возраст'}: ${ageLabel}`);
 
     const mode = normalize(workMode || null);
     if (mode) lines.push(`🧭 | ${lang === 'uz' ? 'Ish usuli' : 'Режим'}: ${mode}`);
@@ -1020,13 +1002,10 @@ export function formatFullJobCard(job: any, lang: BotLang): string {
         lines.push(`🛎️ | ${lang === 'uz' ? 'Qulayliklar' : 'Условия'}: ${benefits}`);
     }
 
-    const hasContacts = job.contact_phone || job.contact_email || job.contact_telegram || hrName || job.phone || job.email;
+    const hasContacts = job.contact_phone || job.contact_telegram || job.phone;
     if (hasContacts) {
         lines.push('');
-        lines.push(`☎️ | ${lang === 'uz' ? "Bog'lanish" : 'Контакты'}`);
-        if (hrName) lines.push(`👤 | ${lang === 'uz' ? 'Vakansiya HR menejeri' : 'HR менеджер'}: ${hrName}`);
         if (job.contact_phone || job.phone) lines.push(`📞 | ${lang === 'uz' ? 'Telefon' : 'Телефон'}: ${job.contact_phone || job.phone}`);
-        if (job.contact_email || job.email) lines.push(`📧 | Email: ${job.contact_email || job.email}`);
         if (job.contact_telegram) lines.push(`💬 | Telegram: ${job.contact_telegram}`);
     }
 
