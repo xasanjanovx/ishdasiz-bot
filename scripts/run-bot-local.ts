@@ -12,6 +12,14 @@ const API_BASE = `https://api.telegram.org/bot${BOT_TOKEN}`;
 const POLL_TIMEOUT_SECONDS = 30;
 const REQUEST_TIMEOUT_MS = 35000;
 const DELETE_WEBHOOK_RETRIES = 3;
+const BOT_DESCRIPTION_TEXT = [
+    '• Assalomu alaykum!',
+    'Platformaga xush kelibsiz!',
+    '',
+    '🔎 | Bot orqali tez va qulay tarzda ish va xodim topishingiz mumkin!',
+    'Hoziroq foydalanishni boshlang!'
+].join('\n');
+const BOT_SHORT_DESCRIPTION_TEXT = "Ish va xodim topish uchun aqlli yordamchi bot.";
 
 if (!BOT_TOKEN) {
     console.error('TELEGRAM_BOT_TOKEN not set');
@@ -89,6 +97,20 @@ async function deleteWebhook(): Promise<void> {
     }
 }
 
+async function syncBotProfileTexts(): Promise<void> {
+    try {
+        const desc = encodeURIComponent(BOT_DESCRIPTION_TEXT);
+        const shortDesc = encodeURIComponent(BOT_SHORT_DESCRIPTION_TEXT);
+        await fetchJson(`${API_BASE}/setMyDescription?description=${desc}`);
+        await fetchJson(`${API_BASE}/setMyShortDescription?short_description=${shortDesc}`);
+        await fetchJson(`${API_BASE}/setMyDescription?description=${desc}&language_code=uz`);
+        await fetchJson(`${API_BASE}/setMyShortDescription?short_description=${shortDesc}&language_code=uz`);
+        console.log('Bot profile description synced.');
+    } catch (err) {
+        console.warn('Failed to sync bot profile description:', formatNetworkError(err));
+    }
+}
+
 async function getUpdates(): Promise<any[]> {
     try {
         const data = await fetchJson(`${API_BASE}/getUpdates?offset=${lastUpdateId + 1}&timeout=${POLL_TIMEOUT_SECONDS}`);
@@ -111,6 +133,7 @@ async function main(): Promise<void> {
     const { telegramBot } = await import('../lib/telegram/telegram-bot');
 
     await deleteWebhook();
+    await syncBotProfileTexts();
 
     console.log('Bot started in polling mode with FULL functionality.');
     console.log('Features: Language selection, Phone verification, OTP, Resume creation');

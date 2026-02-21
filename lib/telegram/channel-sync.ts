@@ -1,6 +1,9 @@
-import { createHash } from 'crypto';
+﻿import { createHash } from 'crypto';
+import { E } from './premium-emoji-config';
 
 export type SyncEntityType = 'job' | 'resume';
+
+const ce = (id: string, fallback: string): string => `<tg-emoji emoji-id="${id}">${fallback}</tg-emoji>`;
 
 export const REGION_CHANNEL_BY_SLUG: Record<string, string> = {
   'toshkent-shahri': '@ishdasiz_toshkent',
@@ -70,14 +73,14 @@ const EDUCATION_LABELS_UZ: Record<string, string> = {
 };
 
 const WORK_MODE_LABELS_UZ: Record<string, string> = {
-  onsite: 'Onsite',
+  onsite: 'Ish joyida',
   remote: 'Masofaviy',
   hybrid: 'Gibrid'
 };
 
 const EMPLOYMENT_LABELS_UZ: Record<string, string> = {
-  full_time: 'Full-time',
-  part_time: 'Part-time',
+  full_time: "To'liq ish kuni",
+  part_time: 'Yarim kun',
   contract: 'Shartnoma',
   internship: 'Amaliyot'
 };
@@ -239,7 +242,6 @@ function toDistrictHashtag(value: string | null | undefined): string | null {
     .join('_')
     .slice(0, 64);
 }
-
 function buildTags(kind: 'job' | 'resume', regionSlug: string | null | undefined, districtName: string | null | undefined): string {
   const base = kind === 'job' ? '#vakansiya' : '#rezyume';
   const regionTag = regionSlug ? REGION_HASHTAG_BY_SLUG[String(regionSlug).toLowerCase()] : null;
@@ -277,7 +279,6 @@ function parseDescriptionItems(description: string): string[] {
     .filter(Boolean)
     .slice(0, 3);
 }
-
 function regionPromoLabel(regionSlug: string | null | undefined): string {
   if (!regionSlug) return 'hudud';
   const normalized = compactText(regionSlug).toLowerCase();
@@ -291,9 +292,8 @@ function channelFooter(regionSlug: string | null | undefined): string {
   if (!channel) return '';
   const handle = channel.startsWith('@') ? channel.slice(1) : channel;
   const promo = regionPromoLabel(regionSlug);
-  return `🚀 <b><a href="https://t.me/${handle}">ISHDASIZ</a></b> — <i>${escapeHtml(promo)}dagi eng yangi bo'sh ish o'rinlari!</i>`;
+  return `${ce('5458555944591981600', '🚀')} <b><a href="https://t.me/${handle}">ISHDASIZ</a></b> — <i>${escapeHtml(promo)}dagi eng yangi bo'sh ish o'rinlari!</i>`;
 }
-
 function getCoordinates(entity: any): { lat: number | null; lon: number | null } {
   const raw = entity?.raw_source_json || {};
   const rawLocation = raw?.location && typeof raw.location === 'object' ? raw.location : null;
@@ -353,7 +353,6 @@ function sanitizeBullet(value: string): string {
     .replace(/[.;:,]+$/g, '')
     .trim();
 }
-
 function resolveTrialPeriodLabel(job: any, raw: any): string | null {
   const testPeriodId = compactText(job?.test_period_id ?? raw?.test_period_id ?? raw?.test_periodId ?? '');
   if (testPeriodId && TEST_PERIOD_LABELS_UZ[testPeriodId]) {
@@ -407,77 +406,71 @@ export function buildJobChannelMessage(job: any, regionSlug?: string | null): st
 
   const contactPhone = formatPhonePretty(job?.contact_phone || job?.phone || raw?.contact_phone || raw?.phone || '');
   const contactTelegramRaw = compactText(job?.contact_telegram || raw?.telegram || raw?.contact_telegram || '');
-  const contactTelegram = contactTelegramRaw
-    ? (contactTelegramRaw.startsWith('@') ? contactTelegramRaw : `@${contactTelegramRaw}`)
-    : '';
+  const contactTelegram = contactTelegramRaw ? (contactTelegramRaw.startsWith('@') ? contactTelegramRaw : `@${contactTelegramRaw}`) : '';
 
-  const languages = uniqueList(
-    asList(job?.languages ?? raw?.languages ?? raw?.language_ids ?? raw?.language).map(normalizeLanguageLabel),
-    6
-  );
-  const benefits = uniqueList(
-    asList(job?.benefits ?? raw?.benefits ?? raw?.ijtimoiy_paketlar ?? raw?.qulayliklar).map(sanitizeBullet),
-    6
-  );
+  const languages = uniqueList(asList(job?.languages ?? raw?.languages ?? raw?.language_ids ?? raw?.language).map(normalizeLanguageLabel), 6);
+  const benefits = uniqueList(asList(job?.benefits ?? raw?.benefits ?? raw?.ijtimoiy_paketlar ?? raw?.qulayliklar).map(sanitizeBullet), 6);
 
-  const description = compactText(
-    job?.description_uz
-    || job?.description
-    || job?.requirements_uz
-    || job?.responsibilities_uz
-    || raw?.description_text
-    || raw?.description
-    || raw?.info
-    || ''
-  );
-
+  const description = compactText(job?.description_uz || job?.description || job?.requirements_uz || job?.responsibilities_uz || raw?.description_text || raw?.description || raw?.info || '');
   const requirementItems = uniqueList([
     ...asList(raw?.ish_vazifalari),
     ...asList(raw?.talablar),
     ...parseDescriptionItems(description)
-  ]
-    .flatMap((item) => String(item || '').split(/\s+-\s+/g))
-    .map(sanitizeBullet), 4);
+  ].flatMap((item) => String(item || '').split(/\s+-\s+/g)).map(sanitizeBullet), 4);
 
   const specialFlags = mapSpecialFlagsToText(asList(job?.special ?? raw?.special));
-
   const finalRegionSlug = regionSlug || job?.districts?.regions?.slug || null;
   const tags = buildTags('job', finalRegionSlug, districtName || null);
 
   const coords = getCoordinates(job);
-  const mapUrl = (coords.lat !== null && coords.lon !== null)
-    ? `https://www.google.com/maps?q=${coords.lat},${coords.lon}`
-    : null;
-
+  const mapUrl = (coords.lat !== null && coords.lon !== null) ? `https://www.google.com/maps?q=${coords.lat},${coords.lon}` : null;
   const footer = channelFooter(finalRegionSlug);
+  const sep = '━━━━━━━━━━━━━━━';
+
+  const em = {
+    pin: ce('5350301517234586704', '📍'),
+    briefcase: ce('5458809519461136265', '💼'),
+    office: ce('5264733042710181045', '🏢'),
+    clip: ce('5292291996717690768', '📌'),
+    map: ce('5406686715479860449', '🗺️'),
+    money: ce(E.money, '💰'),
+    brain: ce('6257767895732848636', '🧠'),
+    edu: ce('5375163339154399459', '🎓'),
+    user: ce('5422721499138136676', '👤'),
+    chart: ce(E.chart, '📊'),
+    clock: ce(E.clock, '⏰'),
+    lang: ce('5188381825701021648', '🌐'),
+    gift: ce(E.gift, '🎁'),
+    call: ce(E.call, '📞')
+  };
 
   const lines: string[] = [
-    `📍 ${tags}`,
+    `${em.pin} ${tags}`,
     '',
-    `<b>💼 | Lavozim: ${escapeHtml(title)}</b>`,
+    `<b>${em.briefcase} | Lavozim: ${escapeHtml(title)}</b>`,
     '',
-    '━━━━━━━━━━━━━━━',
+    sep,
     '',
-    `🏢 Tashkilot: ${escapeHtml(company)}`,
-    location ? `📍 Hudud: ${escapeHtml(location)}` : '',
-    address ? `📌 Manzil: ${escapeHtml(address)}` : '',
-    mapUrl ? `🗺️ <a href="${mapUrl}">Joylashuvni ko'rish</a>` : '',
+    `${em.office} Tashkilot: ${escapeHtml(company)}`,
+    location ? `${em.pin} Hudud: ${escapeHtml(location)}` : '',
+    address ? `${em.clip} Manzil: ${escapeHtml(address)}` : '',
+    mapUrl ? `${em.map} <a href="${mapUrl}">Joylashuvni ko'rish</a>` : '',
     '',
-    `💰 Maosh: ${escapeHtml(salary)}`,
-    `🧠 Tajriba: ${escapeHtml(experience)}`,
-    `🎓 Ma'lumot: ${escapeHtml(education)}`,
-    trialPeriod ? `⏳ Sinov muddati: ${escapeHtml(trialPeriod)}` : '',
-    gender ? `🚻 Jins talabi: ${escapeHtml(gender)}` : '',
-    age ? `📊 Yosh: ${escapeHtml(age)}` : ''
+    `${em.money} Maosh: ${escapeHtml(salary)}`,
+    `${em.brain} Tajriba: ${escapeHtml(experience)}`,
+    `${em.edu} Ma'lumot: ${escapeHtml(education)}`,
+    trialPeriod ? `${em.clock} Sinov muddati: ${escapeHtml(trialPeriod)}` : '',
+    gender ? `${em.user} Jins talabi: ${escapeHtml(gender)}` : '',
+    age ? `${em.chart} Yosh: ${escapeHtml(age)}` : ''
   ];
 
   if (specialFlags.length > 0) {
-    lines.push(`📌 Qo'shimcha mezonlar: ${escapeHtml(specialFlags.join(', '))}`);
+    lines.push(`${em.clip} Qo'shimcha mezonlar: ${escapeHtml(specialFlags.join(', '))}`);
   }
 
   lines.push(
     '',
-    '<b>🕒 Ish tartibi</b>',
+    `<b>${em.clock} Ish tartibi</b>`,
     employment ? `• Bandlik: ${escapeHtml(employment)}` : '',
     workingDays ? `• Ish kunlari: ${escapeHtml(workingDays)}` : '',
     workingHours ? `• Ish vaqti: ${escapeHtml(workingHours)}` : '',
@@ -485,33 +478,30 @@ export function buildJobChannelMessage(job: any, regionSlug?: string | null): st
   );
 
   if (languages.length > 0) {
-    lines.push('', '<b>🌐 Talab etiladigan tillar</b>', escapeHtml(languages.join(' • ')));
+    lines.push('', `<b>${em.lang} Talab etiladigan tillar</b>`, escapeHtml(languages.join(' • ')));
   }
 
-  lines.push('', '━━━━━━━━━━━━━━━');
+  lines.push('', sep);
 
   if (requirementItems.length > 0) {
-    lines.push('', '<b>📌 Asosiy vazifalar</b>');
+    lines.push('', `<b>${em.clip} Asosiy vazifalar</b>`);
     lines.push(...requirementItems.map((item) => `- ${escapeHtml(item)}`));
   }
 
   if (benefits.length > 0) {
-    lines.push('', '<b>🎁 Qulayliklar</b>');
+    lines.push('', `<b>${em.gift} Qulayliklar</b>`);
     lines.push(...benefits.map((item) => `- ${escapeHtml(item)}`));
   }
 
-  lines.push('', '━━━━━━━━━━━━━━━');
+  lines.push('', sep);
 
-  if (contactPhone) lines.push('', `📞 Aloqa: ${escapeHtml(contactPhone)}`);
-  if (contactTelegram) lines.push(`💬 Telegram: ${escapeHtml(contactTelegram)}`);
+  if (contactPhone) lines.push('', `${em.call} Aloqa: ${escapeHtml(contactPhone)}`);
+  if (contactTelegram) lines.push(`${ce(E.send, '💬')} Telegram: ${escapeHtml(contactTelegram)}`);
 
-  if (footer) {
-    lines.push('', footer);
-  }
+  if (footer) lines.push('', footer);
 
   return lines.filter(Boolean).join('\n');
 }
-
 export function buildResumeChannelMessage(resume: any, regionSlug?: string | null): string {
   const raw = resume?.raw_source_json || {};
   const title = compactText(resume?.title || resume?.desired_position || resume?.field_title || raw?.position_name || 'Mutaxassis');
@@ -542,52 +532,64 @@ export function buildResumeChannelMessage(resume: any, regionSlug?: string | nul
   const finalRegionSlug = regionSlug || resume?.districts?.regions?.slug || null;
   const tags = buildTags('resume', finalRegionSlug, districtName || null);
   const footer = channelFooter(finalRegionSlug);
+  const sep = '━━━━━━━━━━━━━━━';
+
+  const em = {
+    user: ce('5422721499138136676', '👤'),
+    doc: ce('5458458113826910668', '🧾'),
+    pin: ce('5350301517234586704', '📍'),
+    brain: ce('6257767895732848636', '🧠'),
+    edu: ce('5375163339154399459', '🎓'),
+    money: ce(E.money, '💰'),
+    cal: ce('5967782394080530708', '📅'),
+    clip: ce('5292291996717690768', '📌'),
+    lang: ce('5188381825701021648', '🌐'),
+    note: ce(E.note, '📝'),
+    call: ce(E.call, '📞')
+  };
 
   const lines: string[] = [
-    `👤 ${tags}`,
+    `${em.user} ${tags}`,
     '',
-    `<b>🧾 | Lavozim: ${escapeHtml(title)}</b>`,
+    `<b>${em.doc} | Lavozim: ${escapeHtml(title)}</b>`,
     '',
-    '━━━━━━━━━━━━━━━',
+    sep,
     '',
-    `👤 Nomzod: ${escapeHtml(fullName)}`,
-    location ? `📍 Hudud: ${escapeHtml(location)}` : '',
-    `🧠 Tajriba: ${escapeHtml(experience)}`,
-    `🎓 Ma'lumot: ${escapeHtml(education)}`,
-    `💰 Kutilayotgan maosh: ${escapeHtml(salary)}`,
-    gender ? `🚻 Jins: ${escapeHtml(gender)}` : '',
-    birthDate ? `📅 Tug'ilgan sana: ${escapeHtml(birthDate)}` : ''
+    `${em.user} Nomzod: ${escapeHtml(fullName)}`,
+    location ? `${em.pin} Hudud: ${escapeHtml(location)}` : '',
+    `${em.brain} Tajriba: ${escapeHtml(experience)}`,
+    `${em.edu} Ma'lumot: ${escapeHtml(education)}`,
+    `${em.money} Kutilayotgan maosh: ${escapeHtml(salary)}`,
+    gender ? `${em.user} Jins: ${escapeHtml(gender)}` : '',
+    birthDate ? `${em.cal} Tug'ilgan sana: ${escapeHtml(birthDate)}` : ''
   ];
 
   if (specialFlags.length > 0) {
-    lines.push(`📌 Alohida toifalar: ${escapeHtml(specialFlags.join(', '))}`);
+    lines.push(`${em.clip} Alohida toifalar: ${escapeHtml(specialFlags.join(', '))}`);
   }
 
   if (skills.length > 0) {
-    lines.push('', '<b>🧩 Asosiy ko\'nikmalar</b>');
+    lines.push('', `<b>${em.clip} Asosiy ko'nikmalar</b>`);
     lines.push(...skills.map((item) => `- ${escapeHtml(item)}`));
   }
 
   if (languages.length > 0) {
-    lines.push('', '<b>🌐 Tillar</b>', escapeHtml(languages.join(' • ')));
+    lines.push('', `<b>${em.lang} Tillar</b>`, escapeHtml(languages.join(' • ')));
   }
 
   if (about) {
-    lines.push('', `<blockquote><b>📝 O'zi haqida</b>\n${escapeHtml(about)}</blockquote>`);
+    lines.push('', `<blockquote><b>${em.note} O'zi haqida</b>\n${escapeHtml(about)}</blockquote>`);
   }
 
-  lines.push('', '━━━━━━━━━━━━━━━');
+  lines.push('', sep);
 
-  if (phone) lines.push('', `📞 Aloqa: ${escapeHtml(phone)}`);
-  if (telegram) lines.push(`💬 Telegram: ${escapeHtml(telegram)}`);
+  if (phone) lines.push('', `${em.call} Aloqa: ${escapeHtml(phone)}`);
+  if (telegram) lines.push(`${ce(E.send, '💬')} Telegram: ${escapeHtml(telegram)}`);
 
-  if (footer) {
-    lines.push('', footer);
-  }
+  if (footer) lines.push('', footer);
 
   return lines.filter(Boolean).join('\n');
 }
-
 export function hashMessage(text: string): string {
   return createHash('sha256').update(text).digest('hex');
 }
@@ -609,3 +611,10 @@ export function normalizeRegionName(value: string | null | undefined): string {
     .replace(/\s+/g, ' ')
     .trim();
 }
+
+
+
+
+
+
+

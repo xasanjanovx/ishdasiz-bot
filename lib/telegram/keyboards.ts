@@ -826,8 +826,8 @@ export function workerNavigationKeyboard(
 
     if (options.showRegionSearch) {
         const label = lang === 'uz'
-            ? `📍 Viloyat bo'yicha qidirish${typeof options.regionCount === 'number' ? ` (${options.regionCount})` : ''}`
-            : `📍 Поиск по области${typeof options.regionCount === 'number' ? ` (${options.regionCount})` : ''}`;
+            ? "📍 Viloyat bo'yicha qidirish"
+            : '📍 Поиск по области';
         buttons.push([{ text: label, callback_data: 'worker:region' }]);
     }
 
@@ -848,8 +848,8 @@ export function workerRegionFallbackKeyboard(
     const rows: InlineButton[][] = [];
     if (options.showRegionSearch) {
         const label = lang === 'uz'
-            ? `📍 Viloyat bo'yicha qidirish${typeof options.regionCount === 'number' ? ` (${options.regionCount})` : ''}`
-            : `📍 Поиск по области${typeof options.regionCount === 'number' ? ` (${options.regionCount})` : ''}`;
+            ? "📍 Viloyat bo'yicha qidirish"
+            : '📍 Поиск по области';
         rows.push([{ text: label, callback_data: 'worker:region' }]);
     }
     rows.push([{ text: lang === 'uz' ? '🏠 Menyu' : '🏠 Меню', callback_data: 'menu:main' }]);
@@ -1549,7 +1549,7 @@ export function employerJobsKeyboard(
 export function jobConfirmKeyboard(lang: BotLang): object {
     return createInlineKeyboard([
         [{ text: lang === 'uz' ? '✅ Vakansiyani joylash' : '✅ Опубликовать вакансию', callback_data: 'job:publish' }],
-        [{ text: lang === 'uz' ? "✏️ O'zgartirish" : '✏️ Изменить', callback_data: 'back:job_description' }]
+        [{ text: lang === 'uz' ? "✏️ O'zgartirish" : '✏️ Изменить', callback_data: 'back:job_description_manual' }]
     ]);
 }
 

@@ -590,8 +590,8 @@ export const botTexts = {
         ru: '<b>👤 HR менеджер (Ф.И.О.)</b>\n<i>Например: Азизбек Мамадиев</i>'
     },
     jobContactPrompt: {
-        uz: '<b>📞 | Aloqa telefoni</b>\n<i>Masalan: +998901234567</i>',
-        ru: '<b>📞 Контактный телефон</b>\n<i>Например: +998901234567</i>'
+        uz: '<b>📞 | Aloqa telefoni</b>\n<i>To‘g‘ri format: +998901234567</i>',
+        ru: '<b>📞 Контактный телефон</b>\n<i>Правильный формат: +998901234567</i>'
     },
 
     // Employer posting
@@ -922,7 +922,7 @@ export function formatFullJobCard(job: any, lang: BotLang): string {
     if (days) lines.push(`📆 | ${lang === 'uz' ? 'Ish kunlari' : 'График'}: ${days}`);
 
     const emp = normalize(empType || null);
-    if (emp) lines.push(`🕒 | ${lang === 'uz' ? 'Bandlik' : 'Занятость'}: ${emp}`);
+    if (emp) lines.push(`📂 | ${lang === 'uz' ? 'Bandlik' : 'Занятость'}: ${emp}`);
 
     if (workingHours) lines.push(`⏰ | ${lang === 'uz' ? 'Ish vaqti' : 'Время работы'}: ${workingHours}`);
 
@@ -1022,14 +1022,14 @@ export function formatFullJobCard(job: any, lang: BotLang): string {
 
     if (perks.length > 0) {
         lines.push('');
-        lines.push(`🛎️ | ${lang === 'uz' ? 'Qulayliklar' : 'Условия'}`);
+        lines.push(`🎁 | ${lang === 'uz' ? 'Qulayliklar' : 'Условия'}`);
         lines.push(...perks.map(item => `- ${item}`));
     } else if (benefits) {
         const benefitItems = String(benefits)
             .split(/[,\n;]+/g)
             .map(item => item.trim())
             .filter(Boolean);
-        lines.push(`🛎️ | ${lang === 'uz' ? 'Qulayliklar' : 'Условия'}:`);
+        lines.push(`🎁 | ${lang === 'uz' ? 'Qulayliklar' : 'Условия'}:`);
         if (benefitItems.length > 0) {
             lines.push(...benefitItems.map(item => `- ${item}`));
         } else {
