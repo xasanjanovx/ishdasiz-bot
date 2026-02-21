@@ -28,7 +28,7 @@ export const botTexts = {
 
     // Start / help
     startWelcome: {
-        uz: "<b>• Assalomu Alaykum, hurmatli foydalanuvchi!</b>\n\n<i>Bot orqali tez va qulay tarzda <b>ISH</b> yoki <b>XODIM</b> topishingiz mumkin!\nHoziroq foydalanishni boshlang!</i>",
+        uz: "<b>Assalomu alaykum | ISHDASIZ platformasiga xush kelibsiz!</b>\n\n<b>Bu yerda siz:</b>\n<blockquote><i><tg-emoji emoji-id=\"5188311512791393083\">💼</tg-emoji> | O'zingizga mos ish topishingiz\n<tg-emoji emoji-id=\"5422518677897512402\">👥</tg-emoji> | Tashkilotingiz uchun xodim qidirishingiz\n<tg-emoji emoji-id=\"5458458113826910668\">🧾</tg-emoji> | Rezyume va vakansiyalarni boshqarishingiz\n<tg-emoji emoji-id=\"5372981976804366741\">🤖</tg-emoji> | AI yordamidan foydalanishingiz mumkin.</i></blockquote>\n\n<i>Davom etish uchun <b>«Kirish»</b> tugmasini bosing.</i>",
         ru: "<b>Здравствуйте | Добро пожаловать в ISHDASIZ!</b>\n\n<b>Здесь вы можете:</b>\n<blockquote><i>🎯 | Быстро найти работу или сотрудника\n🧾 | Управлять резюме и вакансиями в одном месте\n⚡ | Организовать подбор эффективнее\n🤖 | Использовать помощь ИИ.</i></blockquote>\n\n<i>Для продолжения нажмите <b>«Войти»</b>.</i>"
     },
     helpText: {

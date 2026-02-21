@@ -10616,15 +10616,7 @@ export class TelegramBot {
     }
 
     private buildStartWelcomeText(session: TelegramSession, lang: BotLang): string {
-        if (lang !== 'uz') return botTexts.startWelcome[lang];
-        const firstName = this.normalizeTelegramFirstName(session?.data?.telegram_first_name);
-        const safeUser = firstName ? this.escapeHtml(firstName) : 'hurmatli foydalanuvchi';
-        return [
-            `<b>• Assalomu alaykum, ${safeUser}!</b>`,
-            '<b>Platformaga xush kelibsiz!</b>',
-            '',
-            "<i>🔎 | Bot orqali tez va qulay tarzda <b>ish</b> va <b>xodim</b> topishingiz mumkin!\nHoziroq foydalanishni boshlang!</i>"
-        ].join('\n');
+        return botTexts.startWelcome[lang];
     }
 
     private buildResumeHubText(lang: BotLang, totalResumes: number): string {
