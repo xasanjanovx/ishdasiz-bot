@@ -1,0 +1,27 @@
+{
+  "name": "ishdasiz-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ISHDASIZ Telegram bot (polling worker)",
+  "scripts": {
+    "start": "npm run start:polling",
+    "start:polling": "tsx scripts/run-bot-local.ts",
+    "dev": "tsx watch scripts/run-bot-local.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=18.17"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "@supabase/supabase-js": "^2.58.0",
+    "bcryptjs": "^3.0.3",
+    "dotenv": "^17.2.3"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^20.6.2",
+    "tsx": "^4.20.6",
+    "typescript": "^5.2.2"
+  }
+}
