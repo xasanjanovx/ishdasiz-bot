@@ -2491,6 +2491,7 @@ export class TelegramBot {
             }
 
             if (trimmedText === '/start') {
+                await this.keepOnlyLatestStartCommand(chatId, session, incomingMessageId);
                 await this.handleStart(chatId, session);
                 return;
             }
@@ -2563,6 +2564,38 @@ export class TelegramBot {
         const normalized = String(text || '').trim();
         if (normalized.startsWith('/')) return false;
         return true;
+    }
+
+    private async keepOnlyLatestStartCommand(
+        chatId: number,
+        session: TelegramSession,
+        incomingMessageId: number | null
+    ): Promise<void> {
+        if (!incomingMessageId || incomingMessageId <= 0) return;
+
+        const previousRaw = Array.isArray(session.data?.start_command_message_ids)
+            ? session.data.start_command_message_ids
+            : [];
+        const previousIds = previousRaw
+            .map((value: any) => Number(value))
+            .filter((value: number) => Number.isFinite(value) && value > 0);
+
+        const uniquePrevious = Array.from(new Set(previousIds));
+        for (const messageId of uniquePrevious) {
+            if (messageId === incomingMessageId) continue;
+            try {
+                await deleteMessage(chatId, messageId);
+            } catch {
+                // ignore delete errors (old messages may be unavailable)
+            }
+        }
+
+        await this.setSession(session, {
+            data: {
+                ...(session.data || {}),
+                start_command_message_ids: [incomingMessageId]
+            }
+        });
     }
 
     async handleCallbackQuery(query: TelegramCallbackQuery, sessionOverride?: TelegramSession): Promise<void> {

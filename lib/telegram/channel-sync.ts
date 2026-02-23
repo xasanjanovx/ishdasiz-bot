@@ -450,7 +450,7 @@ export function buildJobChannelMessage(job: any, regionSlug?: string | null): st
     lang: ce('5188381825701021648', '🌐'),
     gift: ce(E.gift, '🎁'),
     call: ce(E.call, '📞'),
-    hr: ce(E.hr, '👨‍💼')
+    hr: ce(E.user, '👤')
   };
 
   const lines: string[] = [

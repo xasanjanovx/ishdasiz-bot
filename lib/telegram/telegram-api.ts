@@ -21,7 +21,7 @@ const PREMIUM_EMOJI_REPLACEMENTS: Array<{ chars: string[]; id: string }> = [
     { chars: ['\u{23F3}'], id: '5287579571485422439' }, // ?
     { chars: ['\u{1F510}'], id: '5350619413533958825' }, // ??
     { chars: ['\u{26A0}\u{FE0F}', '\u{26A0}'], id: '5242713260779643386' }, // ??
-    { chars: ['\u{1F464}'], id: '5415742696973158126' }, // ??
+    { chars: ['\u{1F464}'], id: '5422364797809230911' }, // ??
     { chars: ['\u{1F465}'], id: '5422518677897512402' }, // ??
     { chars: ['\u{1F4CD}'], id: '5350301517234586704' }, // ??
     { chars: ['\u{1F4BC}'], id: '5458809519461136265' }, // ??
@@ -98,7 +98,7 @@ const PREMIUM_EMOJI_REPLACEMENTS: Array<{ chars: string[]; id: string }> = [
     { chars: ['\u{1F454}'], id: E.tie }, // 👔
     { chars: ['\u{1F3ED}'], id: E.factory }, // 🏭
     { chars: ['\u{23F0}'], id: E.clock }, // ⏰
-    { chars: ['\u{1F468}\u200D\u{1F4BC}'], id: E.hr }, // 👨‍💼
+    { chars: ['\u{1F468}\u200D\u{1F4BC}'], id: E.user }, // 👨‍💼
     { chars: ['\u{1F4DE}', '\u{260E}\u{FE0F}', '\u{260E}'], id: E.call }, // 📞/☎️
     { chars: ['\u{26D4}'], id: E.stop } // ⛔
 ];
