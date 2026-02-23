@@ -384,8 +384,8 @@ export const botTexts = {
         ru: (fullName: string, jobTitle: string) => `📩 | Новый отклик по вакансии.\n\n👤 | Кандидат: <b>${fullName}</b>\n💼 | Вакансия: <b>${jobTitle}</b>\n\nНажмите кнопку, чтобы открыть отклик.`
     },
     applicationExists: {
-        uz: '<b>№️⃣ Siz ushbu vakansiyaga avval ariza yuborgansiz.</b>',
-        ru: '<b>№️⃣ Вы уже отправляли отклик на эту вакансию.</b>'
+        uz: '<b>ℹ️ | Siz ushbu vakansiyaga avval ariza yuborgansiz.</b>',
+        ru: '<b>ℹ️ | Вы уже отправляли отклик на эту вакансию.</b>'
     },
     offersTitle: {
         uz: '<b>📨 | Takliflar bo‘limi</b>',
@@ -498,8 +498,8 @@ export const botTexts = {
         ru: '<b>🏢 | Введите название организации</b>\n<i>Например: “Andijon Textile LLC”</i>'
     },
     employerDirectorPrompt: {
-        uz: '<b>👤 | Mas’ul shaxs (HR menejeri)</b>\n<i>Masalan: Azizbek Mamadiyev</i>',
-        ru: '<b>👤 | Ответственное лицо (HR менеджер)</b>\n<i>Например: Азизбек Мамадиев</i>'
+        uz: '<b>👨‍💼 | Mas’ul shaxs (HR menejeri)</b>\n<i>Masalan: Azizbek Mamadiyev</i>',
+        ru: '<b>👨‍💼 | Ответственное лицо (HR менеджер)</b>\n<i>Например: Азизбек Мамадиев</i>'
     },
     employerIndustryPrompt: {
         uz: '<b>🏭 | Faoliyat sohasi</b>',
@@ -586,8 +586,8 @@ export const botTexts = {
         ru: '<b>🛎️ | Условия (необязательно)</b>\n<i>Пишите по одному пункту с новой строки.</i>\n<i>Например:</i>\n<i>- официальное оформление</i>\n<i>- ежемесячный бонус</i>\n<i>- бесплатный обед</i>'
     },
     jobHrPrompt: {
-        uz: '<b>👤 | HR menejer (F.I.O)</b>\n<i>Masalan: Azizbek Mamadiyev</i>',
-        ru: '<b>👤 HR менеджер (Ф.И.О.)</b>\n<i>Например: Азизбек Мамадиев</i>'
+        uz: '<b>👨‍💼 | HR menejer (F.I.O)</b>\n<i>Masalan: Azizbek Mamadiyev</i>',
+        ru: '<b>👨‍💼 HR менеджер (Ф.И.О.)</b>\n<i>Например: Азизбек Мамадиев</i>'
     },
     jobContactPrompt: {
         uz: '<b>📞 | Aloqa telefoni</b>\n<i>To‘g‘ri format: +998901234567</i>',
@@ -1083,7 +1083,7 @@ export function formatFullJobCard(job: any, lang: BotLang): string {
     const hasContacts = hrName || job.contact_phone || job.contact_telegram || job.phone;
     if (hasContacts) {
         lines.push('');
-        if (hrName) lines.push(`👤 | ${lang === 'uz' ? 'HR menejer' : 'HR менеджер'}: ${hrName}`);
+        if (hrName) lines.push(`👨‍💼 | ${lang === 'uz' ? 'HR menejer' : 'HR менеджер'}: ${hrName}`);
         if (job.contact_phone || job.phone) lines.push(`📞 | ${lang === 'uz' ? 'Telefon' : 'Телефон'}: ${job.contact_phone || job.phone}`);
         const telegramValue = normalizeTelegram(job.contact_telegram || raw?.contact_telegram || raw?.telegram || null);
         if (telegramValue) lines.push(`💬 | Telegram: ${telegramValue}`);

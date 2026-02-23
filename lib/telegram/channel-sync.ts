@@ -449,7 +449,8 @@ export function buildJobChannelMessage(job: any, regionSlug?: string | null): st
     clock: ce(E.clock, '⏰'),
     lang: ce('5188381825701021648', '🌐'),
     gift: ce(E.gift, '🎁'),
-    call: ce(E.call, '📞')
+    call: ce(E.call, '📞'),
+    hr: ce(E.hr, '👨‍💼')
   };
 
   const lines: string[] = [
@@ -504,7 +505,7 @@ export function buildJobChannelMessage(job: any, regionSlug?: string | null): st
   lines.push('', sep);
 
   const contactLines: string[] = [];
-  if (hrName) contactLines.push(`${em.user} HR menejer: ${escapeHtml(hrName)}`);
+  if (hrName) contactLines.push(`${em.hr} HR menejer: ${escapeHtml(hrName)}`);
   if (contactPhone) contactLines.push(`${em.call} Aloqa: ${escapeHtml(contactPhone)}`);
   if (contactTelegram) contactLines.push(`${ce(E.send, '💬')} Telegram: ${escapeHtml(contactTelegram)}`);
   if (contactLines.length > 0) {

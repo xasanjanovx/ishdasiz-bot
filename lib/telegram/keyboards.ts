@@ -979,20 +979,20 @@ export function employerApplicationsKeyboard(
         const mark = app.isUnread ? '🆕 ' : '';
         return [{ text: `${mark}${name} — ${jobTitle}`, callback_data: `appview:${app.id}` }];
     });
-    rows.push([{ text: lang === 'uz' ? '⬅️ Orqaga' : '⬅️ Назад', callback_data: 'apps:back' }]);
+    rows.push([{ text: lang === 'uz' ? '⬅️ Orqaga' : '⬅️ Назад', callback_data: 'menu:main' }]);
     return createInlineKeyboard(rows);
 }
 
 export function applicationViewKeyboard(lang: BotLang): object {
     return createInlineKeyboard([
-        [{ text: lang === 'uz' ? '⬅️ Orqaga' : '⬅️ Назад', callback_data: 'apps:back' }]
+        [{ text: lang === 'uz' ? '⬅️ Orqaga' : '⬅️ Назад', callback_data: 'apps:list' }]
     ]);
 }
 
 export function applicationAlertKeyboard(lang: BotLang, applicationId: string): object {
     return createInlineKeyboard([
         [{ text: lang === 'uz' ? "📨 Arizani ko'rish" : '📨 Открыть отклик', callback_data: `appview:${applicationId}` }],
-        [{ text: lang === 'uz' ? '📋 Arizalar' : '📋 Отклики', callback_data: 'apps:back' }]
+        [{ text: lang === 'uz' ? '📋 Arizalar' : '📋 Отклики', callback_data: 'apps:list' }]
     ]);
 }
 
@@ -1571,12 +1571,25 @@ export function jobPublishedKeyboard(lang: BotLang, jobId?: string): object {
     return createInlineKeyboard(rows);
 }
 
-export function subscriptionRequiredKeyboard(lang: BotLang, channelUsername: string = 'ishdasizbot'): object {
+export function subscriptionRequiredKeyboard(lang: BotLang, channelUsername: string = 'ishdasiz'): object {
     const handle = channelUsername.startsWith('@') ? channelUsername.slice(1) : channelUsername;
     const channelLabel = `@${handle}`;
     return createInlineKeyboard([
-        [{ text: channelLabel, url: `https://t.me/${handle}` }],
-        [{ text: lang === 'uz' ? 'Tekshirish' : 'Проверить', callback_data: 'sub:check' }]
+        [{ text: `🌐 ${channelLabel}`, url: `https://t.me/${handle}` }],
+        [{ text: lang === 'uz' ? '✅ Tekshirish' : '✅ Проверить', callback_data: 'sub:check' }]
+    ]);
+}
+
+export function softSubscriptionPromptKeyboard(
+    lang: BotLang,
+    channelUsername: string = 'ishdasiz',
+    target: 'jobs' | 'find_worker' = 'jobs'
+): object {
+    const handle = channelUsername.startsWith('@') ? channelUsername.slice(1) : channelUsername;
+    const channelLabel = `@${handle}`;
+    return createInlineKeyboard([
+        [{ text: `🌐 ${channelLabel}`, url: `https://t.me/${handle}` }],
+        [{ text: lang === 'uz' ? '✅ Davom etish' : '✅ Продолжить', callback_data: `sub:continue:${target}` }]
     ]);
 }
 
