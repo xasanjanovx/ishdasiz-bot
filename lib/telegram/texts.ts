@@ -778,6 +778,29 @@ export function formatFullJobCard(job: any, lang: BotLang): string {
 
     const location = [job.region_name, job.district_name].filter(Boolean).join(', ') || na;
     const address = job.address || raw?.address || raw?.work_address || null;
+    const toCoord = (value: any): number | null => {
+        if (value === null || value === undefined || value === '') return null;
+        const num = Number(value);
+        return Number.isFinite(num) ? num : null;
+    };
+    const rawLocation = raw?.location && typeof raw.location === 'object' ? raw.location : null;
+    const latitude =
+        toCoord(job.latitude)
+        ?? toCoord(raw?.latitude)
+        ?? toCoord(raw?.lat)
+        ?? toCoord(rawLocation?.latitude)
+        ?? toCoord(rawLocation?.lat);
+    const longitude =
+        toCoord(job.longitude)
+        ?? toCoord(raw?.longitude)
+        ?? toCoord(raw?.lon)
+        ?? toCoord(raw?.lng)
+        ?? toCoord(rawLocation?.longitude)
+        ?? toCoord(rawLocation?.lon)
+        ?? toCoord(rawLocation?.lng);
+    const mapUrl = (latitude !== null && longitude !== null)
+        ? `https://www.google.com/maps?q=${latitude},${longitude}`
+        : null;
 
     const empTypeLabels: Record<string, { uz: string; ru: string }> = {
         full_time: { uz: "To'liq ish kuni", ru: 'Полный день' },
@@ -886,6 +909,21 @@ export function formatFullJobCard(job: any, lang: BotLang): string {
         if (!trimmed || trimmed === na) return null;
         return trimmed;
     };
+    const normalizeTelegram = (value?: string | null): string | null => {
+        const rawValue = String(value || '').trim();
+        if (!rawValue) return null;
+        const clean = rawValue.replace(/^@+/, '');
+        if (!clean) return null;
+        return `@${clean}`;
+    };
+    const hrName = normalize(
+        job.hr_name
+        || raw?.hr_name
+        || raw?.hr?.name
+        || raw?.manager_name
+        || raw?.contact_person
+        || null
+    );
 
     const lines: string[] = [];
     lines.push(`<b>💼 | ${lang === 'uz' ? 'Lavozim' : 'Должность'}: ${escape(title || na)}</b>`);
@@ -894,6 +932,11 @@ export function formatFullJobCard(job: any, lang: BotLang): string {
     const locationLabel = normalize(location || null);
     if (locationLabel) lines.push(`📍 | ${lang === 'uz' ? 'Joylashuv' : 'Локация'}: ${locationLabel}`);
     if (address) lines.push(`📌 | ${lang === 'uz' ? 'Ish joy manzili' : 'Адрес'}: ${address}`);
+    if (mapUrl) {
+        lines.push(lang === 'uz'
+            ? `🗺️ | <a href="${mapUrl}">Joylashuvni ko'rish</a>`
+            : `🗺️ | <a href="${mapUrl}">Открыть локацию</a>`);
+    }
     lines.push(`💰 | ${lang === 'uz' ? 'Maosh' : 'Зарплата'}: ${salary}`);
 
     const exp = normalize(experienceLabel || null);
@@ -1037,11 +1080,13 @@ export function formatFullJobCard(job: any, lang: BotLang): string {
         }
     }
 
-    const hasContacts = job.contact_phone || job.contact_telegram || job.phone;
+    const hasContacts = hrName || job.contact_phone || job.contact_telegram || job.phone;
     if (hasContacts) {
         lines.push('');
+        if (hrName) lines.push(`👤 | ${lang === 'uz' ? 'HR menejer' : 'HR менеджер'}: ${hrName}`);
         if (job.contact_phone || job.phone) lines.push(`📞 | ${lang === 'uz' ? 'Telefon' : 'Телефон'}: ${job.contact_phone || job.phone}`);
-        if (job.contact_telegram) lines.push(`💬 | Telegram: ${job.contact_telegram}`);
+        const telegramValue = normalizeTelegram(job.contact_telegram || raw?.contact_telegram || raw?.telegram || null);
+        if (telegramValue) lines.push(`💬 | Telegram: ${telegramValue}`);
     }
 
     return lines.join('\n');

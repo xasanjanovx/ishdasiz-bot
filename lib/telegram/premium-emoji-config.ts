@@ -1,6 +1,6 @@
 export const UNIQUE_CUSTOM_EMOJI_IDS = [
     '5231489647946768652',
-    '5260463209562776385',
+    '6307344346748290621',
     '5429260702810388361',
     '6064588762204079825',
     '5330116639822202550',
@@ -302,7 +302,7 @@ export const PREMIUM_EMOJI_BY_KEY: Record<string, string> = {
     ...(Object.fromEntries(PREMIUM_EMOJI_STEP_IDS.map((item) => [item.key, item.customEmojiId])) as Record<string, string>),
     __transient_loading: '5287579571485422439',
     __transient_announce: '5413677723941884214',
-    __transient_success: '5260463209562776385',
+    __transient_success: '6307344346748290621',
     __transient_warning: '5242713260779643386',
     __transient_error: '5273914604752216432',
     __transient_ai: '5372981976804366741',

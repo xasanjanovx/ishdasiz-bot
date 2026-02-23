@@ -735,7 +735,8 @@ export function jobNavigationKeyboard(
     jobId: string,
     source?: string,
     isFavorite: boolean = false,
-    regionVacancyCount?: number
+    regionVacancyCount?: number,
+    canApply: boolean = false
 ): object {
     const buttons: InlineButton[][] = [];
 
@@ -764,6 +765,14 @@ export function jobNavigationKeyboard(
             callback_data: `fav:${jobId}`
         }
     ]);
+    if (canApply) {
+        buttons.push([
+            {
+                text: lang === 'uz' ? '📨 Ariza yuborish' : '📨 Откликнуться',
+                callback_data: `apply:${jobId}`
+            }
+        ]);
+    }
 
     // Add single button to search by region (shows region vacancies on click)
     if (typeof regionVacancyCount === 'number' && regionVacancyCount > 0) {

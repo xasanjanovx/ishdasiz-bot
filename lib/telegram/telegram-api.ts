@@ -13,7 +13,7 @@ const PREMIUM_EMOJI_REPLACEMENTS: Array<{ chars: string[]; id: string }> = [
     { chars: ['\u{1F1FA}\u{1F1FF}'], id: '5438400294432028834' }, // ????
     { chars: ['\u{1F1F7}\u{1F1FA}'], id: '5436252471481611724' }, // ????
     { chars: ['\u{1F310}'], id: '5188381825701021648' }, // ??
-    { chars: ['\u{2705}'], id: '5260463209562776385' }, // ?
+    { chars: ['\u{2705}'], id: '6307344346748290621' }, // ?
     { chars: ['\u{1F4F1}'], id: '5407025283456835913' }, // ??
     { chars: ['\u{1F4E8}', '\u{1F4E9}'], id: '5406631276042002796' }, // ??/??
     { chars: ['\u{274C}'], id: '5852812849780362931' }, // ?
@@ -107,7 +107,8 @@ const PREMIUM_MODE: 'auto' | 'on' | 'off' = PREMIUM_MODE_RAW === 'on' || PREMIUM
     ? PREMIUM_MODE_RAW
     : 'auto';
 let premiumRuntimeDisabled = PREMIUM_MODE === 'off';
-const BUTTON_TEXT_FALLBACK_MODE = String(process.env.TELEGRAM_BUTTON_TEXT_FALLBACK || 'off').toLowerCase() === 'on';
+// Keep disabled by default to avoid duplicate icon+emoji rendering on clients with partial support.
+const BUTTON_TEXT_FALLBACK_MODE = false;
 
 function escapeRegex(value: string): string {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -179,6 +180,11 @@ function isEntityTextError(error: unknown): boolean {
     return message.includes('entity_text_invalid')
         || message.includes("can't parse entities")
         || message.includes('document_invalid');
+}
+
+function isPremiumHardFailure(error: unknown): boolean {
+    const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+    return message.includes('document_invalid');
 }
 
 function isButtonIconError(error: unknown): boolean {
@@ -522,6 +528,9 @@ export async function sendMessage(
             }
         }
         if (!shouldDecorate || !isEntityTextError(activeError)) throw activeError;
+        if (isPremiumHardFailure(activeError)) {
+            premiumRuntimeDisabled = true;
+        }
         const preferredBlockedId = options.premiumKey ? PREMIUM_EMOJI_BY_KEY[options.premiumKey] : undefined;
         blockPremiumEmojiIdsFromText(premiumText, 'sendMessage', preferredBlockedId);
         const fallbackHasHtml = /<\/?(?:b|i|u|s|code|pre|blockquote|a)\b/i.test(safeText);
@@ -584,6 +593,9 @@ export async function sendSticker(
             }
         }
         if (!caption || !shouldDecorate || !isEntityTextError(activeError)) throw activeError;
+        if (isPremiumHardFailure(activeError)) {
+            premiumRuntimeDisabled = true;
+        }
         const preferredBlockedId = options.premiumKey ? PREMIUM_EMOJI_BY_KEY[options.premiumKey] : undefined;
         blockPremiumEmojiIdsFromText(caption, 'sendSticker', preferredBlockedId);
         const plainCaption = options.caption;
@@ -667,6 +679,9 @@ export async function editMessage(
             }
         }
         if (!shouldDecorate || !isEntityTextError(activeError)) throw activeError;
+        if (isPremiumHardFailure(activeError)) {
+            premiumRuntimeDisabled = true;
+        }
         const preferredBlockedId = options.premiumKey ? PREMIUM_EMOJI_BY_KEY[options.premiumKey] : undefined;
         blockPremiumEmojiIdsFromText(premiumText, 'editMessage', preferredBlockedId);
         return callTelegramAPI('editMessageText', {

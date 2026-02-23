@@ -4,7 +4,7 @@
  */
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { sendMessage, editMessage, answerCallbackQuery, isUserSubscribed, sendLocation, deleteMessage, callTelegramAPI } from './telegram-api';
+import { sendMessage, editMessage, answerCallbackQuery, isUserSubscribed, deleteMessage, callTelegramAPI } from './telegram-api';
 import * as keyboards from './keyboards';
 import {
     botTexts,
@@ -1504,8 +1504,15 @@ export class TelegramBot {
     private normalizeMenuButtonText(value: string): string {
         const source = String(value || '').trim();
         if (!source) return '';
-        return source
-            .replace(/^(\p{Regional_Indicator}{2}|\p{Extended_Pictographic}(?:\uFE0F)?(?:\u200D\p{Extended_Pictographic}(?:\uFE0F)?)*)\s*(?:[|:：\-–—]\s*)?/u, '')
+        const withoutLeadingDecorators = source
+            .replace(/^[\s\u00A0\u200B\u200C\u200D•·▪▫◦‣∙●○]+/u, '');
+        const withoutIcons = withoutLeadingDecorators
+            .replace(
+                /^(?:(\p{Regional_Indicator}{2}|\p{Extended_Pictographic}(?:\uFE0F)?(?:\u200D\p{Extended_Pictographic}(?:\uFE0F)?)*)\s*)+/u,
+                ''
+            )
+            .replace(/^(?:[|:：\-–—]\s*)+/u, '');
+        return withoutIcons
             .replace(/\s+/g, ' ')
             .trim()
             .toLowerCase();
@@ -1792,7 +1799,9 @@ export class TelegramBot {
             'aboutai', 'jobdescai', 'skip', 'skills', 'workend', 'eduend', 'workplace',
             'back', 'menu', 'action', 'job', 'jobmode',
             'fav', 'apply', 'profile', 'settings', 'admin', 'subs', 'ai', 'sub', 'searchmode',
-            'resume_new', 'resumeedit', 'cancel', 'resume', 'mcat', 'search', 'searchregion', 'searchdist'
+            'resume_new', 'resumeedit', 'cancel', 'resume', 'mcat', 'search', 'searchregion', 'searchdist',
+            'worker', 'matchjob', 'matchrelated', 'autojobs',
+            'jobview', 'jobactivate', 'jobdelete', 'jobclose'
         ]);
         return sensitive.has(action);
     }
@@ -1801,7 +1810,7 @@ export class TelegramBot {
         if (!callbackMessageId) return false;
         if (!this.isFlowSensitiveCallbackAction(action)) return false;
         const activeIds = this.collectActiveCallbackMessageIds(session);
-        if (!activeIds.length) return true;
+        if (!activeIds.length) return false;
         return !activeIds.includes(callbackMessageId);
     }
 
@@ -1811,8 +1820,42 @@ export class TelegramBot {
             'role',
             'roleswitch',
             'settings',
-            'jobmode'
+            'jobmode',
+            'matchjob',
+            'jobview',
+            'jobactivate',
+            'jobdelete',
+            'jobclose',
+            'offer'
         ]).has(action);
+    }
+
+    private canHandleAuthCallback(session: TelegramSession, value: string): boolean {
+        const state = session.state;
+        const authStates = new Set<BotState>([
+            BotState.START,
+            BotState.AWAITING_PHONE,
+            BotState.AWAITING_OTP,
+            BotState.AWAITING_PASSWORD
+        ]);
+
+        if (value === 'start') {
+            return state === BotState.START || state === BotState.AWAITING_PHONE || state === BotState.AWAITING_LANG;
+        }
+
+        if (value === 'password' || value === 'sms') {
+            return authStates.has(state);
+        }
+
+        return authStates.has(state);
+    }
+
+    private canHandleRoleCallback(session: TelegramSession): boolean {
+        return session.state === BotState.SELECTING_ROLE || Boolean(session.data?.role_switch_pending);
+    }
+
+    private canHandleRoleSwitchDecision(session: TelegramSession): boolean {
+        return Boolean(session.data?.role_switch_pending);
     }
 
     private shouldIgnoreRapidCallback(session: TelegramSession, action: string, callbackMessageId?: number): boolean {
@@ -1996,11 +2039,19 @@ export class TelegramBot {
         chatId: number,
         session: TelegramSession,
         text: string,
-        options: { replyMarkup?: any; parseMode?: 'HTML' | 'Markdown' | 'MarkdownV2'; premiumKey?: string } = {}
+        options: {
+            replyMarkup?: any;
+            parseMode?: 'HTML' | 'Markdown' | 'MarkdownV2';
+            premiumKey?: string;
+            disableWebPagePreview?: boolean;
+        } = {}
     ): Promise<void> {
         const safeText = text && String(text).trim().length > 0 ? text : botTexts.error[session.lang || 'uz'];
         const promptParseMode = options.parseMode ?? 'HTML';
         const premiumKey = options.premiumKey || this.resolvePremiumEmojiStepKey(safeText, session.lang);
+        const disableWebPagePreview = typeof options.disableWebPagePreview === 'boolean'
+            ? options.disableWebPagePreview
+            : /https?:\/\/(?:www\.)?google\.com\/maps\?q=/i.test(safeText);
         let latestData = (session.data && typeof session.data === 'object') ? session.data : {};
         try {
             const { data: latest } = await this.supabase
@@ -2023,6 +2074,7 @@ export class TelegramBot {
             result = await sendMessage(chatId, safeText, {
                 parseMode: promptParseMode,
                 replyMarkup: options.replyMarkup,
+                disableWebPagePreview,
                 premiumKey
             });
         } catch (err: any) {
@@ -2032,16 +2084,19 @@ export class TelegramBot {
                 result = await sendMessage(chatId, safeText, {
                     parseMode: promptParseMode,
                     replyMarkup: options.replyMarkup,
+                    disableWebPagePreview,
                     disablePremiumEmoji: true,
                     premiumKey
                 });
             } catch (secondErr) {
                 lastSendError = secondErr;
-                // Last-resort fallback for truly broken markup.
+                // Last-resort fallback: keep formatting, only strip custom tg-emoji tags if any leaked.
                 try {
-                    const fallbackText = this.stripHtmlTags(safeText);
+                    const fallbackText = safeText.replace(/<\/?tg-emoji\b[^>]*>/gi, '');
                     result = await sendMessage(chatId, fallbackText, {
+                        parseMode: promptParseMode,
                         replyMarkup: options.replyMarkup,
+                        disableWebPagePreview,
                         disablePremiumEmoji: true,
                         premiumKey
                     });
@@ -2055,6 +2110,7 @@ export class TelegramBot {
                             : '⚠️ Ошибка загрузки сообщения. Продолжайте, пожалуйста.',
                         {
                             replyMarkup: options.replyMarkup,
+                            disableWebPagePreview,
                             disablePremiumEmoji: true,
                             premiumKey
                         }
@@ -2390,6 +2446,7 @@ export class TelegramBot {
         const chatId = msg.chat.id;
         const userId = msg.from.id;
         const text = msg.text || '';
+        const trimmedText = text.trim();
         const incomingMessageId = typeof msg.message_id === 'number' ? msg.message_id : null;
         let resolvedSession: TelegramSession | null = sessionOverride || null;
         const hasUserPayload = Boolean(
@@ -2415,7 +2472,6 @@ export class TelegramBot {
                 return;
             }
             const lang = session.lang || 'uz';
-            const trimmedText = text.trim();
             const isAdminUser = this.isAdminTelegramUser(userId);
 
             if (await this.isUserBanned(chatId, session)) {
@@ -2487,7 +2543,7 @@ export class TelegramBot {
                 await sendMessage(chatId, botTexts.error[lang]);
             }
         } finally {
-            if (incomingMessageId && hasUserPayload && !msg.location) {
+            if (incomingMessageId && hasUserPayload && this.shouldDeleteIncomingMessage(trimmedText, resolvedSession, hasUserPayload)) {
                 try {
                     await deleteMessage(chatId, incomingMessageId);
                 } catch {
@@ -2495,6 +2551,14 @@ export class TelegramBot {
                 }
             }
         }
+    }
+
+    private shouldDeleteIncomingMessage(text: string, session: TelegramSession | null, hasUserPayload: boolean): boolean {
+        void session;
+        if (!hasUserPayload) return false;
+        const normalized = String(text || '').trim();
+        if (normalized.startsWith('/')) return false;
+        return true;
     }
 
     async handleCallbackQuery(query: TelegramCallbackQuery, sessionOverride?: TelegramSession): Promise<void> {
@@ -2548,9 +2612,48 @@ export class TelegramBot {
 
             switch (action) {
                 case 'lang': await this.handleLangSelect(chatId, value as BotLang, session); break;
-                case 'auth': await this.handleAuthCallback(chatId, value, session); break;
-                case 'role': await this.handleRoleSelect(chatId, value, session); break;
-                case 'roleswitch': await this.handleRoleSwitchDecision(chatId, value, session); break;
+                case 'auth':
+                    if (!this.canHandleAuthCallback(session, String(value || ''))) {
+                        await this.sendTransientMessage(
+                            chatId,
+                            session.lang === 'uz'
+                                ? "⚠️ Bu tugma endi faol emas. Oxirgi oynadan davom eting."
+                                : '⚠️ Эта кнопка больше не активна. Продолжите из последнего окна.',
+                            900,
+                            '__transient_warning'
+                        );
+                        break;
+                    }
+                    await this.handleAuthCallback(chatId, value, session);
+                    break;
+                case 'role':
+                    if (!this.canHandleRoleCallback(session)) {
+                        await this.sendTransientMessage(
+                            chatId,
+                            session.lang === 'uz'
+                                ? "⚠️ Rol tanlash oynasi eskirgan. /role buyrug'ini yuboring."
+                                : '⚠️ Окно выбора роли устарело. Отправьте /role.',
+                            1000,
+                            '__transient_warning'
+                        );
+                        break;
+                    }
+                    await this.handleRoleSelect(chatId, value, session);
+                    break;
+                case 'roleswitch':
+                    if (!this.canHandleRoleSwitchDecision(session)) {
+                        await this.sendTransientMessage(
+                            chatId,
+                            session.lang === 'uz'
+                                ? "⚠️ Rolni almashtirish oynasi eskirgan. /role buyrug'ini yuboring."
+                                : '⚠️ Окно смены роли устарело. Отправьте /role.',
+                            1000,
+                            '__transient_warning'
+                        );
+                        break;
+                    }
+                    await this.handleRoleSwitchDecision(chatId, value, session);
+                    break;
                 case 'region': await this.handleRegionSelect(chatId, value, session, message.message_id); break;
                 case 'district': await this.handleDistrictSelect(chatId, value, session, message.message_id); break;
                 case 'distpage': await this.showDistrictPage(chatId, parseInt(value), session, message.message_id); break;
@@ -2649,13 +2752,20 @@ export class TelegramBot {
                 case 'jobdelete':
                     if (value === 'confirm') {
                         const jobId = String(extra || '').trim();
+                        const ownedJob = await this.getEmployerOwnedJobById(session, jobId);
+                        if (!ownedJob) {
+                            await this.sendPrompt(chatId, session, botTexts.error[session.lang], {
+                                replyMarkup: keyboards.employerMainMenuKeyboard(session.lang)
+                            });
+                            break;
+                        }
                         await this.sendPrompt(
                             chatId,
                             session,
                             session.lang === 'uz'
                                 ? "📌 Ushbu vakansiyani o'chirishni tasdiqlaysizmi?"
                                 : '📌 Подтверждаете удаление этой вакансии?',
-                            { replyMarkup: keyboards.jobDeleteConfirmKeyboard(session.lang, jobId) }
+                            { replyMarkup: keyboards.jobDeleteConfirmKeyboard(session.lang, String(ownedJob.id)) }
                         );
                     } else if (value === 'yes') {
                         await this.handleEmployerJobDelete(chatId, String(extra || '').trim(), session);
@@ -2671,17 +2781,31 @@ export class TelegramBot {
                 case 'jobclose':
                     if (value === 'confirm') {
                         const jobId = String(extra || '').trim();
+                        const ownedJob = await this.getEmployerOwnedJobById(session, jobId);
+                        if (!ownedJob) {
+                            await this.sendPrompt(chatId, session, botTexts.error[session.lang], {
+                                replyMarkup: keyboards.employerMainMenuKeyboard(session.lang)
+                            });
+                            break;
+                        }
                         await this.sendPrompt(
                             chatId,
                             session,
                             session.lang === 'uz'
                                 ? "📌 Ushbu vakansiyani yopishdan oldin sababni tanlang:"
                                 : '📌 Перед закрытием вакансии выберите причину:',
-                            { replyMarkup: keyboards.jobCloseReasonKeyboard(session.lang, jobId) }
+                            { replyMarkup: keyboards.jobCloseReasonKeyboard(session.lang, String(ownedJob.id)) }
                         );
                     } else if (value === 'reason_hired' || value === 'reason_paused') {
                         const reason = value === 'reason_paused' ? 'paused' : 'hired';
                         const jobId = String(extra || '').trim();
+                        const ownedJob = await this.getEmployerOwnedJobById(session, jobId);
+                        if (!ownedJob) {
+                            await this.sendPrompt(chatId, session, botTexts.error[session.lang], {
+                                replyMarkup: keyboards.employerMainMenuKeyboard(session.lang)
+                            });
+                            break;
+                        }
                         const reasonLabel = reason === 'paused'
                             ? (session.lang === 'uz' ? "Vaqtincha to‘xtatish" : 'Временно приостановить')
                             : (session.lang === 'uz' ? 'Nomzod ishga olindi' : 'Кандидат принят');
@@ -2691,7 +2815,7 @@ export class TelegramBot {
                             session.lang === 'uz'
                                 ? `Ushbu vakansiyani yopishni tasdiqlaysizmi?\n\nSabab: ${reasonLabel}`
                                 : `Подтверждаете закрытие этой вакансии?\n\nПричина: ${reasonLabel}`,
-                            { replyMarkup: keyboards.confirmJobCloseKeyboard(session.lang, jobId, reason) }
+                            { replyMarkup: keyboards.confirmJobCloseKeyboard(session.lang, String(ownedJob.id), reason) }
                         );
                     } else if (value === 'yes') {
                         const raw = String(extra || '');
@@ -9106,7 +9230,41 @@ export class TelegramBot {
         });
 
         if (filtered.length > 0) return filtered;
-        return strict ? [] : jobs;
+        if (strict) return [];
+        if (!titleTokens.length) return jobs;
+
+        const lowSignal = new Set([
+            'rahbar', 'rahbari', 'boshliq', 'leader', 'head',
+            'manager', 'menejer', 'direktor', 'director'
+        ]);
+
+        const scored = jobs
+            .map(job => {
+                const jobTitle = this.extractJobTitle(job);
+                const jobTokens = this.tokenizeTitle(jobTitle);
+                const overlap = this.getTitleOverlapScore(desiredText, jobTitle);
+                const shared = titleTokens.filter(token => jobTokens.includes(token));
+                const strongShared = shared.filter(token => !lowSignal.has(token));
+                return {
+                    job,
+                    overlap,
+                    sharedCount: shared.length,
+                    strongSharedCount: strongShared.length
+                };
+            })
+            .filter(item =>
+                item.strongSharedCount > 0
+                || item.sharedCount >= 2
+                || item.overlap >= 0.24
+            )
+            .sort((a, b) =>
+                b.strongSharedCount - a.strongSharedCount
+                || b.sharedCount - a.sharedCount
+                || b.overlap - a.overlap
+            )
+            .map(item => item.job);
+
+        return scored;
     }
 
 
@@ -9619,14 +9777,29 @@ export class TelegramBot {
 
     private async getSeekerGeo(userId: string | null): Promise<{ latitude: number; longitude: number } | null> {
         if (!userId) return null;
-        const { data } = await this.supabase
-            .from('job_seeker_profiles')
-            .select('latitude, longitude')
-            .eq('user_id', userId)
-            .maybeSingle();
-        const latitude = this.toCoordinate(data?.latitude);
-        const longitude = this.toCoordinate(data?.longitude);
+        try {
+            const profileGeo = await this.supabase
+                .from('job_seeker_profiles')
+                .select('latitude, longitude')
+                .eq('user_id', userId)
+                .maybeSingle();
+            if (profileGeo.error || !profileGeo.data) return null;
+            return this.normalizeGeoPoint((profileGeo.data as any).latitude, (profileGeo.data as any).longitude);
+        } catch {
+            return null;
+        }
+    }
+
+    private isLikelyUzbekistanCoordinate(latitude: number, longitude: number): boolean {
+        // ISHDASIZ works only with Uzbekistan regions, keep distance stable by ignoring out-of-country points.
+        return latitude >= 35 && latitude <= 46 && longitude >= 55 && longitude <= 75;
+    }
+
+    private normalizeGeoPoint(latitudeRaw: any, longitudeRaw: any): { latitude: number; longitude: number } | null {
+        const latitude = this.toCoordinate(latitudeRaw);
+        const longitude = this.toCoordinate(longitudeRaw);
         if (latitude === null || longitude === null) return null;
+        if (!this.isLikelyUzbekistanCoordinate(latitude, longitude)) return null;
         return { latitude, longitude };
     }
 
@@ -9678,19 +9851,26 @@ export class TelegramBot {
         options: { allowRegionFallback?: boolean } = {}
     ): number | null {
         const allowRegionFallback = options.allowRegionFallback ?? true;
-        let lat = this.toCoordinate(job.latitude);
-        let lon = this.toCoordinate(job.longitude);
+        const directPoint = this.normalizeGeoPoint(job?.latitude, job?.longitude);
+        const swappedPoint = directPoint
+            ? null
+            : this.normalizeGeoPoint(job?.longitude, job?.latitude);
 
-        if ((lat === null || lon === null) && allowRegionFallback) {
+        let point = directPoint || swappedPoint;
+
+        if (!point && allowRegionFallback) {
             const regionId = this.toCoordinate(job.region_id);
             if (regionId !== null && REGION_COORDINATES[regionId]) {
-                lat = REGION_COORDINATES[regionId].lat;
-                lon = REGION_COORDINATES[regionId].lng;
+                const regionPoint = this.normalizeGeoPoint(
+                    REGION_COORDINATES[regionId].lat,
+                    REGION_COORDINATES[regionId].lng
+                );
+                if (regionPoint) point = regionPoint;
             }
         }
 
-        if (lat === null || lon === null) return null;
-        return this.haversineKm(fromLat, fromLon, lat, lon);
+        if (!point) return null;
+        return this.haversineKm(fromLat, fromLon, point.latitude, point.longitude);
     }
 
     private sortJobsByDistance(jobs: any[], fromLat: number, fromLon: number): any[] {
@@ -11423,7 +11603,6 @@ export class TelegramBot {
     private async handleEmployerMainMenu(chatId: number, action: string, session: TelegramSession): Promise<void> {
         const lang = session.lang;
         if (action === 'post_job') {
-            await this.sendSeriousSticker(chatId, 'announce');
             await this.setFlowCancelKeyboard(chatId, session);
             const { data: employer } = await this.supabase
                 .from('employer_profiles')
@@ -11723,11 +11902,60 @@ export class TelegramBot {
         });
     }
 
+    private async getEmployerContext(session: TelegramSession): Promise<{ userId: string | null; employerId: string | null }> {
+        const userId = session.user_id ? String(session.user_id) : null;
+        let employerId: string | null = null;
+        if (userId) {
+            const { data: employer } = await this.supabase
+                .from('employer_profiles')
+                .select('id')
+                .eq('user_id', userId)
+                .maybeSingle();
+            employerId = employer?.id ? String(employer.id) : null;
+        }
+        return { userId, employerId };
+    }
+
+    private isOwnedEmployerJob(job: any, context: { userId: string | null; employerId: string | null }): boolean {
+        if (!job || !context) return false;
+        const byEmployer = context.employerId && String(job?.employer_id || '') === context.employerId;
+        const byCreatedBy = context.userId && String(job?.created_by || '') === context.userId;
+        const byUser = context.userId && String(job?.user_id || '') === context.userId;
+        return Boolean(byEmployer || byCreatedBy || byUser);
+    }
+
+    private async getEmployerOwnedJobById(session: TelegramSession, jobId: string): Promise<any | null> {
+        const normalizedJobId = String(jobId || '').trim();
+        if (!normalizedJobId) return null;
+        const context = await this.getEmployerContext(session);
+        const { data: row, error } = await this.supabase
+            .from('jobs')
+            .select('*')
+            .eq('id', normalizedJobId)
+            .maybeSingle();
+        if (error || !row) return null;
+        if (this.isOwnedEmployerJob(row, context)) return row;
+
+        // Schema fallback: in rare legacy imports ownership columns can be incomplete in row-level view.
+        const employerJobs = await this.getEmployerJobs(session, 600);
+        const existsInOwnedList = employerJobs.some((item: any) => String(item?.id || '') === normalizedJobId);
+        return existsInOwnedList ? row : null;
+    }
+
     private async showEmployerApplications(chatId: number, session: TelegramSession): Promise<void> {
         const lang = session.lang;
         const employerJobs = await this.getEmployerJobs(session, 200);
         const employerJobIds = new Set((employerJobs || []).map(job => String(job.id)));
         const employerJobsMap = new Map((employerJobs || []).map(job => [String(job.id), job]));
+        const scopedJobIds = Array.from(employerJobIds).filter(Boolean).slice(0, 500);
+
+        if (!scopedJobIds.length) {
+            const emptyText = lang === 'uz'
+                ? "📨 | Arizalar bo'limi\n\nHozircha arizalar yo‘q."
+                : '📨 | Раздел откликов\n\nПока откликов нет.';
+            await this.sendPrompt(chatId, session, emptyText, { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
+            return;
+        }
 
         let appSelect = 'id, created_at, status, full_name, resume_id, user_id, applicant_id, job_id, viewed_at';
         let apps: any[] | null = null;
@@ -11736,6 +11964,7 @@ export class TelegramBot {
             const result = await this.supabase
                 .from('job_applications')
                 .select(appSelect)
+                .in('job_id', scopedJobIds)
                 .order('created_at', { ascending: false })
                 .limit(200);
             apps = result.data || null;
@@ -11921,6 +12150,11 @@ export class TelegramBot {
         reason: 'hired' | 'paused' = 'hired'
     ): Promise<void> {
         const lang = session.lang;
+        const ownedJob = await this.getEmployerOwnedJobById(session, jobId);
+        if (!ownedJob) {
+            await this.sendPrompt(chatId, session, botTexts.error[lang], { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
+            return;
+        }
         const updatePayload = reason === 'paused'
             ? {
                 status: 'inactive',
@@ -11937,7 +12171,7 @@ export class TelegramBot {
         const { error } = await this.supabase
             .from('jobs')
             .update(updatePayload)
-            .eq('id', jobId);
+            .eq('id', ownedJob.id);
 
         if (error) {
             console.error('Job close error:', error);
@@ -11955,6 +12189,11 @@ export class TelegramBot {
     private async handleEmployerJobActivate(chatId: number, jobId: string, session: TelegramSession, sourceMessageId?: number): Promise<void> {
         const lang = session.lang;
         void sourceMessageId;
+        const ownedJob = await this.getEmployerOwnedJobById(session, jobId);
+        if (!ownedJob) {
+            await this.sendPrompt(chatId, session, botTexts.error[lang], { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
+            return;
+        }
         const { error } = await this.supabase
             .from('jobs')
             .update({
@@ -11963,14 +12202,14 @@ export class TelegramBot {
                 is_active: true,
                 updated_at: new Date().toISOString()
             })
-            .eq('id', jobId);
+            .eq('id', ownedJob.id);
 
         if (error) {
             console.error('Job activate error:', error);
             await this.sendPrompt(chatId, session, botTexts.error[lang], { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
             return;
         }
-        await this.handleEmployerJobView(chatId, jobId, session);
+        await this.handleEmployerJobView(chatId, String(ownedJob.id), session);
     }
 
     private async handleEmployerJobDelete(chatId: number, jobId: string, session: TelegramSession): Promise<void> {
@@ -11980,9 +12219,8 @@ export class TelegramBot {
             return;
         }
 
-        const employerJobs = await this.getEmployerJobs(session, 400);
-        const allowedJobIds = new Set((employerJobs || []).map((job: any) => String(job?.id || '')));
-        if (!allowedJobIds.has(String(jobId))) {
+        const ownedJob = await this.getEmployerOwnedJobById(session, jobId);
+        if (!ownedJob) {
             await this.sendPrompt(chatId, session, botTexts.error[lang], { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
             return;
         }
@@ -11991,7 +12229,7 @@ export class TelegramBot {
         const hardDelete = await this.supabase
             .from('jobs')
             .delete()
-            .eq('id', jobId);
+            .eq('id', ownedJob.id);
         if (!hardDelete.error) {
             hardDeleted = true;
         } else {
@@ -12003,7 +12241,7 @@ export class TelegramBot {
                     is_active: false,
                     updated_at: new Date().toISOString()
                 })
-                .eq('id', jobId);
+                .eq('id', ownedJob.id);
             if (archive.error) {
                 console.error('Job delete/archive error:', archive.error);
                 await this.sendPrompt(chatId, session, botTexts.error[lang], { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
@@ -12037,11 +12275,7 @@ export class TelegramBot {
         });
         const loadingMessageId = await this.showLoadingHint(chatId, session, botTexts.workerSearchLoading[lang]);
         try {
-            const { data: job } = await this.supabase
-                .from('jobs')
-                .select('*')
-                .eq('id', jobId)
-                .maybeSingle();
+            const job = await this.getEmployerOwnedJobById(session, jobId);
             if (!job) {
                 await this.sendPrompt(chatId, session, botTexts.error[lang], { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
                 return;
@@ -12061,11 +12295,7 @@ export class TelegramBot {
 
     private async handleEmployerJobView(chatId: number, jobId: string, session: TelegramSession, sourceMessageId?: number): Promise<void> {
         void sourceMessageId;
-        const { data: job } = await this.supabase
-            .from('jobs')
-            .select('*')
-            .eq('id', jobId)
-            .maybeSingle();
+        const job = await this.getEmployerOwnedJobById(session, jobId);
         if (!job) {
             await this.sendPrompt(chatId, session, botTexts.error[session.lang], { replyMarkup: keyboards.employerMainMenuKeyboard(session.lang) });
             return;
@@ -13372,7 +13602,53 @@ export class TelegramBot {
             }
         }
 
-        const baseScored = (resumes || []).map((resume: any) => {
+        let resumePool: any[] = Array.isArray(resumes) ? [...resumes] : [];
+        const jobFieldIdRaw = job?.field_id ?? job?.raw_source_json?.mmk_position?.id ?? job?.raw_source_json?.mmk_position_id ?? null;
+        const jobFieldId = jobFieldIdRaw !== null && jobFieldIdRaw !== undefined ? String(jobFieldIdRaw).trim() : '';
+        if (jobFieldId) {
+            const byField = resumePool.filter((resume: any) => String(resume?.field_id || '').trim() === jobFieldId);
+            if (byField.length > 0) {
+                resumePool = byField;
+            }
+        }
+
+        const jobTitleTokens = this.tokenizeTitle(jobTitle);
+        if (jobTitleTokens.length > 0) {
+            const lowSignal = new Set([
+                'rahbar', 'rahbari', 'boshliq', 'leader', 'head',
+                'manager', 'menejer', 'direktor', 'director'
+            ]);
+            const narrowed = resumePool
+                .map((resume: any) => {
+                    const resumeTitle = String(resume?.field_title || resume?.title || '').trim();
+                    const resumeTokens = this.tokenizeTitle(resumeTitle);
+                    const shared = jobTitleTokens.filter((token) => resumeTokens.includes(token));
+                    const strongShared = shared.filter((token) => !lowSignal.has(token));
+                    const overlap = this.getTitleOverlapScore(jobTitle, resumeTitle);
+                    return {
+                        resume,
+                        overlap,
+                        sharedCount: shared.length,
+                        strongSharedCount: strongShared.length
+                    };
+                })
+                .filter((item) =>
+                    item.strongSharedCount > 0
+                    || item.sharedCount >= 2
+                    || item.overlap >= 0.22
+                )
+                .sort((a, b) =>
+                    b.strongSharedCount - a.strongSharedCount
+                    || b.sharedCount - a.sharedCount
+                    || b.overlap - a.overlap
+                )
+                .map((item) => item.resume);
+            if (narrowed.length > 0) {
+                resumePool = narrowed;
+            }
+        }
+
+        const baseScored = resumePool.map((resume: any) => {
             const base = calculateMatchScore({
                 region_id: resume.region_id,
                 district_id: resume.district_id,
@@ -13461,24 +13737,22 @@ export class TelegramBot {
                 };
             })
             .filter(item => item.id)
-            .filter(item =>
-                Number(item.score || 0) >= 22
-                || Number(item.strictScore || 0) >= 18
-                || Number(item.titleRelevance || 0) >= 0.18
-            )
-            .sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
-
-        const scoredFallbackAll = processingPool
-            .map(item => ({
-                ...item,
-                id: String(item.resume?.id || '')
-            }))
-            .filter(item => item.id)
+            .filter(item => {
+                const score = Number(item.score || 0);
+                const strictScore = Number(item.strictScore || 0);
+                const titleRelevance = Number(item.titleRelevance || 0);
+                const hasStrongSignal = titleRelevance >= 0.2 || strictScore >= 32;
+                return (
+                    (score >= 30 && hasStrongSignal)
+                    || (strictScore >= 28 && titleRelevance >= 0.12)
+                    || score >= 45
+                );
+            })
             .sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
 
         const scored = scoredStrict.length > 0
             ? scoredStrict
-            : (scoredRelaxed.length > 0 ? scoredRelaxed : scoredFallbackAll);
+            : scoredRelaxed;
 
         if (!scored.length) {
             await this.sendSeriousSticker(chatId, 'warning');
@@ -13679,8 +13953,15 @@ export class TelegramBot {
                 const jobLon = this.toCoordinate(jobGeo?.longitude);
                 const seekerLat = this.toCoordinate(seekerGeo?.latitude);
                 const seekerLon = this.toCoordinate(seekerGeo?.longitude);
-                if (jobLat !== null && jobLon !== null && seekerLat !== null && seekerLon !== null) {
-                    distanceKm = this.haversineKm(jobLat, jobLon, seekerLat, seekerLon);
+                const jobPoint = this.normalizeGeoPoint(jobLat, jobLon) || this.normalizeGeoPoint(jobLon, jobLat);
+                const seekerPoint = this.normalizeGeoPoint(seekerLat, seekerLon) || this.normalizeGeoPoint(seekerLon, seekerLat);
+                if (jobPoint && seekerPoint) {
+                    distanceKm = this.haversineKm(
+                        jobPoint.latitude,
+                        jobPoint.longitude,
+                        seekerPoint.latitude,
+                        seekerPoint.longitude
+                    );
                 }
             } catch {
                 distanceKm = null;
@@ -13897,6 +14178,81 @@ export class TelegramBot {
         return { telegramId, lang };
     }
 
+    private async buildOfferMatchBlock(session: TelegramSession, job: any, lang: BotLang): Promise<string | null> {
+        if (!session.user_id || !job) return null;
+
+        let resume: any = null;
+        const preferredResumeId = String(session.data?.active_resume_id || '').trim();
+        if (preferredResumeId) {
+            const preferred = await this.supabase
+                .from('resumes')
+                .select('*')
+                .eq('id', preferredResumeId)
+                .eq('user_id', session.user_id)
+                .maybeSingle();
+            resume = preferred.data || null;
+        }
+        if (!resume) {
+            const latest = await this.supabase
+                .from('resumes')
+                .select('*')
+                .eq('user_id', session.user_id)
+                .order('updated_at', { ascending: false })
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+            resume = latest.data || null;
+        }
+        if (!resume) return null;
+
+        const profile = {
+            region_id: this.toCoordinate(resume.region_id),
+            district_id: this.toCoordinate(resume.district_id),
+            category_id: resume.category_id || null,
+            category_ids: Array.isArray(resume.category_ids) ? resume.category_ids : [],
+            field_id: resume.field_id || null,
+            field_title: resume.field_title || resume.title || resume.desired_position || null,
+            expected_salary_min: this.toCoordinate(resume.expected_salary_min) || null,
+            experience_level: resume.experience || resume.experience_level || null,
+            gender: resume.gender || null,
+            birth_date: resume.birth_date || null,
+            education_level: resume.education_level || null,
+            title: resume.field_title || resume.title || resume.desired_position || null
+        };
+
+        const normalizedJob = this.normalizeJob(job, lang);
+        const matched = calculateMatchScore(profile, normalizedJob);
+        const criteria = matched.matchCriteria || {};
+        const labels = {
+            profession: lang === 'uz' ? 'Lavozim' : 'Должность',
+            location: lang === 'uz' ? 'Joylashuv' : 'Локация',
+            category: lang === 'uz' ? 'Soha' : 'Сфера',
+            salary: lang === 'uz' ? 'Maosh' : 'Зарплата',
+            experience: lang === 'uz' ? 'Tajriba' : 'Опыт',
+            education: lang === 'uz' ? "Ma'lumot" : 'Образование',
+            age: lang === 'uz' ? 'Yosh' : 'Возраст'
+        };
+
+        const criterionLines: string[] = [];
+        if (criteria.profession) criterionLines.push(`<i>✅ ${labels.profession}</i>`);
+        if (criteria.location) criterionLines.push(`<i>✅ ${labels.location}</i>`);
+        if (criteria.category) criterionLines.push(`<i>✅ ${labels.category}</i>`);
+        if (criteria.salary) criterionLines.push(`<i>✅ ${labels.salary}</i>`);
+        if (criteria.experience) criterionLines.push(`<i>✅ ${labels.experience}</i>`);
+        if (criteria.education) criterionLines.push(`<i>✅ ${labels.education}</i>`);
+        if (criteria.age && matched.ageKnown !== false) criterionLines.push(`<i>✅ ${labels.age}</i>`);
+
+        const parts: string[] = [botTexts.matchScore[lang](matched.matchScore)];
+        if (criterionLines.length > 0) {
+            parts.push(criterionLines.join('\n'));
+        }
+        if (matched.conditionallySuitable && (matched.conditionalReason === 'education' || matched.conditionalReason === 'experience' || matched.conditionalReason === 'both')) {
+            parts.push(botTexts.conditionalMatchWarning[lang](matched.conditionalReason));
+        }
+
+        return `<blockquote>${parts.join('\n\n')}</blockquote>`;
+    }
+
     private async showSeekerOffers(chatId: number, session: TelegramSession): Promise<void> {
         const lang = session.lang;
         if (!session.user_id) {
@@ -14053,6 +14409,11 @@ export class TelegramBot {
             const normalized = this.normalizeJob(job, lang);
             lines.push('');
             lines.push(formatFullJobCard(normalized, lang));
+            const offerMatchBlock = await this.buildOfferMatchBlock(session, normalized, lang);
+            if (offerMatchBlock) {
+                lines.push('');
+                lines.push(offerMatchBlock);
+            }
             lines.push('');
             lines.push(`<i>${lang === 'uz' ? "Siz ishga taklif qilingansiz, bog'lanish uchun vakansiyadagi telefon raqamidan foydalaning." : 'Вы приглашены на эту вакансию. Для связи используйте номер телефона из вакансии.'}</i>`);
         }
@@ -14136,7 +14497,8 @@ export class TelegramBot {
         }
 
         const job = this.normalizeJob(jobRaw, lang);
-        const card = `${formatFullJobCard(job, lang)}\n\n<i>${lang === 'uz' ? "Siz ushbu vakansiyaga taklif qilingansiz. Bog'lanish uchun telefon raqamidan foydalanishingiz mumkin." : 'Вы приглашены на эту вакансию. Для связи используйте контактный номер.'}</i>`;
+        const offerMatchBlock = await this.buildOfferMatchBlock(session, job, lang);
+        const card = `${formatFullJobCard(job, lang)}${offerMatchBlock ? `\n\n${offerMatchBlock}` : ''}\n\n<i>${lang === 'uz' ? "Siz ushbu vakansiyaga taklif qilingansiz. Bog'lanish uchun telefon raqamidan foydalanishingiz mumkin." : 'Вы приглашены на эту вакансию. Для связи используйте контактный номер.'}</i>`;
         await this.sendPrompt(chatId, session, card, {
             parseMode: 'HTML',
             replyMarkup: keyboards.offerJobFromNotificationKeyboard(lang)
@@ -14171,7 +14533,8 @@ export class TelegramBot {
             .select('id, title_uz, title_ru, title, company_name, contact_phone, phone, hr_name')
             .eq('id', jobId)
             .maybeSingle();
-        if (!job?.id) {
+        const ownedJob = await this.getEmployerOwnedJobById(session, jobId);
+        if (!job?.id || !ownedJob) {
             await this.sendPrompt(chatId, session, botTexts.error[lang], { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
             return;
         }
@@ -14342,6 +14705,9 @@ export class TelegramBot {
 
         const job = { ...(jobList[safeIndex] as any) };
         const jobId = job.id || 'unknown';
+        const sourceRaw = String(job?.source || job?.source_type || '').trim().toLowerCase();
+        const isImported = job?.is_imported === true || sourceRaw === 'osonish';
+        const canApply = !isImported;
 
         if (!String(job?.region_name || '').trim() && job?.region_id !== null && job?.region_id !== undefined) {
             const resolvedRegion = await this.getRegionNameById(job.region_id, lang);
@@ -14388,12 +14754,7 @@ export class TelegramBot {
             matchBlock = `<blockquote>${parts.join('\n\n')}</blockquote>`;
         }
 
-        const jobLatitude = this.toCoordinate(job.latitude);
-        const jobLongitude = this.toCoordinate(job.longitude);
         let text = matchBlock ? `${formatFullJobCard(job, lang)}\n\n${matchBlock}` : formatFullJobCard(job, lang);
-        if (jobLatitude !== null && jobLongitude !== null) {
-            text = text.replace(/\n📌 \| (Ish joy manzili|Адрес): .*/g, '');
-        }
         if (session.user_id) {
             const seekerGeo = await this.getSeekerGeo(session.user_id);
             if (seekerGeo) {
@@ -14447,7 +14808,17 @@ export class TelegramBot {
 
         const sent = await sendMessage(chatId, text, {
             parseMode: 'HTML',
-            replyMarkup: keyboards.jobNavigationKeyboard(lang, safeIndex, jobList.length, jobId, session.data?.job_source, isFavorite, regionVacancyCount)
+            disableWebPagePreview: true,
+            replyMarkup: keyboards.jobNavigationKeyboard(
+                lang,
+                safeIndex,
+                jobList.length,
+                jobId,
+                session.data?.job_source,
+                isFavorite,
+                regionVacancyCount,
+                canApply
+            )
         });
 
         if (prevPromptId && prevPromptId !== sent?.message_id) {
@@ -14483,29 +14854,6 @@ export class TelegramBot {
             }
             lastLocationTextMessageId = null;
         }
-        if (jobLatitude !== null && jobLongitude !== null) {
-            try {
-                const loc = await sendLocation(chatId, jobLatitude, jobLongitude);
-                lastLocationMessageId = loc?.message_id || null;
-                const regionName = job.region_name || await this.getRegionNameById(job.region_id, lang);
-                const districtName = job.district_name || await this.getDistrictNameById(job.district_id, lang);
-                const fallbackAddress = [regionName, districtName].filter(Boolean).join(', ');
-                const address =
-                    job.address
-                    || job.raw_source_json?.address
-                    || job.raw_source_json?.work_address
-                    || fallbackAddress
-                    || null;
-                if (address) {
-                    const locationText = `📌 | ${lang === 'uz' ? 'Ish joy manzili' : 'Адрес'}: ${address}`;
-                    const info = await sendMessage(chatId, locationText);
-                    lastLocationTextMessageId = info?.message_id || null;
-                }
-            } catch (err) {
-                // ignore location errors
-            }
-        }
-
         const updatedData = {
             ...session.data,
             currentJobIndex: safeIndex,
@@ -14630,8 +14978,45 @@ export class TelegramBot {
 
     private async handleJobApply(chatId: number, jobId: string, session: TelegramSession): Promise<void> {
         const lang = session.lang;
+        const isDuplicateApplicationError = (error: any): boolean => {
+            const message = String(
+                error?.message
+                || error?.details
+                || error?.hint
+                || error?.error_description
+                || ''
+            ).toLowerCase();
+            const code = String(error?.code || '').toLowerCase();
+            return (
+                code === '23505'
+                || message.includes('duplicate key value')
+                || message.includes('unique_user_job_application')
+                || message.includes('already exists')
+            );
+        };
         if (!session.user_id) {
             await this.sendPrompt(chatId, session, botTexts.error[lang]);
+            return;
+        }
+        const { data: jobRow, error: jobError } = await this.supabase
+            .from('jobs')
+            .select('id, is_imported, source')
+            .eq('id', jobId)
+            .maybeSingle();
+        if (jobError || !jobRow?.id) {
+            await this.sendPrompt(chatId, session, botTexts.error[lang]);
+            return;
+        }
+        const sourceRaw = String(jobRow?.source || '').trim().toLowerCase();
+        const isImported = jobRow?.is_imported === true || sourceRaw === 'osonish';
+        if (isImported) {
+            await this.sendPrompt(
+                chatId,
+                session,
+                lang === 'uz'
+                    ? "ℹ️ Ushbu vakansiya import qilingan. Ariza topshirish ushbu kanalda mavjud emas."
+                    : 'ℹ️ Эта вакансия импортирована. Отклик через этого бота недоступен.'
+            );
             return;
         }
 
@@ -14667,6 +15052,34 @@ export class TelegramBot {
             // ignore if resume_id column not available
         }
 
+        if (!alreadyApplied && session.user_id) {
+            try {
+                const { data: existingByUser } = await this.supabase
+                    .from('job_applications')
+                    .select('id')
+                    .eq('job_id', jobId)
+                    .eq('user_id', session.user_id)
+                    .maybeSingle();
+                if (existingByUser) alreadyApplied = true;
+            } catch {
+                // ignore if user_id column not available
+            }
+        }
+
+        if (!alreadyApplied && session.user_id) {
+            try {
+                const { data: existingByApplicant } = await this.supabase
+                    .from('job_applications')
+                    .select('id')
+                    .eq('job_id', jobId)
+                    .eq('applicant_id', session.user_id)
+                    .maybeSingle();
+                if (existingByApplicant) alreadyApplied = true;
+            } catch {
+                // ignore if applicant_id column not available
+            }
+        }
+
         if (alreadyApplied) {
             await this.sendPrompt(chatId, session, botTexts.applicationExists[lang]);
             return;
@@ -14681,6 +15094,7 @@ export class TelegramBot {
             created_at: new Date().toISOString()
         };
         if (session.user_id) payload.user_id = session.user_id;
+        if (session.user_id) payload.applicant_id = session.user_id;
 
         if (!payload.phone) {
             await this.sendPrompt(chatId, session, botTexts.error[lang]);
@@ -14689,42 +15103,94 @@ export class TelegramBot {
 
         let insertedApplicationId: string | null = null;
         let insertError: any = null;
-        try {
-            const insertWithId = await this.supabase
-                .from('job_applications')
-                .insert(payload)
-                .select('id')
-                .maybeSingle();
-            insertError = insertWithId.error || null;
-            insertedApplicationId = insertWithId.data?.id ? String(insertWithId.data.id) : null;
-        } catch (err) {
-            insertError = err;
+        const payloadWithApplicant = { ...payload };
+        const payloadWithoutApplicant = { ...payload };
+        delete (payloadWithoutApplicant as any).applicant_id;
+        const payloadMinimal = {
+            job_id: jobId,
+            full_name: resumeRecord.full_name || 'Nomzod',
+            phone: resumeRecord.phone || session.phone || null,
+            email: (resumeRecord as any).email || null,
+            message: null,
+            created_at: new Date().toISOString()
+        };
+
+        const insertionVariants: Array<Record<string, any>> = [
+            payloadWithApplicant,
+            payloadWithoutApplicant,
+            payloadMinimal
+        ];
+
+        for (const variant of insertionVariants) {
+            try {
+                const inserted = await this.supabase
+                    .from('job_applications')
+                    .insert(variant)
+                    .select('id')
+                    .maybeSingle();
+                if (inserted.error) {
+                    insertError = inserted.error;
+                    if (isDuplicateApplicationError(insertError)) {
+                        await this.sendPrompt(chatId, session, botTexts.applicationExists[lang]);
+                        return;
+                    }
+                    const errCode = String((insertError as any)?.code || '').trim();
+                    const errMsg = String((insertError as any)?.message || '').toLowerCase();
+                    const isColumnOrConstraintShapeError =
+                        errCode === '42703'
+                        || errCode === '42P01'
+                        || errCode === '23503'
+                        || errMsg.includes('column')
+                        || errMsg.includes('does not exist')
+                        || errMsg.includes('foreign key')
+                        || errMsg.includes('violates');
+                    if (isColumnOrConstraintShapeError) {
+                        continue;
+                    }
+                    break;
+                }
+                insertedApplicationId = inserted.data?.id ? String(inserted.data.id) : null;
+                insertError = null;
+                break;
+            } catch (err) {
+                insertError = err;
+                const errMsg = String((err as any)?.message || '').toLowerCase();
+                if (isDuplicateApplicationError(err)) {
+                    await this.sendPrompt(chatId, session, botTexts.applicationExists[lang]);
+                    return;
+                }
+                if (errMsg.includes('column') || errMsg.includes('foreign key') || errMsg.includes('does not exist')) {
+                    continue;
+                }
+                break;
+            }
         }
 
-        if (insertError) {
-            const fallbackInsert = await this.supabase.from('job_applications').insert(payload);
-            if (fallbackInsert.error) {
-                console.error('Apply error:', fallbackInsert.error);
-                await this.sendPrompt(chatId, session, botTexts.error[lang]);
-                return;
-            }
+        if (insertError && !insertedApplicationId) {
+            console.error('Apply error:', insertError);
+            await this.sendPrompt(chatId, session, botTexts.error[lang]);
+            return;
+        }
+
+        if (insertedApplicationId) {
+            await this.notifyEmployerAboutApplication(insertedApplicationId, jobId, resumeRecord.full_name || 'Nomzod');
+        } else {
             try {
                 const latest = await this.supabase
                     .from('job_applications')
                     .select('id')
                     .eq('job_id', jobId)
-                    .eq('resume_id', resumeRecord.id)
+                    .eq('phone', payload.phone)
                     .order('created_at', { ascending: false })
                     .limit(1)
                     .maybeSingle();
                 insertedApplicationId = latest.data?.id ? String(latest.data.id) : null;
+                if (insertedApplicationId) {
+                    await this.notifyEmployerAboutApplication(insertedApplicationId, jobId, resumeRecord.full_name || 'Nomzod');
+                }
             } catch {
-                insertedApplicationId = null;
+                // ignore lookup failure
             }
-        }
-
-        if (insertedApplicationId) {
-            await this.notifyEmployerAboutApplication(insertedApplicationId, jobId, resumeRecord.full_name || 'Nomzod');
         }
 
         await this.sendPrompt(chatId, session, botTexts.applicationSent[lang], { replyMarkup: keyboards.removeKeyboard() });
@@ -14753,6 +15219,7 @@ export class TelegramBot {
     private async handleSettingsAction(chatId: number, action: string, session: TelegramSession): Promise<void> {
         const lang = session.lang;
         if (action === 'language') {
+            await this.updateSession(session.telegram_user_id, { state: BotState.AWAITING_LANG });
             await this.sendPrompt(chatId, session, botTexts.selectLanguage[lang], { replyMarkup: keyboards.languageKeyboard() });
         } else if (action === 'switch_role') {
             await this.handleRoleSwitch(chatId, session);

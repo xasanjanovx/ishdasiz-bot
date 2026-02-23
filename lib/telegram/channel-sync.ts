@@ -407,6 +407,14 @@ export function buildJobChannelMessage(job: any, regionSlug?: string | null): st
   const contactPhone = formatPhonePretty(job?.contact_phone || job?.phone || raw?.contact_phone || raw?.phone || '');
   const contactTelegramRaw = compactText(job?.contact_telegram || raw?.telegram || raw?.contact_telegram || '');
   const contactTelegram = contactTelegramRaw ? (contactTelegramRaw.startsWith('@') ? contactTelegramRaw : `@${contactTelegramRaw}`) : '';
+  const hrName = normalizeHumanValue(compactText(
+    job?.hr_name
+    || raw?.hr_name
+    || raw?.hr?.name
+    || raw?.manager_name
+    || raw?.contact_person
+    || ''
+  ));
 
   const languages = uniqueList(asList(job?.languages ?? raw?.languages ?? raw?.language_ids ?? raw?.language).map(normalizeLanguageLabel), 6);
   const benefits = uniqueList(asList(job?.benefits ?? raw?.benefits ?? raw?.ijtimoiy_paketlar ?? raw?.qulayliklar).map(sanitizeBullet), 6);
@@ -495,8 +503,13 @@ export function buildJobChannelMessage(job: any, regionSlug?: string | null): st
 
   lines.push('', sep);
 
-  if (contactPhone) lines.push('', `${em.call} Aloqa: ${escapeHtml(contactPhone)}`);
-  if (contactTelegram) lines.push(`${ce(E.send, '💬')} Telegram: ${escapeHtml(contactTelegram)}`);
+  const contactLines: string[] = [];
+  if (hrName) contactLines.push(`${em.user} HR menejer: ${escapeHtml(hrName)}`);
+  if (contactPhone) contactLines.push(`${em.call} Aloqa: ${escapeHtml(contactPhone)}`);
+  if (contactTelegram) contactLines.push(`${ce(E.send, '💬')} Telegram: ${escapeHtml(contactTelegram)}`);
+  if (contactLines.length > 0) {
+    lines.push('', ...contactLines);
+  }
 
   if (footer) lines.push('', footer);
 
