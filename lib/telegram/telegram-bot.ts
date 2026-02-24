@@ -28,6 +28,7 @@ import { checkForAbuse } from '../ai/moderation';
 import { REGION_COORDINATES } from '../constants';
 import { buildJobChannelMessage, buildResumeChannelMessage, getChannelByRegionSlug, hashMessage } from './channel-sync';
 import bcrypt from 'bcryptjs';
+import { sendSMS, generateOTP, getSMSText } from '../eskiz';
 
 const MAX_LOGIN_ATTEMPTS = 5;
 const LOCKOUT_MINUTES = 15;
@@ -1859,7 +1860,7 @@ export class TelegramBot {
     }
 
     private canHandleRoleSwitchDecision(session: TelegramSession): boolean {
-        return Boolean(session.data?.role_switch_pending);
+        return Boolean(session.data?.role_switch_request);
     }
 
     private shouldIgnoreRapidCallback(session: TelegramSession, action: string, callbackMessageId?: number): boolean {
@@ -3541,7 +3542,6 @@ export class TelegramBot {
     private async startSMSAuth(chatId: number, phone: string, session: TelegramSession): Promise<void> {
         const lang = session.lang;
         try {
-            const { sendSMS, generateOTP, getSMSText } = await import('../eskiz');
             const otp = generateOTP();
             const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
             const message = getSMSText(otp);
@@ -3549,8 +3549,13 @@ export class TelegramBot {
 
             if (!smsResult.success) {
                 console.error(`[AUTH] SMS failed: ${smsResult.error}`);
+                const isConfigError = String(smsResult.error || '').toLowerCase().includes('configured');
                 const isModerationError = smsResult.error?.includes('moderation');
-                const errorMessage = isModerationError
+                const errorMessage = isConfigError
+                    ? (lang === 'uz'
+                        ? "⚠️ SMS xizmati sozlanmagan. Iltimos, admin bilan bog'laning."
+                        : '⚠️ SMS сервис не настроен. Обратитесь к администратору.')
+                    : isModerationError
                     ? '⚠️ SMS shablon tasdiqlanmagan.'
                     : botTexts.error[lang];
                 await this.sendPrompt(chatId, session, errorMessage);
@@ -12204,7 +12209,7 @@ export class TelegramBot {
 
         const normalizedJob = this.normalizeJob(job, lang);
         const matched = calculateMatchScore(profile, normalizedJob);
-        const criteria = matched.matchCriteria || {};
+        const criteria: any = matched.matchCriteria || {};
         const labels = {
             profession: lang === 'uz' ? 'Lavozim' : 'Должность',
             location: lang === 'uz' ? 'Joylashuv' : 'Локация',
@@ -13536,26 +13541,25 @@ export class TelegramBot {
     private async showMatchingResumesForJob(chatId: number, session: TelegramSession, job: any): Promise<void> {
         const lang = session.lang;
         const jobTitle = job?.field_title || job?.title_uz || job?.title_ru || job?.title || '';
-        let targetRegionId: number | null = null;
-        let targetDistrictIdRaw: any = null;
-        if (job?.employer_id) {
+        // Priority: search by vacancy location first, fallback to employer profile location.
+        let targetRegionId: number | null = this.toCoordinate(job?.region_id ?? null);
+        let targetDistrictIdRaw: any = job?.district_id ?? null;
+        if ((targetRegionId === null || targetDistrictIdRaw === null || targetDistrictIdRaw === undefined) && job?.employer_id) {
             try {
                 const { data: employerLocation } = await this.supabase
                     .from('employer_profiles')
                     .select('region_id, district_id')
                     .eq('id', job.employer_id)
                     .maybeSingle();
-                targetRegionId = this.toCoordinate(employerLocation?.region_id ?? null);
-                targetDistrictIdRaw = employerLocation?.district_id ?? null;
+                if (targetRegionId === null) {
+                    targetRegionId = this.toCoordinate(employerLocation?.region_id ?? null);
+                }
+                if (targetDistrictIdRaw === null || targetDistrictIdRaw === undefined) {
+                    targetDistrictIdRaw = employerLocation?.district_id ?? null;
+                }
             } catch {
                 // ignore fallback errors
             }
-        }
-        if (targetRegionId === null) {
-            targetRegionId = this.toCoordinate(job?.region_id ?? null);
-        }
-        if (targetDistrictIdRaw === null || targetDistrictIdRaw === undefined) {
-            targetDistrictIdRaw = job?.district_id ?? null;
         }
         const targetDistrictId = targetDistrictIdRaw !== null && targetDistrictIdRaw !== undefined
             ? String(targetDistrictIdRaw)

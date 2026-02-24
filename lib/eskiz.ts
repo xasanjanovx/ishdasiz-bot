@@ -1,4 +1,4 @@
-const ESKIZ_BASE_URL = 'https://notify.eskiz.uz/api';
+﻿const ESKIZ_BASE_URL = 'https://notify.eskiz.uz/api';
 
 let cachedToken: string | null = null;
 let tokenExpiresAt: number = 0;
@@ -57,13 +57,18 @@ export async function getEskizToken(): Promise<string | null> {
 export async function sendSMS(phone: string, message: string): Promise<{ success: boolean; error?: string }> {
     const email = process.env.ESKIZ_EMAIL;
     const password = process.env.ESKIZ_PASSWORD;
+    const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
 
-    // DEV MODE: No credentials - just log
+    // DEV MODE: No credentials - just log (outside production only)
     if (!email || !password) {
+        if (isProd) {
+            console.error('Eskiz is not configured: ESKIZ_EMAIL / ESKIZ_PASSWORD are missing');
+            return { success: false, error: 'Eskiz credentials not configured' };
+        }
         console.log('==========================================');
-        console.log('📧 DEV MODE - SMS NOT SENT');
-        console.log(`📱 To: ${phone}`);
-        console.log(`💬 Message: ${message}`);
+        console.log('рџ“§ DEV MODE - SMS NOT SENT');
+        console.log(`рџ“± To: ${phone}`);
+        console.log(`рџ’¬ Message: ${message}`);
         console.log('==========================================');
         return { success: true };
     }
@@ -108,7 +113,7 @@ export async function sendSMS(phone: string, message: string): Promise<{ success
         }
 
         const result = await res.json();
-        console.log('📱 SMS sent successfully:', result);
+        console.log('рџ“± SMS sent successfully:', result);
         return { success: true };
     } catch (error) {
         console.error('Eskiz send exception:', error);
@@ -121,8 +126,9 @@ export async function sendSMS(phone: string, message: string): Promise<{ success
  * In dev mode: returns predictable "12345"
  */
 export function generateOTP(): string {
-    // Dev mode: predictable code for testing
-    if (!process.env.ESKIZ_EMAIL) {
+    // Dev mode: predictable code for testing (avoid fixed OTP in production)
+    const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
+    if (!process.env.ESKIZ_EMAIL && !isProd) {
         return "12345";
     }
     // 5-digit code
@@ -136,3 +142,4 @@ export function getSMSText(code: string): string {
     const template = process.env.ESKIZ_SMS_TEXT || 'ishdasiz.uz saytiga kirish uchun tasdiqlash kodi:';
     return `${template} ${code}`;
 }
+
