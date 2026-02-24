@@ -3547,27 +3547,43 @@ export class TelegramBot {
             const message = getSMSText(otp);
             const smsResult = await sendSMS(phone, message);
 
-            if (!smsResult.success) {
-                console.error(`[AUTH] SMS failed: ${smsResult.error}`);
-                const isConfigError = String(smsResult.error || '').toLowerCase().includes('configured');
-                const isModerationError = smsResult.error?.includes('moderation');
-                const errorMessage = isConfigError
-                    ? (lang === 'uz'
-                        ? "⚠️ SMS xizmati sozlanmagan. Iltimos, admin bilan bog'laning."
-                        : '⚠️ SMS сервис не настроен. Обратитесь к администратору.')
-                    : isModerationError
-                    ? '⚠️ SMS shablon tasdiqlanmagan.'
-                    : botTexts.error[lang];
-                await this.sendPrompt(chatId, session, errorMessage);
+            if (smsResult.success) {
+                const updatedData = { ...session.data, otp_provider: 'session' };
+                await this.setSession(session, {
+                    state: BotState.AWAITING_OTP,
+                    otp_code: otp,
+                    otp_expires_at: expiresAt,
+                    data: updatedData
+                });
+                await this.sendPrompt(chatId, session, botTexts.otpSent[lang], { replyMarkup: keyboards.removeKeyboard() });
                 return;
             }
 
-            await this.setSession(session, {
-                state: BotState.AWAITING_OTP,
-                otp_code: otp,
-                otp_expires_at: expiresAt
-            });
-            await this.sendPrompt(chatId, session, botTexts.otpSent[lang], { replyMarkup: keyboards.removeKeyboard() });
+            console.error(`[AUTH] SMS failed: ${smsResult.error}`);
+
+            const remoteFallback = await this.requestOtpViaWebsite(phone);
+            if (remoteFallback.success) {
+                const updatedData = { ...session.data, otp_provider: 'supabase' };
+                await this.setSession(session, {
+                    state: BotState.AWAITING_OTP,
+                    otp_code: null,
+                    otp_expires_at: expiresAt,
+                    data: updatedData
+                });
+                await this.sendPrompt(chatId, session, botTexts.otpSent[lang], { replyMarkup: keyboards.removeKeyboard() });
+                return;
+            }
+
+            const isConfigError = String(smsResult.error || '').toLowerCase().includes('configured');
+            const isModerationError = String(smsResult.error || '').toLowerCase().includes('moderation');
+            const errorMessage = isConfigError
+                ? (lang === 'uz'
+                    ? "⚠️ SMS xizmati sozlanmagan. Iltimos, admin bilan bog'laning."
+                    : '⚠️ SMS сервис не настроен. Обратитесь к администратору.')
+                : isModerationError
+                    ? '⚠️ SMS shablon tasdiqlanmagan.'
+                    : botTexts.error[lang];
+            await this.sendPrompt(chatId, session, errorMessage);
         } catch (e: any) {
             console.error('ESKIZ Error:', e);
             // Fallback to fake OTP for dev if needed or just error
@@ -3576,23 +3592,108 @@ export class TelegramBot {
         }
     }
 
+    private async requestOtpViaWebsite(phone: string): Promise<{ success: boolean; error?: string }> {
+        try {
+            const baseRaw = String(process.env.NEXT_PUBLIC_APP_URL || '').trim();
+            if (!baseRaw) {
+                return { success: false, error: 'NEXT_PUBLIC_APP_URL is not set' };
+            }
+            const base = baseRaw.replace(/\/+$/, '');
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 12000);
+            try {
+                const res = await fetch(`${base}/api/auth/send-otp`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phone }),
+                    signal: controller.signal
+                });
+                const payload = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    return { success: false, error: String(payload?.error || `HTTP ${res.status}`) };
+                }
+                if (payload?.success) {
+                    return { success: true };
+                }
+                return { success: false, error: String(payload?.error || 'Unknown error') };
+            } finally {
+                clearTimeout(timeout);
+            }
+        } catch (error: any) {
+            return { success: false, error: String(error?.message || error || 'Remote OTP request failed') };
+        }
+    }
+
     private async handleOTP(chatId: number, code: string, session: TelegramSession): Promise<void> {
         const lang = session.lang;
-        if (!session.otp_code || !session.otp_expires_at) {
+        const otpProvider = String(session.data?.otp_provider || 'session');
+        if (otpProvider === 'supabase') {
+            if (!session.phone) {
+                await this.sendPrompt(chatId, session, botTexts.error[lang]);
+                return;
+            }
+            const nowIso = new Date().toISOString();
+            const { data: otpRecord, error: otpFetchError } = await this.supabase
+                .from('otp_codes')
+                .select('id, code, expires_at, attempts, verified, phone')
+                .eq('phone', session.phone)
+                .eq('verified', false)
+                .gt('expires_at', nowIso)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+            if (otpFetchError) {
+                console.error('OTP fetch error:', otpFetchError);
+                await this.sendPrompt(chatId, session, botTexts.error[lang]);
+                return;
+            }
+
+            if (!otpRecord) {
+                await this.sendPrompt(chatId, session, botTexts.otpExpired[lang]);
+                await this.setSession(session, {
+                    state: BotState.AWAITING_PHONE,
+                    otp_code: null,
+                    otp_expires_at: null,
+                    data: { ...session.data, otp_provider: null }
+                });
+                await this.sendPrompt(chatId, session, botTexts.askPhone[lang], { replyMarkup: keyboards.phoneRequestKeyboard(lang) });
+                return;
+            }
+
+            const attempts = Number(otpRecord.attempts || 0);
+            if (attempts >= 3) {
+                await this.sendPrompt(chatId, session, botTexts.otpInvalid[lang]);
+                return;
+            }
+
+            if (String(code).trim() !== String(otpRecord.code || '').trim()) {
+                await this.supabase
+                    .from('otp_codes')
+                    .update({ attempts: attempts + 1 })
+                    .eq('id', otpRecord.id);
+                await this.sendPrompt(chatId, session, botTexts.otpInvalid[lang]);
+                return;
+            }
+
+            await this.supabase
+                .from('otp_codes')
+                .update({ verified: true })
+                .eq('id', otpRecord.id);
+        } else if (!session.otp_code || !session.otp_expires_at) {
             await this.sendPrompt(chatId, session, botTexts.error[lang]);
             return;
-        }
-        if (new Date() > new Date(session.otp_expires_at)) {
+        } else if (new Date() > new Date(session.otp_expires_at)) {
             await this.sendPrompt(chatId, session, botTexts.otpExpired[lang]);
             await this.setSession(session, {
                 state: BotState.AWAITING_PHONE,
                 otp_code: null,
-                otp_expires_at: null
+                otp_expires_at: null,
+                data: { ...session.data, otp_provider: null }
             });
             await this.sendPrompt(chatId, session, botTexts.askPhone[lang], { replyMarkup: keyboards.phoneRequestKeyboard(lang) });
             return;
-        }
-        if (code !== session.otp_code) {
+        } else if (code !== session.otp_code) {
             await this.sendPrompt(chatId, session, botTexts.otpInvalid[lang]);
             return;
         }
@@ -3730,7 +3831,7 @@ export class TelegramBot {
         const { data: seekerProfile } = await this.supabase.from('job_seeker_profiles').select('id').eq('user_id', userId).single();
         const { data: employerProfile } = await this.supabase.from('employer_profiles').select('id').eq('user_id', userId).single();
 
-        const updatedData = { ...session.data, resume: {} };
+        const updatedData = { ...session.data, resume: {}, otp_provider: null };
         await this.setSession(session, {
             user_id: userId,
             otp_code: null,
@@ -12569,7 +12670,7 @@ export class TelegramBot {
             otp_code: null,
             otp_expires_at: null,
             state: BotState.START,
-            data: {}
+            data: { otp_provider: null }
         });
         await this.sendPrompt(chatId, session, botTexts.logoutDone[lang], {
             replyMarkup: keyboards.startKeyboard(lang)
