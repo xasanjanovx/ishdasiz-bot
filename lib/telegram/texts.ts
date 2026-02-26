@@ -42,8 +42,8 @@ export const botTexts = {
 
     // Auth
     askPhone: {
-        uz: '<b>📱 Telefon raqamingizni yuboring:</b>',
-        ru: '<b>📱 Отправьте номер телефона:</b>'
+        uz: '<b>📱 Telefon raqamingizni yuboring:</b>\n<i>Tugma orqali yuborishingiz yoki qo‘lda yozishingiz mumkin. Masalan: +998901234567</i>',
+        ru: '<b>📱 Отправьте номер телефона:</b>\n<i>Можно отправить кнопкой или ввести вручную. Пример: +998901234567</i>'
     },
     otpSent: {
         uz: '<b>✉️ Tasdiqlash kodi SMS orqali yuborildi.</b>\n<i>Kodni kiriting:</i>',

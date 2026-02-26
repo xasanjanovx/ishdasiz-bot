@@ -6262,6 +6262,24 @@ export class TelegramBot {
         }
 
         // AUTH
+        if (state === BotState.AWAITING_PHONE) {
+            const normalizedPhone = this.normalizeUzPhoneStrict(text);
+            if (!normalizedPhone) {
+                const hint = lang === 'uz'
+                    ? "<b>⚠️ | Telefon formati noto‘g‘ri.</b>\n<i>Masalan: +998901234567 yoki 901234567</i>\n\n"
+                    : '<b>⚠️ | Неверный формат телефона.</b>\n<i>Пример: +998901234567 или 901234567</i>\n\n';
+                await this.sendPrompt(chatId, session, `${hint}${botTexts.askPhone[lang]}`, {
+                    parseMode: 'HTML',
+                    replyMarkup: keyboards.phoneRequestKeyboard(lang),
+                    premiumKey: 'askPhone'
+                });
+                return;
+            }
+
+            await this.handlePhone(chatId, normalizedPhone, session);
+            return;
+        }
+
         if (state === BotState.AWAITING_OTP) {
             await this.handleOTP(chatId, text, session);
             return;
