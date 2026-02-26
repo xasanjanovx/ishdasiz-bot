@@ -277,13 +277,13 @@ export function backKeyboard(lang: BotLang, backAction: string): object {
 export function backCancelKeyboard(lang: BotLang, backAction: string): object {
     return createInlineKeyboard([
         [{ text: lang === 'uz' ? '⬅️ Orqaga' : '⬅️ Назад', callback_data: `back:${backAction}` }],
-        [{ text: lang === 'uz' ? 'Bekor qilish' : 'Отмена', callback_data: 'cancel' }]
+        [{ text: lang === 'uz' ? '❌ Bekor qilish' : '❌ Отмена', callback_data: 'cancel' }]
     ]);
 }
 
 export function cancelInlineKeyboard(lang: BotLang): object {
     return createInlineKeyboard([
-        [{ text: lang === 'uz' ? 'Bekor qilish' : 'Отмена', callback_data: 'cancel' }]
+        [{ text: lang === 'uz' ? '❌ Bekor qilish' : '❌ Отмена', callback_data: 'cancel' }]
     ]);
 }
 
@@ -317,6 +317,14 @@ export function phoneRequestKeyboard(lang: BotLang): object {
     return createReplyKeyboard([
         [{ text: lang === 'uz' ? '📱 Telefon raqamni yuborish' : '📱 Отправить номер телефона', request_contact: true }]
     ], { one_time: true });
+}
+
+export function phoneManualConfirmKeyboard(lang: BotLang): object {
+    return createInlineKeyboard([
+        [{ text: lang === 'uz' ? '✅ Tasdiqlash' : '✅ Подтвердить', callback_data: 'authphone:confirm' }],
+        [{ text: lang === 'uz' ? '✏️ Qayta kiritish' : '✏️ Ввести заново', callback_data: 'authphone:retry' }],
+        [{ text: lang === 'uz' ? '❌ Bekor qilish' : '❌ Отмена', callback_data: 'cancel' }]
+    ]);
 }
 
 // ============================================
@@ -1072,7 +1080,7 @@ export function subscriptionFrequencyKeyboard(lang: BotLang): object {
         [{ text: lang === 'uz' ? 'Darhol' : 'Мгновенно', callback_data: 'subs:freq:instant' }],
         [{ text: lang === 'uz' ? 'Kunlik' : 'Ежедневно', callback_data: 'subs:freq:daily' }],
         [{ text: lang === 'uz' ? '⬅️ Orqaga' : '⬅️ Назад', callback_data: 'settings:subscriptions' }],
-        [{ text: lang === 'uz' ? 'Bekor qilish' : 'Отмена', callback_data: 'cancel' }]
+        [{ text: lang === 'uz' ? '❌ Bekor qilish' : '❌ Отмена', callback_data: 'cancel' }]
     ]);
 }
 
@@ -1080,7 +1088,7 @@ export function subscriptionGeoKeyboard(lang: BotLang): object {
     return createInlineKeyboard([
         [{ text: lang === 'uz' ? "Ha, joylashuv bo'yicha" : 'Да, по локации', callback_data: 'subs:geo:yes' }],
         [{ text: lang === 'uz' ? "Yo'q, o'zim tanlayman" : 'Нет, выберу сам', callback_data: 'subs:geo:no' }],
-        [{ text: lang === 'uz' ? 'Bekor qilish' : 'Отмена', callback_data: 'cancel' }]
+        [{ text: lang === 'uz' ? '❌ Bekor qilish' : '❌ Отмена', callback_data: 'cancel' }]
     ]);
 }
 
@@ -1091,7 +1099,7 @@ export function employmentTypeKeyboard(lang: BotLang): object {
         [{ text: lang === 'uz' ? 'Shartnoma' : 'Договор', callback_data: 'employment:contract' }],
         [{ text: lang === 'uz' ? 'Amaliyot' : 'Стажировка', callback_data: 'employment:internship' }],
         [{ text: lang === 'uz' ? 'Hammasi' : 'Все', callback_data: 'employment:all' }],
-        [{ text: lang === 'uz' ? 'Bekor qilish' : 'Отмена', callback_data: 'cancel' }]
+        [{ text: lang === 'uz' ? '❌ Bekor qilish' : '❌ Отмена', callback_data: 'cancel' }]
     ]);
 }
 
@@ -1101,7 +1109,7 @@ export function workModeKeyboard(lang: BotLang): object {
         [{ text: lang === 'uz' ? 'Masofaviy' : 'Удаленно', callback_data: 'workmode:remote' }],
         [{ text: lang === 'uz' ? 'Gibrid' : 'Гибрид', callback_data: 'workmode:hybrid' }],
         [{ text: lang === 'uz' ? 'Hammasi' : 'Все', callback_data: 'workmode:all' }],
-        [{ text: lang === 'uz' ? 'Bekor qilish' : 'Отмена', callback_data: 'cancel' }]
+        [{ text: lang === 'uz' ? '❌ Bekor qilish' : '❌ Отмена', callback_data: 'cancel' }]
     ]);
 }
 
@@ -1110,7 +1118,7 @@ export function workingDaysKeyboard(lang: BotLang): object {
         [{ text: lang === 'uz' ? '5 kunlik' : '5-дневка', callback_data: 'workingdays:2' }],
         [{ text: lang === 'uz' ? '6 kunlik' : '6-дневка', callback_data: 'workingdays:1' }],
         [{ text: lang === 'uz' ? 'Hammasi' : 'Все', callback_data: 'workingdays:all' }],
-        [{ text: lang === 'uz' ? 'Bekor qilish' : 'Отмена', callback_data: 'cancel' }]
+        [{ text: lang === 'uz' ? '❌ Bekor qilish' : '❌ Отмена', callback_data: 'cancel' }]
     ]);
 }
 
@@ -1287,7 +1295,7 @@ export function salaryMaxKeyboard(lang: BotLang): object {
         ],
         [{ text: lang === 'uz' ? 'Maksimalsiz' : 'Без максимума', callback_data: 'salarymax:all' }],
         [{ text: lang === 'uz' ? '⬅️ Orqaga' : '⬅️ Назад', callback_data: 'back:salary' }],
-        [{ text: lang === 'uz' ? 'Bekor qilish' : 'Отмена', callback_data: 'cancel' }]
+        [{ text: lang === 'uz' ? '❌ Bekor qilish' : '❌ Отмена', callback_data: 'cancel' }]
     ]);
 }
 
@@ -1420,7 +1428,7 @@ export function resumeEditKeyboard(lang: BotLang): object {
             { text: lang === 'uz' ? "🎓 O‘qigan joy" : '🎓 Место учебы', callback_data: 'resumeedit:education_place' }
         ],
         [{ text: lang === 'uz' ? '🏠 Bosh menyu' : '🏠 Главное меню', callback_data: 'menu:main' }],
-        [{ text: lang === 'uz' ? 'Bekor qilish' : 'Отмена', callback_data: 'cancel' }]
+        [{ text: lang === 'uz' ? '❌ Bekor qilish' : '❌ Отмена', callback_data: 'cancel' }]
     ]);
 }
 
@@ -1431,7 +1439,7 @@ export function aiJobPreviewKeyboard(lang: BotLang): object {
             { text: lang === 'uz' ? 'Qayta' : 'Повторить', callback_data: 'ai:job:retry' }
         ],
         [{ text: lang === 'uz' ? "O'zim to'ldiraman" : 'Заполню сам', callback_data: 'ai:job:cancel' }],
-        [{ text: lang === 'uz' ? 'Bekor qilish' : 'Отмена', callback_data: 'cancel' }]
+        [{ text: lang === 'uz' ? '❌ Bekor qilish' : '❌ Отмена', callback_data: 'cancel' }]
     ]);
 }
 
@@ -1442,7 +1450,7 @@ export function aiResumePreviewKeyboard(lang: BotLang): object {
             { text: lang === 'uz' ? 'Qayta' : 'Повторить', callback_data: 'ai:resume:retry' }
         ],
         [{ text: lang === 'uz' ? "O'zim to'ldiraman" : 'Заполню сам', callback_data: 'ai:resume:cancel' }],
-        [{ text: lang === 'uz' ? 'Bekor qilish' : 'Отмена', callback_data: 'cancel' }]
+        [{ text: lang === 'uz' ? '❌ Bekor qilish' : '❌ Отмена', callback_data: 'cancel' }]
     ]);
 }
 
