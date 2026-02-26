@@ -2688,8 +2688,6 @@ export class TelegramBot {
     private shouldDeleteIncomingMessage(text: string, session: TelegramSession | null, hasUserPayload: boolean): boolean {
         void session;
         if (!hasUserPayload) return false;
-        const normalized = String(text || '').trim();
-        if (normalized.startsWith('/')) return false;
         return true;
     }
 
@@ -4114,12 +4112,32 @@ export class TelegramBot {
     }
 
     private async setSession(session: TelegramSession, updates: Partial<TelegramSession>): Promise<void> {
+        let normalizedData = updates.data as Record<string, any> | undefined;
+        if (normalizedData && typeof normalizedData === 'object') {
+            const prevData = (session.data && typeof session.data === 'object') ? session.data : {};
+            const internalKeysToKeep = [
+                'last_prompt_message_id',
+                'start_command_message_ids',
+                'recent_update_ids',
+                'recent_message_ids',
+                'recent_callback_ids'
+            ] as const;
+            normalizedData = { ...normalizedData };
+            for (const key of internalKeysToKeep) {
+                if (normalizedData[key] === undefined && prevData[key] !== undefined) {
+                    normalizedData[key] = prevData[key];
+                }
+            }
+        }
         if (updates.state) session.state = updates.state as BotState;
         if (updates.lang) session.lang = updates.lang as BotLang;
         if (updates.user_id !== undefined) session.user_id = updates.user_id as any;
         if (updates.phone !== undefined) session.phone = updates.phone as any;
-        if (updates.data) session.data = updates.data as any;
-        await this.updateSession(session.telegram_user_id, updates);
+        if (normalizedData) session.data = normalizedData as any;
+        const normalizedUpdates: Partial<TelegramSession> = normalizedData
+            ? { ...updates, data: normalizedData as any }
+            : updates;
+        await this.updateSession(session.telegram_user_id, normalizedUpdates);
     }
 
     private async getOrCreateSession(telegramUserId: number): Promise<TelegramSession | null> {
