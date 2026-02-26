@@ -32,6 +32,12 @@ import { sendSMS, generateOTP, getSMSText } from '../eskiz';
 
 const MAX_LOGIN_ATTEMPTS = 5;
 const LOCKOUT_MINUTES = 15;
+const FLOW_IDLE_TIMEOUT_MINUTES = (() => {
+    const parsed = Number.parseInt(String(process.env.BOT_FLOW_IDLE_TIMEOUT_MINUTES || '').trim(), 10);
+    if (!Number.isFinite(parsed) || parsed < 1) return 20;
+    return Math.min(parsed, 24 * 60);
+})();
+const FLOW_IDLE_TIMEOUT_MS = FLOW_IDLE_TIMEOUT_MINUTES * 60 * 1000;
 
 type StickerTone = 'loading' | 'announce' | 'success' | 'warning' | 'error';
 
@@ -143,6 +149,8 @@ export interface TelegramSession {
     otp_expires_at: string | null;
     lang: BotLang;
     active_role?: 'job_seeker' | 'employer';
+    created_at?: string | null;
+    updated_at?: string | null;
 }
 
 export interface TelegramMessage {
@@ -1863,6 +1871,113 @@ export class TelegramBot {
         return Boolean(session.data?.role_switch_request);
     }
 
+    private isFlowTimeoutEligibleState(state: BotState): boolean {
+        const safeStates = new Set<BotState>([
+            BotState.START,
+            BotState.AWAITING_LANG,
+            BotState.AWAITING_PHONE,
+            BotState.AWAITING_OTP,
+            BotState.AWAITING_PASSWORD,
+            BotState.SELECTING_ROLE,
+            BotState.MAIN_MENU,
+            BotState.EMPLOYER_MAIN_MENU,
+            BotState.BROWSING_JOBS,
+            BotState.VIEWING_RESUME,
+            BotState.SETTINGS,
+            BotState.ADMIN_MENU
+        ]);
+        return !safeStates.has(state);
+    }
+
+    private getSessionLastActivityTs(session: TelegramSession): number | null {
+        const raw = session.updated_at || session.created_at || null;
+        if (!raw) return null;
+        const ts = Date.parse(raw);
+        return Number.isFinite(ts) ? ts : null;
+    }
+
+    private isSessionFlowTimedOut(session: TelegramSession): boolean {
+        if (!this.isFlowTimeoutEligibleState(session.state)) return false;
+        const lastActivityTs = this.getSessionLastActivityTs(session);
+        if (!lastActivityTs) return false;
+        return Date.now() - lastActivityTs >= FLOW_IDLE_TIMEOUT_MS;
+    }
+
+    private getTimeoutResetState(session: TelegramSession): BotState {
+        if (!session.user_id) return BotState.START;
+        const role = this.getSessionCurrentRole(session);
+        if (role === 'employer') return BotState.EMPLOYER_MAIN_MENU;
+        return BotState.MAIN_MENU;
+    }
+
+    private getTimeoutResetData(session: TelegramSession): Record<string, any> {
+        const source = (session.data && typeof session.data === 'object') ? session.data : {};
+        const keepKeys = [
+            'active_role',
+            'telegram_username',
+            'telegram_first_name',
+            'admin_mode',
+            'last_prompt_message_id',
+            'recent_update_ids',
+            'recent_message_ids',
+            'recent_callback_ids'
+        ];
+        const cleaned: Record<string, any> = {};
+        for (const key of keepKeys) {
+            if (source[key] !== undefined) cleaned[key] = source[key];
+        }
+        cleaned.clean_inputs = false;
+        return cleaned;
+    }
+
+    private getTimeoutResetKeyboard(lang: BotLang, state: BotState): object {
+        if (state === BotState.START) return keyboards.startKeyboard(lang);
+        if (state === BotState.EMPLOYER_MAIN_MENU) return keyboards.employerMainMenuKeyboard(lang);
+        return keyboards.mainMenuKeyboard(lang, 'seeker');
+    }
+
+    private buildFlowTimeoutNotice(lang: BotLang): string {
+        if (lang === 'ru') {
+            return '<b>⏱️ | Сессия обновлена</b>\n<i>Из-за неактивности предыдущий шаг закрыт. Продолжайте из меню.</i>';
+        }
+        return '<b>⏱️ | Sessiya yangilandi</b>\n<i>Faollik bo‘lmagani uchun oldingi bosqich yopildi. Davom etish uchun menyudan tanlang.</i>';
+    }
+
+    private async resetTimedOutFlowIfNeeded(
+        session: TelegramSession,
+        chatId?: number,
+        callbackQueryId?: string
+    ): Promise<boolean> {
+        if (!this.isSessionFlowTimedOut(session)) return false;
+
+        const lang = session.lang || 'uz';
+        const nextState = this.getTimeoutResetState(session);
+        const nextData = this.getTimeoutResetData(session);
+        await this.setSession(session, { state: nextState, data: nextData });
+
+        if (callbackQueryId) {
+            try {
+                await answerCallbackQuery(callbackQueryId, {
+                    text: lang === 'uz'
+                        ? 'Jarayon yangilandi. Menyudan davom eting.'
+                        : 'Процесс сброшен. Продолжайте из меню.'
+                });
+            } catch {
+                // ignore callback answer errors
+            }
+        }
+
+        if (typeof chatId === 'number') {
+            await this.sendPrompt(chatId, session, this.buildFlowTimeoutNotice(lang), {
+                parseMode: 'HTML',
+                replyMarkup: this.getTimeoutResetKeyboard(lang, nextState),
+                premiumKey: 'otpExpired'
+            });
+        }
+
+        return true;
+    }
+
     private shouldIgnoreRapidCallback(session: TelegramSession, action: string, callbackMessageId?: number): boolean {
         if (!callbackMessageId) return false;
         if (!this.isHighRiskCallbackAction(action)) return false;
@@ -2411,6 +2526,17 @@ export class TelegramBot {
             const session = await this.getOrCreateSession(userId);
             if (!session) {
                 console.log('[BOT] No session, skipping');
+                return;
+            }
+
+            const chatId = message?.chat?.id ?? callback?.message?.chat?.id;
+            const flowReset = await this.resetTimedOutFlowIfNeeded(
+                session,
+                typeof chatId === 'number' ? chatId : undefined,
+                callbackId
+            );
+            if (flowReset) {
+                console.log('[BOT] Session flow reset due to inactivity');
                 return;
             }
 
