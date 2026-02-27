@@ -1863,6 +1863,12 @@ export class TelegramBot {
         return authStates.has(state);
     }
 
+    private canHandleManualPhoneConfirm(session: TelegramSession): boolean {
+        if (session.state !== BotState.AWAITING_PHONE) return false;
+        const pendingRaw = String(session.data?.pending_manual_phone || session.data?.temp_phone || '').trim();
+        return Boolean(this.normalizeUzPhoneStrict(pendingRaw));
+    }
+
     private canHandleRoleCallback(session: TelegramSession): boolean {
         return session.state === BotState.SELECTING_ROLE || Boolean(session.data?.role_switch_pending);
     }
@@ -2654,7 +2660,7 @@ export class TelegramBot {
                 return;
             }
             if (msg.contact) {
-                await this.handlePhone(chatId, msg.contact.phone_number, session);
+                await this.handlePhone(chatId, msg.contact.phone_number, session, true);
                 return;
             }
             if (msg.location) {
@@ -2688,6 +2694,7 @@ export class TelegramBot {
     private shouldDeleteIncomingMessage(text: string, session: TelegramSession | null, hasUserPayload: boolean): boolean {
         void session;
         if (!hasUserPayload) return false;
+        if (String(text || '').trim().toLowerCase() === '/start') return false;
         return true;
     }
 
@@ -2787,6 +2794,20 @@ export class TelegramBot {
                         break;
                     }
                     await this.handleAuthCallback(chatId, value, session);
+                    break;
+                case 'authphone':
+                    if (!this.canHandleManualPhoneConfirm(session)) {
+                        await this.sendTransientMessage(
+                            chatId,
+                            session.lang === 'uz'
+                                ? "⚠️ Bu tugma eskirgan. Raqamni qayta kiriting."
+                                : '⚠️ Эта кнопка устарела. Введите номер заново.',
+                            900,
+                            '__transient_warning'
+                        );
+                        break;
+                    }
+                    await this.handleManualPhoneConfirm(chatId, value, session);
                     break;
                 case 'role':
                     if (!this.canHandleRoleCallback(session)) {
@@ -3173,7 +3194,10 @@ export class TelegramBot {
         const phone = session.data?.temp_phone || session.phone;
 
         if (value === 'start') {
-            await this.setSession(session, { state: BotState.AWAITING_PHONE });
+            await this.setSession(session, {
+                state: BotState.AWAITING_PHONE,
+                data: { ...session.data, pending_manual_phone: null }
+            });
             await this.sendPrompt(chatId, session, botTexts.askPhone[lang], { replyMarkup: keyboards.phoneRequestKeyboard(lang) });
         } else if (value === 'password') {
             if (!phone) {
@@ -3203,6 +3227,37 @@ export class TelegramBot {
                 return;
             }
             await this.startSMSAuth(chatId, phone, session);
+        }
+    }
+
+    private async handleManualPhoneConfirm(chatId: number, value: string, session: TelegramSession): Promise<void> {
+        const lang = session.lang || 'uz';
+        const pendingRaw = String(session.data?.pending_manual_phone || session.data?.temp_phone || '').trim();
+        const normalizedPhone = this.normalizeUzPhoneStrict(pendingRaw);
+
+        if (value === 'retry') {
+            await this.setSession(session, {
+                state: BotState.AWAITING_PHONE,
+                data: { ...session.data, pending_manual_phone: null }
+            });
+            await this.sendPrompt(chatId, session, botTexts.askPhone[lang], {
+                replyMarkup: keyboards.phoneRequestKeyboard(lang)
+            });
+            return;
+        }
+
+        if (value === 'confirm') {
+            if (!normalizedPhone) {
+                await this.setSession(session, {
+                    state: BotState.AWAITING_PHONE,
+                    data: { ...session.data, pending_manual_phone: null }
+                });
+                await this.sendPrompt(chatId, session, botTexts.askPhone[lang], {
+                    replyMarkup: keyboards.phoneRequestKeyboard(lang)
+                });
+                return;
+            }
+            await this.handlePhone(chatId, normalizedPhone, session, true);
         }
     }
 
@@ -3236,9 +3291,7 @@ export class TelegramBot {
                 state: BotState.EMPLOYER_MAIN_MENU,
                 data: updatedData
             });
-            await this.sendPrompt(chatId, session, botTexts.employerWelcome[lang], {
-                replyMarkup: keyboards.employerMainMenuKeyboard(lang)
-            });
+            await this.showMainMenu(chatId, session);
 
         } else if (role === 'seeker') {
             const updatedData = { ...session.data, active_role: 'job_seeker' };
@@ -3341,9 +3394,7 @@ export class TelegramBot {
             state: BotState.EMPLOYER_MAIN_MENU,
             data: { ...session.data, active_role: 'employer', employer_profile: null }
         });
-        await this.sendPrompt(chatId, session, botTexts.employerWelcome[lang], {
-            replyMarkup: keyboards.employerMainMenuKeyboard(lang)
-        });
+        await this.showMainMenu(chatId, session);
     }
 
     private buildJobDescriptionFromSections(sections: any): string {
@@ -3639,7 +3690,12 @@ export class TelegramBot {
         });
     }
 
-    private async handlePhone(chatId: number, phone: string, session: TelegramSession): Promise<void> {
+    private async handlePhone(
+        chatId: number,
+        phone: string,
+        session: TelegramSession,
+        skipManualConfirmation: boolean = false
+    ): Promise<void> {
         const lang = session.lang;
         const normalized = phone.replace(/\D/g, '').slice(-9);
         if (normalized.length !== 9) {
@@ -3647,9 +3703,30 @@ export class TelegramBot {
             return;
         }
         const fullPhone = `+998${normalized}`;
+
+        if (!skipManualConfirmation) {
+            await this.setSession(session, {
+                state: BotState.AWAITING_PHONE,
+                phone: fullPhone,
+                data: {
+                    ...session.data,
+                    temp_phone: fullPhone,
+                    pending_manual_phone: fullPhone
+                }
+            });
+            const confirmText = lang === 'uz'
+                ? `<b><tg-emoji emoji-id="5407025283456835913">📱</tg-emoji> | Kiritilgan raqamni tasdiqlang</b>\n<i>${this.escapeHtml(fullPhone)}</i>\n\n<i>Agar raqam to‘g‘ri bo‘lsa, tasdiqlang.</i>`
+                : `<b><tg-emoji emoji-id="5407025283456835913">📱</tg-emoji> | Подтвердите введённый номер</b>\n<i>${this.escapeHtml(fullPhone)}</i>\n\n<i>Если номер верный, подтвердите.</i>`;
+            await this.sendPrompt(chatId, session, confirmText, {
+                parseMode: 'HTML',
+                replyMarkup: keyboards.phoneManualConfirmKeyboard(lang)
+            });
+            return;
+        }
+
         await this.setSession(session, {
             phone: fullPhone,
-            data: { ...session.data, temp_phone: fullPhone }
+            data: { ...session.data, temp_phone: fullPhone, pending_manual_phone: null }
         });
 
         const user = await this.findUserByPhone(fullPhone);
@@ -4000,7 +4077,7 @@ export class TelegramBot {
                 state: BotState.EMPLOYER_MAIN_MENU,
                 data: { ...session.data, active_role: 'employer' }
             });
-            await this.sendPrompt(chatId, session, botTexts.employerWelcome[lang], { replyMarkup: keyboards.employerMainMenuKeyboard(lang) });
+            await this.showMainMenu(chatId, session);
         } else if (seekerProfile) {
             await this.setSession(session, {
                 state: BotState.MAIN_MENU,
@@ -12832,7 +12909,7 @@ export class TelegramBot {
             otp_code: null,
             otp_expires_at: null,
             state: BotState.START,
-            data: { otp_provider: null }
+            data: { otp_provider: null, pending_manual_phone: null }
         });
         await this.sendPrompt(chatId, session, botTexts.logoutDone[lang], {
             replyMarkup: keyboards.startKeyboard(lang)
