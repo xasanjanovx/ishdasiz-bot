@@ -322,8 +322,7 @@ export function phoneRequestKeyboard(lang: BotLang): object {
 export function phoneManualConfirmKeyboard(lang: BotLang): object {
     return createInlineKeyboard([
         [{ text: lang === 'uz' ? '✅ Tasdiqlash' : '✅ Подтвердить', callback_data: 'authphone:confirm' }],
-        [{ text: lang === 'uz' ? '✏️ Qayta kiritish' : '✏️ Ввести заново', callback_data: 'authphone:retry' }],
-        [{ text: lang === 'uz' ? '❌ Bekor qilish' : '❌ Отмена', callback_data: 'cancel' }]
+        [{ text: lang === 'uz' ? '✏️ Qayta kiritish' : '✏️ Ввести заново', callback_data: 'authphone:retry' }]
     ]);
 }
 
