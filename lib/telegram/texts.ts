@@ -168,7 +168,7 @@ export const botTexts = {
         ru: '<b>🚻 | Выберите пол</b>'
     },
     askBirthDate: {
-        uz: '<b>📅 | Tug‘ilgan sanangizni kiriting</b>\n<i>kk.oo.yyyy</i>\n<i>Masalan: 25.04.2002</i>',
+        uz: '<b>📅 | Tug‘ilgan sanangizni kiriting</b>\n<i>kk.oo.yyyy</i>\n<i>Masalan: 01.01.2000</i>',
         ru: '<b>📅 | Введите дату рождения</b>\n<i>дд.мм.гггг</i>'
     },
     birthDateInvalid: {
