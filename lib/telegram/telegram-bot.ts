@@ -207,6 +207,13 @@ interface OsonishField {
     category_code?: string | null;
 }
 
+interface ChannelPublishMeta {
+    channelUsername: string | null;
+    messageId: number | null;
+    postUrl: string | null;
+    published: boolean;
+}
+
 const DEFAULT_CATEGORIES: CategoryRef[] = [
     { id: 'a0000001-0001-4000-8000-000000000001', name_uz: 'IT', name_ru: 'IT', icon: '', sort_order: 1 },
     { id: 'a0000002-0002-4000-8000-000000000002', name_uz: 'Sanoat va ishlab chiqarish', name_ru: 'Производство', icon: '', sort_order: 2 },
@@ -1591,7 +1598,23 @@ export class TelegramBot {
         return map[raw] ?? 0;
     }
 
-    private async publishJobToRegionChannel(jobId: string, job: any): Promise<boolean> {
+    private buildChannelPostUrl(channelUsername: string | null | undefined, messageId: number | null | undefined): string | null {
+        const normalized = this.normalizeChannelUsername(channelUsername);
+        const numericId = Number(messageId);
+        if (!normalized || !Number.isFinite(numericId) || numericId <= 0) return null;
+        const handle = normalized.startsWith('@') ? normalized.slice(1) : normalized;
+        return `https://t.me/${handle}/${Math.trunc(numericId)}`;
+    }
+
+    private async publishJobToRegionChannel(jobId: string, job: any): Promise<ChannelPublishMeta> {
+        const empty: ChannelPublishMeta = {
+            channelUsername: null,
+            messageId: null,
+            postUrl: null,
+            published: false
+        };
+        let channelUsername: string | null = null;
+
         try {
             const regionId = this.toCoordinate(job?.region_id);
             const regions = await this.getRegions();
@@ -1608,10 +1631,10 @@ export class TelegramBot {
             }
 
             const regionSlug = String(region?.slug || '').trim() || null;
-            if (!regionSlug) return false;
+            if (!regionSlug) return empty;
 
-            const channelUsername = this.normalizeChannelUsername(getChannelByRegionSlug(regionSlug));
-            if (!channelUsername) return false;
+            channelUsername = this.normalizeChannelUsername(getChannelByRegionSlug(regionSlug));
+            if (!channelUsername) return empty;
 
             let districtName = String(job?.district_name || '').trim() || null;
             if (!districtName && job?.district_id !== null && job?.district_id !== undefined) {
@@ -1636,8 +1659,9 @@ export class TelegramBot {
                 disableWebPagePreview: true,
                 premiumKey: 'jobPublished'
             });
-            const messageId = Number(sent?.message_id);
-            if (Number.isFinite(messageId) && messageId > 0) {
+            const rawMessageId = Number(sent?.message_id);
+            const messageId = Number.isFinite(rawMessageId) && rawMessageId > 0 ? Math.trunc(rawMessageId) : null;
+            if (messageId) {
                 const messageHash = hashMessage(message);
                 await this.supabase
                     .from('channel_posts')
@@ -1662,10 +1686,19 @@ export class TelegramBot {
                 .eq('entity_type', 'job')
                 .eq('entity_id', jobId)
                 .in('status', ['pending', 'failed', 'processing']);
-            return Number.isFinite(messageId) && messageId > 0;
+
+            return {
+                channelUsername,
+                messageId,
+                postUrl: this.buildChannelPostUrl(channelUsername, messageId),
+                published: Boolean(messageId)
+            };
         } catch (error) {
             console.error('[BOT] Job channel publish error:', error);
-            return false;
+            return {
+                ...empty,
+                channelUsername
+            };
         }
     }
 
@@ -1673,23 +1706,31 @@ export class TelegramBot {
         resumeId: string,
         resume: any,
         explicitChoice?: boolean | null
-    ): Promise<void> {
+    ): Promise<ChannelPublishMeta> {
+        const empty: ChannelPublishMeta = {
+            channelUsername: null,
+            messageId: null,
+            postUrl: null,
+            published: false
+        };
+        let channelUsername: string | null = null;
+
         try {
             const shouldPost = explicitChoice === null || explicitChoice === undefined
                 ? resume?.post_to_channel !== false
                 : Boolean(explicitChoice);
-            if (!shouldPost) return;
+            if (!shouldPost) return empty;
 
             const regionId = this.toCoordinate(resume?.region_id);
-            if (regionId === null) return;
+            if (regionId === null) return empty;
 
             const regions = await this.getRegions();
             const region = regions.find((item) => Number(item.id) === regionId) || null;
             const regionSlug = String(region?.slug || '').trim() || null;
-            if (!regionSlug) return;
+            if (!regionSlug) return empty;
 
-            const channelUsername = this.normalizeChannelUsername(getChannelByRegionSlug(regionSlug));
-            if (!channelUsername) return;
+            channelUsername = this.normalizeChannelUsername(getChannelByRegionSlug(regionSlug));
+            if (!channelUsername) return empty;
 
             let districtName = String(resume?.district_name || '').trim() || null;
             if (!districtName && resume?.district_id !== null && resume?.district_id !== undefined) {
@@ -1714,8 +1755,9 @@ export class TelegramBot {
                 disableWebPagePreview: true,
                 premiumKey: 'resumeSaved'
             });
-            const messageId = Number(sent?.message_id);
-            if (Number.isFinite(messageId) && messageId > 0) {
+            const rawMessageId = Number(sent?.message_id);
+            const messageId = Number.isFinite(rawMessageId) && rawMessageId > 0 ? Math.trunc(rawMessageId) : null;
+            if (messageId) {
                 const messageHash = hashMessage(message);
                 await this.supabase
                     .from('channel_posts')
@@ -1740,8 +1782,19 @@ export class TelegramBot {
                 .eq('entity_type', 'resume')
                 .eq('entity_id', resumeId)
                 .in('status', ['pending', 'failed', 'processing']);
+
+            return {
+                channelUsername,
+                messageId,
+                postUrl: this.buildChannelPostUrl(channelUsername, messageId),
+                published: Boolean(messageId)
+            };
         } catch (error) {
             console.error('[BOT] Resume channel publish error:', error);
+            return {
+                ...empty,
+                channelUsername
+            };
         }
     }
 
@@ -1751,6 +1804,53 @@ export class TelegramBot {
             return `<b>📨 | Опубликовать резюме в канале?</b>\n<i>Канал: ${safeChannel}</i>`;
         }
         return `<b>📨 | Rezyumeni kanalda ham e'lon qilamizmi?</b>\n<i>Kanal: ${safeChannel}</i>`;
+    }
+
+    private buildPostPublishSubscriptionNotice(
+        lang: BotLang,
+        channelUsername: string,
+        options: { role: 'employer' | 'seeker'; phase: 'pending' | 'published'; postUrl?: string | null }
+    ): string {
+        const safeChannel = this.escapeHtml(this.normalizeChannelUsername(channelUsername) || channelUsername);
+        const hasPostUrl = Boolean(String(options.postUrl || '').trim());
+
+        if (lang === 'ru') {
+            if (options.role === 'employer') {
+                const statusLine = options.phase === 'published'
+                    ? `<b>🚀 Вакансия опубликована в канале ${safeChannel}.</b>`
+                    : `<b>⏳ Вакансия отправлена в ${safeChannel} и скоро появится в канале.</b>`;
+                const postHint = hasPostUrl
+                    ? `<i>Пост можно открыть кнопкой ниже.</i>\n\n`
+                    : '';
+                return `${statusLine}\n\n${postHint}<b>🔔 Подпишитесь на канал, чтобы не пропускать новые резюме кандидатов.</b>\n<i>Там также выходят свежие вакансии по району/городу.</i>`;
+            }
+
+            const statusLine = options.phase === 'published'
+                ? `<b>🚀 Резюме опубликовано в канале ${safeChannel}.</b>`
+                : `<b>⏳ Резюме отправлено в ${safeChannel} и скоро появится в канале.</b>`;
+            const postHint = hasPostUrl
+                ? `<i>Пост можно открыть кнопкой ниже.</i>\n\n`
+                : '';
+            return `${statusLine}\n\n${postHint}<b>🔔 Подпишитесь на канал, чтобы не пропускать новые вакансии по вашему району/городу.</b>`;
+        }
+
+        if (options.role === 'employer') {
+            const statusLine = options.phase === 'published'
+                ? `<b>🚀 Vakansiya ${safeChannel} kanalida e'lon qilindi.</b>`
+                : `<b>⏳ Vakansiya ${safeChannel} kanaliga yuborildi, tez orada lentada chiqadi.</b>`;
+            const postHint = hasPostUrl
+                ? `<i>E'lonni quyidagi tugma orqali ochishingiz mumkin.</i>\n\n`
+                : '';
+            return `${statusLine}\n\n${postHint}<b>🔔 Kanalga obuna bo'ling, yangi nomzodlar rezyumelarini o'tkazib yubormaysiz.</b>\n<i>Shu kanalda hududingiz bo'yicha yangi vakansiyalar ham chiqadi.</i>`;
+        }
+
+        const statusLine = options.phase === 'published'
+            ? `<b>🚀 Rezyume ${safeChannel} kanalida e'lon qilindi.</b>`
+            : `<b>⏳ Rezyume ${safeChannel} kanaliga yuborildi, tez orada lentada chiqadi.</b>`;
+        const postHint = hasPostUrl
+            ? `<i>E'lonni quyidagi tugma orqali ochishingiz mumkin.</i>\n\n`
+            : '';
+        return `${statusLine}\n\n${postHint}<b>🔔 Kanalga obuna bo'ling, tuman/shahar bo'yicha yangi vakansiyalarni o'tkazib yubormaysiz.</b>`;
     }
 
     private buildJobChannelNotice(lang: BotLang, channelUsername: string, phase: 'pending' | 'published'): string {
@@ -8550,7 +8650,7 @@ export class TelegramBot {
             return;
         }
 
-        await this.publishResumeToRegionChannel(
+        const channelPublish = await this.publishResumeToRegionChannel(
             resumeId,
             resume,
             Object.prototype.hasOwnProperty.call(options, 'postToChannel')
@@ -8558,8 +8658,27 @@ export class TelegramBot {
                 : undefined
         );
 
-        const text = `✅ ${botTexts.resumeSaved[lang]}\n\n${await this.buildResumeText(resume, lang)}`;
-        await this.sendPrompt(chatId, session, text, { parseMode: 'HTML', replyMarkup: keyboards.resumeCompleteKeyboard(lang) });
+        const subscribeNotice = channelPublish.channelUsername
+            ? this.buildPostPublishSubscriptionNotice(
+                lang,
+                channelPublish.channelUsername,
+                {
+                    role: 'seeker',
+                    phase: channelPublish.published ? 'published' : 'pending',
+                    postUrl: channelPublish.postUrl
+                }
+            )
+            : '';
+
+        const baseText = `✅ ${botTexts.resumeSaved[lang]}\n\n${await this.buildResumeText(resume, lang)}`;
+        const text = subscribeNotice ? `${baseText}\n\n${subscribeNotice}` : baseText;
+        await this.sendPrompt(chatId, session, text, {
+            parseMode: 'HTML',
+            replyMarkup: keyboards.resumeCompleteKeyboard(lang, {
+                channelUsername: channelPublish.channelUsername,
+                postUrl: channelPublish.postUrl
+            })
+        });
         await this.offerHighMatchJobsForResume(chatId, session, resume, false);
     }
 
@@ -13185,21 +13304,38 @@ export class TelegramBot {
             }
         }
 
-        let channelPublished = false;
+        let channelPublish: ChannelPublishMeta = {
+            channelUsername: null,
+            messageId: null,
+            postUrl: null,
+            published: false
+        };
         if (createdJob?.id) {
-            channelPublished = await this.publishJobToRegionChannel(createdJob.id, {
+            channelPublish = await this.publishJobToRegionChannel(createdJob.id, {
                 ...payload,
                 ...createdJob
             });
         }
 
         await this.sendSeriousSticker(chatId, 'success');
-        const channelUsername =
+        const fallbackChannelUsername =
             await this.getRegionChannelUsernameById(createdJob?.region_id || payload?.region_id || jobData?.region_id);
+        const channelUsername = channelPublish.channelUsername || fallbackChannelUsername;
+        const postUrl = channelPublish.postUrl || this.buildChannelPostUrl(channelUsername, channelPublish.messageId);
         const publishedText = channelUsername
-            ? `${botTexts.jobPublished[lang]}\n\n${this.buildJobChannelNotice(lang, channelUsername, channelPublished ? 'published' : 'pending')}`
+            ? `${botTexts.jobPublished[lang]}\n\n${this.buildPostPublishSubscriptionNotice(lang, channelUsername, {
+                role: 'employer',
+                phase: channelPublish.published ? 'published' : 'pending',
+                postUrl
+            })}`
             : botTexts.jobPublished[lang];
-        await this.sendPrompt(chatId, session, publishedText, { replyMarkup: keyboards.jobPublishedKeyboard(lang, createdJob?.id) });
+        await this.sendPrompt(chatId, session, publishedText, {
+            parseMode: 'HTML',
+            replyMarkup: keyboards.jobPublishedKeyboard(lang, createdJob?.id, {
+                channelUsername,
+                postUrl
+            })
+        });
         await this.clearFlowCancelKeyboard(chatId, session);
         await this.setSession(session, { state: BotState.EMPLOYER_MAIN_MENU, data: { ...session.data, temp_job: null, clean_inputs: false } });
     }

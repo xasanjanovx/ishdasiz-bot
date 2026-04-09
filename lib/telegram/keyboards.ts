@@ -1456,12 +1456,35 @@ export function aiResumePreviewKeyboard(lang: BotLang): object {
 // ============================================
 // Resume Complete Keyboard
 // ============================================
-export function resumeCompleteKeyboard(lang: BotLang): object {
-    return createInlineKeyboard([
-        [{ text: lang === 'uz' ? '🔎 Ish qidirish' : '🔎 Найти работу', callback_data: 'action:search' }],
-        [{ text: lang === 'uz' ? "📝 Ma'lumotlarni yangilash" : '📝 Обновить данные', callback_data: 'action:editresume' }],
-        [{ text: lang === 'uz' ? '🏠 Bosh menyu' : '🏠 Главное меню', callback_data: 'menu:main' }]
-    ]);
+export function resumeCompleteKeyboard(
+    lang: BotLang,
+    options: { channelUsername?: string | null; postUrl?: string | null } = {}
+): object {
+    const rows: InlineButton[][] = [];
+    const postUrl = String(options.postUrl || '').trim();
+    const rawChannel = String(options.channelUsername || '').trim();
+    const channelHandle = rawChannel
+        ? (rawChannel.startsWith('@') ? rawChannel.slice(1) : rawChannel)
+        : '';
+
+    if (postUrl) {
+        rows.push([{
+            text: lang === 'uz' ? "📌 Kanaldagi e'lonni ochish" : '📌 Открыть пост в канале',
+            url: postUrl
+        }]);
+    }
+    if (channelHandle) {
+        rows.push([{
+            text: lang === 'uz' ? `🌐 @${channelHandle} ga obuna bo'lish` : `🌐 Подписаться на @${channelHandle}`,
+            url: `https://t.me/${channelHandle}`
+        }]);
+    }
+
+    rows.push([{ text: lang === 'uz' ? '🔎 Ish qidirish' : '🔎 Найти работу', callback_data: 'action:search' }]);
+    rows.push([{ text: lang === 'uz' ? "📝 Ma'lumotlarni yangilash" : '📝 Обновить данные', callback_data: 'action:editresume' }]);
+    rows.push([{ text: lang === 'uz' ? '🏠 Bosh menyu' : '🏠 Главное меню', callback_data: 'menu:main' }]);
+
+    return createInlineKeyboard(rows);
 }
 
 export function resumeChannelPostConfirmKeyboard(lang: BotLang): object {
@@ -1569,8 +1592,31 @@ export function jobConfirmKeyboard(lang: BotLang): object {
     ]);
 }
 
-export function jobPublishedKeyboard(lang: BotLang, jobId?: string): object {
+export function jobPublishedKeyboard(
+    lang: BotLang,
+    jobId?: string,
+    options: { channelUsername?: string | null; postUrl?: string | null } = {}
+): object {
     const rows: InlineButton[][] = [];
+    const postUrl = String(options.postUrl || '').trim();
+    const rawChannel = String(options.channelUsername || '').trim();
+    const channelHandle = rawChannel
+        ? (rawChannel.startsWith('@') ? rawChannel.slice(1) : rawChannel)
+        : '';
+
+    if (postUrl) {
+        rows.push([{
+            text: lang === 'uz' ? "📌 Kanaldagi e'lonni ochish" : '📌 Открыть пост в канале',
+            url: postUrl
+        }]);
+    }
+    if (channelHandle) {
+        rows.push([{
+            text: lang === 'uz' ? `🌐 @${channelHandle} ga obuna bo'lish` : `🌐 Подписаться на @${channelHandle}`,
+            url: `https://t.me/${channelHandle}`
+        }]);
+    }
+
     if (jobId) {
         rows.push([{ text: lang === 'uz' ? '🔎 Ishchi topish' : '🔎 Найти кандидатов', callback_data: `matchjob:${jobId}` }]);
     }
