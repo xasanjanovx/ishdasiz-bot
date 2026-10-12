@@ -12,22 +12,22 @@ export const UZBEKISTAN_CENTER = {
   lng: 64.5853,
 };
 
-// Region coordinates for dynamic map centering
+// Region coordinates keyed by the canonical regions table IDs (OsonIsh reference IDs).
 export const REGION_COORDINATES: Record<number, { lat: number; lng: number; name: string }> = {
-  1: { lat: 41.2995, lng: 69.2401, name: 'Toshkent shahri' },
-  2: { lat: 41.3110, lng: 69.2797, name: 'Toshkent viloyati' },
-  3: { lat: 40.7821, lng: 72.3442, name: 'Andijon viloyati' },
-  4: { lat: 39.7681, lng: 64.4556, name: 'Buxoro viloyati' },
-  5: { lat: 40.3834, lng: 71.7870, name: "Farg'ona viloyati" },
-  6: { lat: 40.1158, lng: 67.8422, name: 'Jizzax viloyati' },
-  7: { lat: 41.5530, lng: 60.6318, name: 'Xorazm viloyati' },
-  8: { lat: 40.9983, lng: 71.6726, name: 'Namangan viloyati' },
-  9: { lat: 40.0844, lng: 65.3792, name: 'Navoiy viloyati' },
-  10: { lat: 38.8612, lng: 65.8008, name: 'Qashqadaryo viloyati' },
-  11: { lat: 39.6542, lng: 66.9597, name: 'Samarqand viloyati' },
-  12: { lat: 40.8376, lng: 68.6594, name: 'Sirdaryo viloyati' },
-  13: { lat: 37.2242, lng: 67.2783, name: 'Surxondaryo viloyati' },
-  14: { lat: 42.4607, lng: 59.6063, name: "Qoraqalpog'iston" },
+  22: { lat: 41.2995, lng: 69.2401, name: 'Toshkent shahri' },
+  17: { lat: 41.3110, lng: 69.2797, name: 'Toshkent viloyati' },
+  12: { lat: 40.7821, lng: 72.3442, name: 'Andijon viloyati' },
+  9: { lat: 39.7681, lng: 64.4556, name: 'Buxoro viloyati' },
+  13: { lat: 40.3834, lng: 71.7870, name: "Farg'ona viloyati" },
+  19: { lat: 40.1158, lng: 67.8422, name: 'Jizzax viloyati' },
+  16: { lat: 41.5530, lng: 60.6318, name: 'Xorazm viloyati' },
+  21: { lat: 40.9983, lng: 71.6726, name: 'Namangan viloyati' },
+  11: { lat: 40.0844, lng: 65.3792, name: 'Navoiy viloyati' },
+  18: { lat: 38.8612, lng: 65.8008, name: 'Qashqadaryo viloyati' },
+  10: { lat: 39.6542, lng: 66.9597, name: 'Samarqand viloyati' },
+  15: { lat: 40.8376, lng: 68.6594, name: 'Sirdaryo viloyati' },
+  14: { lat: 37.2242, lng: 67.2783, name: 'Surxondaryo viloyati' },
+  8: { lat: 42.4607, lng: 59.6063, name: "Qoraqalpog'iston" },
 };
 
 export const MAP_DEFAULT_ZOOM = 10;

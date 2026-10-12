@@ -1,3 +1,4 @@
+import {isRemoteJob} from '../work-mode';
 ﻿/**
  * Job Matcher - Strict criteria with weighted score.
  * Filters out vacancies that don't match key requirements.
@@ -542,7 +543,7 @@ export function calculateMatchScore(profile: UserProfile, job: JobVacancy): Matc
     const jRegion = toNumber(job.region_id);
     const pDist = profile.district_id ? String(profile.district_id) : null;
     const jDist = job.district_id ? String(job.district_id) : null;
-    const isRemote = job.work_mode === 'remote' || job.employment_type === 'remote';
+    const isRemote = isRemoteJob(job);
     const hasJobLocation = Boolean(jRegion || jDist);
 
     if (isRemote) {

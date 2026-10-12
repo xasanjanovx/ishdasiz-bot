@@ -1,3 +1,4 @@
+import {getJobWorkMode} from './work-mode';
 ﻿export const OSONISH_MAPPINGS = {
     payment_type: {
         1: { uz: 'Kelishilgan holda', ru: 'По договоренности' },
@@ -192,26 +193,10 @@ export const getEducationLabel = (job: any, lang: Language) => {
 };
 
 export const getWorkModeLabel = (job: any, lang: Language) => {
-    const effectiveLang = lang === 'uz' ? 'uz' : 'ru';
-    const rawMode = job?.work_mode ?? job?.raw_source_json?.work_mode ?? job?.raw_source_json?.workplace_type ?? null;
-    if (rawMode === null || rawMode === undefined) return null;
-
-    if (typeof rawMode === 'number' && OSONISH_MAPPINGS.work_mode[rawMode as keyof typeof OSONISH_MAPPINGS.work_mode]) {
-        return OSONISH_MAPPINGS.work_mode[rawMode as keyof typeof OSONISH_MAPPINGS.work_mode][effectiveLang];
-    }
-
-    const normalized = String(rawMode)
-        .toLowerCase()
-        .replace(/[\u2018\u2019\u02BC\u02BB`']/g, '')
-        .replace(/[-_]/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-
-    if (!normalized || ['any', 'ahamiyatsiz', 'не важно'].includes(normalized)) return null;
-    if (normalized.includes('office') || normalized.includes('ish joy')) return OSONISH_MAPPINGS.work_mode[1][effectiveLang];
-    if (normalized.includes('remote') || normalized.includes('масоф') || normalized.includes('удален')) return OSONISH_MAPPINGS.work_mode[3][effectiveLang];
-    if (normalized.includes('hybrid') || normalized.includes('gibrid')) return OSONISH_MAPPINGS.work_mode[4][effectiveLang];
-    return null;
+    const mode = getJobWorkMode(job);
+    if (!mode) return null;
+    const code = { onsite: 1, home: 2, remote: 3, hybrid: 4 }[mode] as 1 | 2 | 3 | 4;
+    return OSONISH_MAPPINGS.work_mode[code][lang === 'uz' ? 'uz' : 'ru'];
 };
 
 export const getWorkingDaysLabel = (job: any, lang: Language) => {

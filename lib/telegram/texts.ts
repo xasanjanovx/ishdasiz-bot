@@ -691,6 +691,109 @@ export const botTexts = {
         uz: 'Davom etish',
         ru: 'Продолжить'
     }
+,
+    applicationAccepted: {
+        uz: (jobTitle: string, employerPhone?: string | null, message?: string | null) => {
+            let text = `<b>✅ | Arizangiz qabul qilindi!</b>\n\n💼 | Vakansiya: <b>${jobTitle}</b>`;
+            if (employerPhone) text += `\n📞 | Telefon: <b>${employerPhone}</b>`;
+            if (message) text += `\n💬 | Xabar: <i>${message}</i>`;
+            text += `\n\n<i>Ish beruvchi siz bilan bog'lanadi. Omad!</i>`;
+            return text;
+        },
+        ru: (jobTitle: string, employerPhone?: string | null, message?: string | null) => {
+            let text = `<b>✅ | Ваш отклик принят!</b>\n\n💼 | Вакансия: <b>${jobTitle}</b>`;
+            if (employerPhone) text += `\n📞 | Телефон: <b>${employerPhone}</b>`;
+            if (message) text += `\n💬 | Сообщение: <i>${message}</i>`;
+            text += `\n\n<i>Работодатель свяжется с вами. Удачи!</i>`;
+            return text;
+        }
+    },
+    applicationRejected: {
+        uz: (jobTitle: string, reason?: string | null) => {
+            let text = `<b>❌ | Afsuski, arizangiz rad etildi.</b>\n\n💼 | Vakansiya: <b>${jobTitle}</b>`;
+            if (reason) text += `\n📋 | Sabab: <i>${reason}</i>`;
+            text += `\n\n<i>Boshqa vakansiyalarga ariza yuborishingiz mumkin.</i>`;
+            return text;
+        },
+        ru: (jobTitle: string, reason?: string | null) => {
+            let text = `<b>❌ | К сожалению, ваш отклик отклонён.</b>\n\n💼 | Вакансия: <b>${jobTitle}</b>`;
+            if (reason) text += `\n📋 | Причина: <i>${reason}</i>`;
+            text += `\n\n<i>Вы можете откликнуться на другие вакансии.</i>`;
+            return text;
+        }
+    },
+    interviewScheduled: {
+        uz: (jobTitle: string, date?: string | null, address?: string | null, phone?: string | null) => {
+            let text = `<b>📅 | Siz suhbatga taklif qilindingiz!</b>\n\n💼 | Vakansiya: <b>${jobTitle}</b>`;
+            if (date) text += `\n🗓️ | Sana va vaqt: <b>${date}</b>`;
+            if (address) text += `\n📍 | Manzil: <b>${address}</b>`;
+            if (phone) text += `\n📞 | Telefon: <b>${phone}</b>`;
+            text += `\n\n<i>Iltimos, belgilangan vaqtda keling. Omad!</i>`;
+            return text;
+        },
+        ru: (jobTitle: string, date?: string | null, address?: string | null, phone?: string | null) => {
+            let text = `<b>📅 | Вас пригласили на собеседование!</b>\n\n💼 | Вакансия: <b>${jobTitle}</b>`;
+            if (date) text += `\n🗓️ | Дата и время: <b>${date}</b>`;
+            if (address) text += `\n📍 | Адрес: <b>${address}</b>`;
+            if (phone) text += `\n📞 | Телефон: <b>${phone}</b>`;
+            text += `\n\n<i>Пожалуйста, приходите в назначенное время. Удачи!</i>`;
+            return text;
+        }
+    },
+    applicationHired: {
+        uz: '<b>🚀 | Tabriklaymiz! Siz ishga qabul qilindingiz!</b>',
+        ru: '<b>🚀 | Поздравляем! Вы приняты на работу!</b>'
+    },
+    askInterviewDate: {
+        uz: '<b>📅 | Suhbat sanasi va vaqtini kiriting</b>\n<i>KK.OO.YYYY SS:DD, O‘zbekiston vaqti (UTC+5)</i>',
+        ru: '<b>📅 | Укажите дату и время собеседования</b>\n<i>ДД.ММ.ГГГГ ЧЧ:ММ, время Узбекистана (UTC+5)</i>'
+    },
+    askInterviewAddress: {
+        uz: '<b>📍 | Suhbat manzilini kiriting</b>\n<i>Masalan: Andijon sh., Bobur ko\'chasi 12</i>\n<i>"O\'tkazib yuborish" tugmasini bosishingiz mumkin.</i>',
+        ru: '<b>📍 | Укажите адрес собеседования</b>\n<i>Например: г. Андижан, ул. Бобур 12</i>\n<i>Можно нажать "Пропустить".</i>'
+    },
+    askEmployerPhone: {
+        uz: '<b>📞 | Aloqa telefoningizni kiriting</b>\n<i>Masalan: +998901234567</i>\n<i>"O\'tkazib yuborish" tugmasini bosishingiz mumkin.</i>',
+        ru: '<b>📞 | Укажите контактный телефон</b>\n<i>Например: +998901234567</i>\n<i>Можно нажать "Пропустить".</i>'
+    },
+    askEmployerMessage: {
+        uz: '<b>💬 | Nomzodga xabar yozing (ixtiyoriy)</b>\n<i>"O\'tkazib yuborish" tugmasini bosishingiz mumkin.</i>',
+        ru: '<b>💬 | Напишите сообщение кандидату (необязательно)</b>\n<i>Можно нажать "Пропустить".</i>'
+    },
+    askRejectionReason: {
+        uz: '<b>📋 | Rad etish sababini yozing (ixtiyoriy)</b>\n<i>"O\'tkazib yuborish" tugmasini bosishingiz mumkin.</i>',
+        ru: '<b>📋 | Укажите причину отклонения (необязательно)</b>\n<i>Можно нажать "Пропустить".</i>'
+    },
+    applicationHiredEmployer: {
+        uz: '<b>🚀 | Nomzod ishga qabul qilindi.</b>\n<i>Holat nomzodning arizalarida ko‘rinadi.</i>',
+        ru: '<b>🚀 | Кандидат принят на работу.</b>\n<i>Статус доступен кандидату в его откликах.</i>'
+    },
+    applicationAcceptedEmployer: {
+        uz: '<b>✅ | Ariza muvaffaqiyatli qabul qilindi.</b>\n<i>Holat nomzodning arizalarida ko‘rinadi.</i>',
+        ru: '<b>✅ | Отклик успешно принят.</b>\n<i>Статус доступен кандидату в его откликах.</i>'
+    },
+    applicationRejectedEmployer: {
+        uz: '<b>❌ | Ariza rad etildi.</b>\n<i>Holat nomzodning arizalarida ko‘rinadi.</i>',
+        ru: '<b>❌ | Отклик отклонён.</b>\n<i>Статус доступен кандидату в его откликах.</i>'
+    },
+    interviewScheduledEmployer: {
+        uz: '<b>📅 | Suhbat muvaffaqiyatli belgilandi.</b>\n<i>Holat nomzodning arizalarida ko‘rinadi.</i>',
+        ru: '<b>📅 | Собеседование успешно назначено.</b>\n<i>Статус доступен кандидату в его откликах.</i>'
+    },
+    seekerApplicationsTitle: {
+        uz: '<b>📋 | Mening arizalarim</b>\n\n<i>Yuborgan arizalaringiz holati:</i>',
+        ru: '<b>📋 | Мои отклики</b>\n\n<i>Статус ваших откликов:</i>'
+    },
+    seekerNoApplications: {
+        uz: '📭 | Siz hali ariza yubormadingiz.\n\n<i>Vakansiyalarni ko\'rib chiqing va ariza yuboring.</i>',
+        ru: '📭 | У вас пока нет откликов.\n\n<i>Просматривайте вакансии и отправляйте отклики.</i>'
+    },
+    employerDashboard: {
+        uz: (stats: { activeJobs: number; totalApps: number; pendingApps: number; interviewsToday: number; acceptedApps: number }) =>
+            `<b>📊 | Ish beruvchi statistikasi</b>\n\n💼 | Faol vakansiyalar: <b>${stats.activeJobs}</b>\n📨 | Jami arizalar: <b>${stats.totalApps}</b>\n🟡 | Kutilayotgan: <b>${stats.pendingApps}</b>\n📅 | Bugungi suhbatlar: <b>${stats.interviewsToday}</b>\n✅ | Qabul qilingan: <b>${stats.acceptedApps}</b>`,
+        ru: (stats: { activeJobs: number; totalApps: number; pendingApps: number; interviewsToday: number; acceptedApps: number }) =>
+            `<b>📊 | Панель работодателя</b>\n\n💼 | Активные вакансии: <b>${stats.activeJobs}</b>\n📨 | Всего откликов: <b>${stats.totalApps}</b>\n🟡 | Ожидают: <b>${stats.pendingApps}</b>\n📅 | Собеседования сегодня: <b>${stats.interviewsToday}</b>\n✅ | Принятые: <b>${stats.acceptedApps}</b>`
+    },
 };
 
 export function t(key: keyof typeof botTexts, lang: BotLang): string {
@@ -723,7 +826,7 @@ export function formatJobCard(job: any, lang: BotLang, matchScore?: number): str
     const location = [job.region_name, job.district_name].filter(Boolean).join(', ');
     const titleLabel = lang === 'uz' ? 'Lavozim' : 'Должность';
     let card = `<b>💼 | ${titleLabel}: ${escape(title || na)}</b>\n🏢 | ${escape(job.company_name || (lang === 'uz' ? 'Tashkilot' : 'Компания'))}\n💰 | ${salary}`;
-    if (location) card += `\n📍 | ${location}`;
+    if (location) card += `\n📍 | ${escape(location)}`;
     if (matchScore !== undefined) card += `\n\n${botTexts.matchScore[lang](matchScore)}`;
     return card;
 }
