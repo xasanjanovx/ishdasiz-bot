@@ -421,10 +421,14 @@ export function getBotToken(): string {
 /**
  * Generic Telegram API call
  */
+export class TelegramRequestError extends Error {
+    constructor(message: string, public readonly definitiveRejection: boolean) { super(message); this.name = 'TelegramRequestError'; }
+}
+
 export async function callTelegramAPI<T = any>(
     method: string,
     params: Record<string, any> = {},
-    options: { timeoutMs?: number; suppressErrors?: boolean } = {}
+    options: { timeoutMs?: number; suppressErrors?: boolean; singleAttempt?: boolean } = {}
 ): Promise<T> {
     if (isDryRunEnabled()) {
         return buildDryRunResponse(method, params) as T;
@@ -436,50 +440,35 @@ export async function callTelegramAPI<T = any>(
     const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
     let lastError: unknown;
-
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const attempts = options.singleAttempt ? 1 : MAX_RETRIES;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+        let response: Response;
         try {
-            const response = await fetchWithTimeout(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(params)
+            response = await fetchWithTimeout(url, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(params),
             }, timeoutMs);
-
-            const result = await response.json().catch(() => null);
-
-            if (!response.ok || !result?.ok) {
-                const retryAfter = result?.parameters?.retry_after;
-                if (response.status === 429 && retryAfter) {
-                    await sleep((retryAfter + 1) * 1000);
-                    continue;
-                }
-
-                if (response.status >= 500 && attempt < MAX_RETRIES) {
-                    const backoff = BACKOFF_BASE_MS * Math.pow(2, attempt);
-                    await sleep(backoff);
-                    continue;
-                }
-
-                if (!options.suppressErrors) {
-                    console.error(`Telegram API error (${method}):`, result || response.status);
-                }
-                throw new Error(result?.description || `Telegram API error (${response.status})`);
-            }
-
-            return result.result as T;
-        } catch (error) {
-            lastError = error;
-            const message = error instanceof Error ? error.message : String(error);
-            const nonRetriable = /bad request|query is too old|query id is invalid|message to delete not found|message is not modified|chat not found|inline keyboard expected|text must be non-empty/i.test(message);
-            if (nonRetriable) {
-                throw error instanceof Error ? error : new Error(message);
-            }
-            if (attempt >= MAX_RETRIES) break;
-            const backoff = BACKOFF_BASE_MS * Math.pow(2, attempt);
-            await sleep(backoff);
+        } catch {
+            // Avoid logging fetch errors that can contain the URL and bot token.
+            lastError = new TelegramRequestError('Telegram connection failed', false);
+            if (attempt === attempts) break;
+            await sleep(BACKOFF_BASE_MS * Math.pow(2, attempt));
+            continue;
         }
+        const result = await response.json().catch(() => null);
+        if (response.ok && result?.ok) return result.result as T;
+        const status = result?.error_code || response.status;
+        const reason = typeof result?.description === 'string' ? result.description.replaceAll(token, '[redacted]') : 'Telegram API request failed';
+        lastError = new TelegramRequestError(reason, result?.ok === false && Number.isInteger(result?.error_code) && response.status >= 400 && response.status < 500 && status >= 400 && status < 500);
+        // Invalid requests and blocked/deleted chats cannot be fixed by retrying.
+        if (status !== 429 && status < 500) throw lastError;
+        if (attempt === attempts) break;
+        const retryAfter = Number(result?.parameters?.retry_after);
+        const delay = status === 429 && Number.isFinite(retryAfter) && retryAfter > 0
+            ? Math.min(retryAfter * 1000, 60000)
+            : BACKOFF_BASE_MS * Math.pow(2, attempt);
+        await sleep(delay);
     }
-
+    if (!options.suppressErrors) console.error(`Telegram request failed: ${method}`);
     throw lastError instanceof Error ? lastError : new Error('Telegram API error');
 }
 
@@ -495,6 +484,7 @@ export async function sendMessage(
         disableWebPagePreview?: boolean;
         disablePremiumEmoji?: boolean;
         premiumKey?: string;
+        singleAttempt?: boolean;
     } = {}
 ): Promise<any> {
     const safeText = typeof text === 'string' && text.trim().length > 0
@@ -513,17 +503,20 @@ export async function sendMessage(
         disable_web_page_preview: options.disableWebPagePreview
     };
 
+    const send = (body: Record<string, any>) => callTelegramAPI('sendMessage', body, { singleAttempt: options.singleAttempt, suppressErrors: options.singleAttempt });
     try {
-        return await callTelegramAPI('sendMessage', payload);
+        return await send(payload);
     } catch (error) {
+        if (options.singleAttempt && (!(error instanceof TelegramRequestError) || !error.definitiveRejection)) throw error;
         let activeError: unknown = error;
         if (isButtonIconError(activeError) && hasPremiumButtonFields(normalizedMarkup)) {
             try {
-                return await callTelegramAPI('sendMessage', {
+                return await send({
                     ...payload,
                     reply_markup: sanitizeReplyMarkup(normalizedMarkup)
                 });
             } catch (retryError) {
+                if (options.singleAttempt && (!(retryError instanceof TelegramRequestError) || !retryError.definitiveRejection)) throw retryError;
                 activeError = retryError;
             }
         }
@@ -535,7 +528,7 @@ export async function sendMessage(
         blockPremiumEmojiIdsFromText(premiumText, 'sendMessage', preferredBlockedId);
         const fallbackHasHtml = /<\/?(?:b|i|u|s|code|pre|blockquote|a)\b/i.test(safeText);
         const fallbackParse = options.parseMode ?? (fallbackHasHtml ? 'HTML' : undefined);
-        return callTelegramAPI('sendMessage', {
+        return send({
             chat_id: chatId,
             text: safeText,
             ...(fallbackParse ? { parse_mode: fallbackParse } : {}),

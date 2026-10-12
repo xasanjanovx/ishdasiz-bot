@@ -1,4 +1,11 @@
-﻿const ESKIZ_BASE_URL = 'https://notify.eskiz.uz/api';
+import { randomInt } from 'node:crypto';
+
+const ESKIZ_BASE_URL = 'https://notify.eskiz.uz/api';
+
+export function isSmsDevMode(): boolean {
+    const mode = String(process.env.NODE_ENV || '').toLowerCase();
+    return (mode === 'development' || mode === 'test') && (!process.env.ESKIZ_EMAIL?.trim() || !process.env.ESKIZ_PASSWORD?.trim());
+}
 
 let cachedToken: string | null = null;
 let tokenExpiresAt: number = 0;
@@ -11,7 +18,7 @@ export async function getEskizToken(): Promise<string | null> {
     const password = process.env.ESKIZ_PASSWORD;
 
     // Dev mode: no credentials
-    if (!email || !password) {
+    if (!email?.trim() || !password?.trim()) {
         return null;
     }
 
@@ -31,45 +38,36 @@ export async function getEskizToken(): Promise<string | null> {
         });
 
         if (!res.ok) {
-            const errorText = await res.text();
-            console.error('Eskiz auth failed:', res.status, errorText);
+            console.error('Eskiz auth failed:', res.status);
             return null;
         }
 
         const data = await res.json();
-        if (data.data?.token) {
+        if (typeof data.data?.token === 'string' && data.data.token.trim()) {
             cachedToken = data.data.token;
             // Token valid for 30 days, cache for 29 days
             tokenExpiresAt = Date.now() + 29 * 24 * 60 * 60 * 1000;
             return cachedToken;
         }
         return null;
-    } catch (error) {
-        console.error('Failed to get Eskiz token:', error);
+    } catch {
+        console.error('Failed to get Eskiz token');
         return null;
     }
 }
 
 /**
  * Send SMS via Eskiz.uz
- * In dev mode (no ENV vars): logs to console instead of sending
+ * Explicit development/test mode can simulate delivery without credentials.
+ * Never log phones, SMS bodies, tokens or raw provider responses/errors.
  */
 export async function sendSMS(phone: string, message: string): Promise<{ success: boolean; error?: string }> {
     const email = process.env.ESKIZ_EMAIL;
     const password = process.env.ESKIZ_PASSWORD;
-    const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
 
-    // DEV MODE: No credentials - just log (outside production only)
-    if (!email || !password) {
-        if (isProd) {
-            console.error('Eskiz is not configured: ESKIZ_EMAIL / ESKIZ_PASSWORD are missing');
-            return { success: false, error: 'Eskiz credentials not configured' };
-        }
-        console.log('==========================================');
-        console.log('рџ“§ DEV MODE - SMS NOT SENT');
-        console.log(`рџ“± To: ${phone}`);
-        console.log(`рџ’¬ Message: ${message}`);
-        console.log('==========================================');
+    if (!email?.trim() || !password?.trim()) {
+        if (!isSmsDevMode()) return { success: false, error: 'SMS credentials not configured' };
+        console.log('SMS simulated in development/test mode');
         return { success: true };
     }
 
@@ -98,25 +96,18 @@ export async function sendSMS(phone: string, message: string): Promise<{ success
         });
 
         if (!res.ok) {
-            const errText = await res.text();
-            console.error('Eskiz send error:', errText);
-
-            let errorMessage = 'SMS send failed';
-            try {
-                const json = JSON.parse(errText);
-                errorMessage = json.message || json.status || errText;
-            } catch (e) {
-                errorMessage = errText;
+            if (res.status === 401 || res.status === 403) {
+                cachedToken = null;
+                tokenExpiresAt = 0;
             }
-
-            return { success: false, error: errorMessage };
+            console.error('Eskiz send failed:', res.status);
+            return { success: false, error: 'SMS send failed' };
         }
 
-        const result = await res.json();
-        console.log('рџ“± SMS sent successfully:', result);
+        await res.json();
         return { success: true };
-    } catch (error) {
-        console.error('Eskiz send exception:', error);
+    } catch {
+        console.error('Eskiz send request failed');
         return { success: false, error: 'Network exception' };
     }
 }
@@ -126,13 +117,12 @@ export async function sendSMS(phone: string, message: string): Promise<{ success
  * In dev mode: returns predictable "12345"
  */
 export function generateOTP(): string {
-    // Dev mode: predictable code for testing (avoid fixed OTP in production)
-    const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
-    if (!process.env.ESKIZ_EMAIL && !isProd) {
+    // Dev mode: predictable code for testing
+    if (isSmsDevMode()) {
         return "12345";
     }
     // 5-digit code
-    return Math.floor(10000 + Math.random() * 90000).toString();
+    return randomInt(10000, 100000).toString();
 }
 
 /**
@@ -142,4 +132,3 @@ export function getSMSText(code: string): string {
     const template = process.env.ESKIZ_SMS_TEXT || 'ishdasiz.uz saytiga kirish uchun tasdiqlash kodi:';
     return `${template} ${code}`;
 }
-

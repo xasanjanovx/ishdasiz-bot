@@ -609,13 +609,13 @@ export function hashMessage(text: string): string {
 }
 
 export function isJobActiveForChannel(job: any): boolean {
-  return Boolean(job && job.is_active === true && String(job.status || 'active') === 'active');
+  return Boolean(job && job.channel_account_open === true && job.is_active === true
+    && (job.status == null || ['active','published','open'].includes(job.status))
+    && !['filled','removed_at_source','archived','deleted','inactive','paused','on_hold','closed'].includes(job.source_status));
 }
-
 export function isResumeActiveForChannel(resume: any): boolean {
-  const optIn = resume?.post_to_channel;
-  const canPost = optIn === undefined || optIn === null ? true : Boolean(optIn);
-  return Boolean(resume && resume.is_public === true && String(resume.status || 'active') === 'active' && canPost);
+  return Boolean(resume && resume.channel_account_open === true && resume.is_public === true
+    && resume.status === 'active' && resume.found_job === false && resume.post_to_channel === true);
 }
 
 export function normalizeRegionName(value: string | null | undefined): string {

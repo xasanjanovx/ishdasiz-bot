@@ -17,3 +17,5 @@ coverage/
 .idea/
 .DS_Store
 Thumbs.db
+# Generated local fixtures, test logs and release exports
+/.tmp/
