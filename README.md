@@ -24,7 +24,7 @@ Optional (feature dependent):
 - `TELEGRAM_PREMIUM_MODE`
 - `TELEGRAM_DRY_RUN`
 - `NEXT_PUBLIC_APP_URL`
-- `GEMINI_API_KEY`
+- `GOOGLE_CLOUD_API_KEY` (or the existing `gemini_cloud_api` alias)
 - `OSONISH_API_BASE`
 - `OSONISH_BEARER_TOKEN`
 - `OSONISH_API_TOKEN`
@@ -93,3 +93,16 @@ npm start
 Set the required environment variables in the worker host before starting. Keep only one poller running; do not start a second instance to test deployment. A worker installation does not apply the database release or update the website. Copying only this package to the old database cannot enable the repaired application, resume and chat flows. No hosting service was activated during local repairs.
 
 Production packaging was verified in a fresh temporary directory without .env files or development dependencies. The bot module imported with synthetic configuration and network disabled. The exact npm start command reached the intentional TELEGRAM_DRY_RUN guard before any Telegram request. Dependency versions were unchanged. This proves installation/startup packaging, not delivery of real updates.
+
+
+## Employer posts in @ishdasiz and Vertex AI
+
+Employers can fill a vacancy manually or send its text/forwarded caption for an AI draft, review it, select a region and explicitly confirm publication. Local employer vacancies target @ishdasiz through the website's durable channel worker. Imported jobs and consented resumes retain regional destinations. This standalone polling package does not run that website queue worker.
+
+All Gemini model calls now use Vertex AI express mode with `GOOGLE_CLOUD_API_KEY` (or `gemini_cloud_api`). Configure `VERTEX_MODEL=gemini-2.5-flash`, optionally `VERTEX_VACANCY_MODEL` and `VERTEX_FALLBACK_MODEL`. The old Developer API key is not used. Keep secrets in the host environment or ignored .env files.
+
+Deploy the matching website change and its `20261027090000_main_employer_channel.sql` migration before enabling main-channel delivery. Pause channel scheduling during the coordinated switch. The migration does not bulk-publish historical jobs. GitHub changes alone do not configure host secrets or apply database migrations.
+
+`npx tsx scripts/check-bot-channel.ts` checks Telegram permissions, webhook state and database routing without posting or changing delivery mode. The existing bot already uses the website webhook; do not start a second poller while it is active.
+
+The regression suite also checks the adjacent website checkout at `../ISHDASIZ NEW`. `tests/tsconfig.json` supplies its @/ import mapping. Runtime installation and production code do not require that checkout.
