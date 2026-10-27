@@ -1,7 +1,15 @@
 ﻿import { createHash } from 'crypto';
 import { E } from './premium-emoji-config';
+import { vacancyDraftSchema } from '../ai/vacancy-draft';
+import { formatVacancyTemplate, vacancyDraftToJob } from './vacancy-template';
 
 export type SyncEntityType = 'job' | 'resume';
+export const MAIN_JOB_CHANNEL = '@ishdasiz';
+
+/** Employer-created vacancies go to the main channel; imports retain regional routing. */
+export function getJobChannel(job: any, regionSlug?: string | null): string | null {
+  return job?.source === 'local' ? MAIN_JOB_CHANNEL : getChannelByRegionSlug(regionSlug);
+}
 
 const ce = (id: string, fallback: string): string => `<tg-emoji emoji-id="${id}">${fallback}</tg-emoji>`;
 
@@ -380,6 +388,28 @@ export function getChannelByRegionSlug(regionSlug: string | null | undefined): s
 
 export function buildJobChannelMessage(job: any, regionSlug?: string | null): string {
   const raw = job?.raw_source_json || {};
+  const template = vacancyDraftSchema.safeParse(raw.vacancy_template);
+  if (job?.source === 'local' && template.success) {
+    const original = vacancyDraftToJob(template.data, {});
+    const description = job.description || job.description_uz || job.description_ru;
+    const changedDescription = description && description !== original.description;
+    const changedSalary = (job.salary_min ?? null) !== original.salary_min || (job.salary_max ?? null) !== original.salary_max;
+    const phones = 'contact_phone' in job && job.contact_phone !== template.data.phones[0]
+      ? (job.contact_phone ? [String(job.contact_phone)] : []) : template.data.phones;
+    return formatVacancyTemplate({
+      ...template.data,
+      title: job.title || job.title_uz || template.data.title,
+      company: job.company_name || template.data.company,
+      region: job.region_name || template.data.region,
+      address: job.address || template.data.address,
+      salary: changedSalary ? formatSalaryUz(job.salary_min, job.salary_max) : template.data.salary,
+      schedule: 'working_hours' in job ? job.working_hours : template.data.schedule,
+      phones,
+      telegram: 'contact_telegram' in job ? job.contact_telegram : template.data.telegram,
+      benefits: 'benefits' in job ? asList(job.benefits) : template.data.benefits,
+      ...(changedDescription ? { requirements: [], duties: [], details: [description] } : {}),
+    }, 'uz', job.id);
+  }
   const title = compactText(job?.title_uz || job?.title_ru || job?.title || job?.field_title || raw?.title || raw?.position_name || 'Vakansiya');
   const company = compactText(job?.company_name || 'Tashkilot');
 
@@ -432,7 +462,9 @@ export function buildJobChannelMessage(job: any, regionSlug?: string | null): st
 
   const coords = getCoordinates(job);
   const mapUrl = (coords.lat !== null && coords.lon !== null) ? `https://www.google.com/maps?q=${coords.lat},${coords.lon}` : null;
-  const footer = channelFooter(finalRegionSlug);
+  const footer = job?.source === 'local'
+    ? '<a href="https://t.me/ishdasiz"><b>ISHDASIZ</b></a> — Tez va oson ish toping!'
+    : channelFooter(finalRegionSlug);
   const sep = '━━━━━━━━━━━━━━━';
 
   const em = {

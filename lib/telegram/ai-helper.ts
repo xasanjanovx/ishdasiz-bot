@@ -3,9 +3,8 @@
  * Uses Gemini 2.5 Flash for resume generation and job matching
  */
 
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { generateVertexText } from '../ai/vertex-client';
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 interface ProfileData {
     full_name?: string;
@@ -39,14 +38,12 @@ export async function generateResumeWithAI(
     lang: 'uz' | 'ru'
 ): Promise<ResumeGenerationResult> {
     try {
-        const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
         const prompt = lang === 'ru'
             ? buildRussianPrompt(profile)
             : buildUzbekPrompt(profile);
 
-        const result = await model.generateContent(prompt);
-        const text = result.response.text();
+        const text = await generateVertexText(prompt);
 
         // Parse the structured response
         const parsed = parseAIResponse(text);
@@ -178,14 +175,12 @@ export async function generateSearchSuggestions(
     lang: 'uz' | 'ru'
 ): Promise<string[]> {
     try {
-        const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
         const prompt = lang === 'ru'
             ? `На основе профиля (должность: ${profile.position || 'не указана'}, город: ${profile.city || 'не указан'}), предложите 3 похожие должности для поиска работы. Ответьте только списком через запятую.`
             : `Profil asosida (lavozim: ${profile.position || "ko'rsatilmagan"}, shahar: ${profile.city || "ko'rsatilmagan"}), ish qidirish uchun 3 ta o'xshash lavozim taklif qiling. Faqat vergul bilan ajratilgan ro'yxat bering.`;
 
-        const result = await model.generateContent(prompt);
-        const text = result.response.text();
+        const text = await generateVertexText(prompt);
 
         return text.split(/[,،;]/).map(s => s.trim()).filter(s => s.length > 0).slice(0, 3);
 

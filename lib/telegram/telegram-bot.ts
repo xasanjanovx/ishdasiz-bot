@@ -38,7 +38,9 @@ import {
 } from '../mappings';
 import { mapOsonishCategory } from '../mappers/osonish-mapper';
 import { matchAndSortJobs, MatchedJob, calculateMatchScore } from './job-matcher';
-import { callDeepSeekText, extractVacancyData } from '../ai/deepseek';
+import { callDeepSeekText } from '../ai/deepseek';
+import { extractVacancyDraft, vacancyAIConfigured, VacancyDraftError } from '../ai/vacancy-draft';
+import { formatVacancyTemplate, vacancyDraftToJob } from './vacancy-template';
 import { rerankJobsForResumeAI, rerankResumesForJobAI } from '../ai/job-recommender';
 import { checkForAbuse } from '../ai/moderation';
 import { REGION_COORDINATES } from '../constants';
@@ -81,6 +83,7 @@ export enum BotState {
     EMPLOYER_PROFILE_ADDRESS = 'employer_profile_address',
     EMPLOYER_PROFILE_DESCRIPTION = 'employer_profile_description',
     POSTING_JOB_TITLE = 'posting_job_title',
+    POSTING_JOB_MODE = 'posting_job_mode',
     POSTING_JOB_CATEGORY = 'posting_job_category',
     POSTING_JOB_SALARY = 'posting_job_salary',
     POSTING_JOB_SALARY_MAX = 'posting_job_salary_max',
@@ -945,6 +948,11 @@ export class TelegramBot {
     }
 
     private shouldEnforceAlphabet(state: BotState): boolean {
+        // Employer data can contain Latin brands and technologies in either UI language.
+        if ([BotState.POSTING_JOB_TITLE, BotState.POSTING_JOB_DESCRIPTION, BotState.POSTING_JOB_ADDRESS,
+            BotState.POSTING_JOB_WORK_HOURS, BotState.POSTING_JOB_LANGUAGES, BotState.POSTING_JOB_BENEFITS,
+            BotState.POSTING_JOB_HR_NAME, BotState.EMPLOYER_PROFILE_COMPANY, BotState.EMPLOYER_PROFILE_DIRECTOR,
+            BotState.EMPLOYER_PROFILE_ADDRESS, BotState.EMPLOYER_PROFILE_DESCRIPTION].includes(state)) return false;
         return [
             BotState.ENTERING_NAME,
             BotState.ENTERING_TITLE,
@@ -1525,7 +1533,7 @@ export class TelegramBot {
     private async publishJobToRegionChannel(jobId: string, _job: any): Promise<ChannelPublishMeta> {
         try {
             const snapshot=await readChannelSnapshot(this.supabase,'job',jobId);
-            const channel=snapshot.available?getChannelByRegionSlug(snapshot.region_slug):null;
+            const channel=snapshot.available?'@ishdasiz':null;
             return {channelUsername:channel,messageId:null,postUrl:null,published:false};
         } catch { return {channelUsername:null,messageId:null,postUrl:null,published:false}; }
     }
@@ -1650,7 +1658,7 @@ export class TelegramBot {
             'employment', 'workmode', 'workingdays', 'workinghours',
             'joblang', 'reslang', 'jobbenefit',
             'aboutai', 'jobdescai', 'skip', 'skills', 'workend', 'eduend', 'workplace',
-            'back', 'menu', 'action', 'job', 'jobmode',
+            'back', 'menu', 'action', 'job', 'jobmode', 'jobai',
             'fav', 'apply', 'profile', 'settings', 'admin', 'subs', 'ai', 'sub', 'searchmode',
             'resume_new', 'resume_view', 'resume_search', 'resumepage', 'resumeedit', 'cancel', 'resume', 'mcat', 'search', 'searchregion', 'searchdist',
             'worker', 'offer', 'matchjob', 'matchrelated', 'autojobs',
@@ -1956,6 +1964,7 @@ export class TelegramBot {
 
     private shouldSkipModeration(state: BotState, text: string): boolean {
         const skipStates = [
+            BotState.AI_JOB_INPUT,
             BotState.POSTING_JOB_SALARY,
             BotState.POSTING_JOB_SALARY_MAX,
             BotState.POSTING_JOB_WORK_HOURS,
@@ -2450,7 +2459,7 @@ export class TelegramBot {
     async handleMessage(msg: TelegramMessage, sessionOverride?: TelegramSession): Promise<void> {
         const chatId = msg.chat.id;
         const userId = msg.from.id;
-        const text = msg.text || '';
+        const text = msg.text || msg.caption || '';
         const trimmedText = text.trim();
         const incomingMessageId = typeof msg.message_id === 'number' ? msg.message_id : null;
         let resolvedSession: TelegramSession | null = sessionOverride || null;
@@ -2565,7 +2574,7 @@ export class TelegramBot {
     }
 
     private shouldDeleteIncomingMessage(text: string, session: TelegramSession | null, hasUserPayload: boolean): boolean {
-        void session;
+        if (session?.state === BotState.AI_JOB_INPUT || session?.data?.temp_job?.job_create_mode === 'ai') return false;
         if (!hasUserPayload) return false;
         if (String(text || '').trim().toLowerCase() === '/start') return false;
         return true;
@@ -2984,6 +2993,9 @@ export class TelegramBot {
                 case 'jobmode':
                     await this.handleJobCreateMode(chatId, value, session);
                     break;
+                case 'jobai':
+                    await this.handleAiJobAction(chatId, value, session);
+                    break;
                 case 'fav': await this.handleFavorite(chatId, value, session); break;
                 case 'apply': await this.handleJobApply(chatId, value, session); break;
                 case 'profile': await this.handleProfileAction(chatId, value, session); break;
@@ -3333,8 +3345,23 @@ export class TelegramBot {
 
     private async handleJobCreateMode(chatId: number, mode: string, session: TelegramSession): Promise<void> {
         const lang = session.lang;
+        if (!session.user_id || this.getSessionCurrentRole(session) !== 'employer' || ![BotState.POSTING_JOB_MODE, BotState.AI_JOB_INPUT, BotState.POSTING_JOB_CONFIRM].includes(session.state)) return;
+        if (!['manual', 'ai'].includes(mode)) return;
         await this.setFlowCancelKeyboard(chatId, session);
-        const baseJob = { ...(session.data?.temp_job || {}), job_create_mode: 'manual' };
+        const baseJob = { ...(session.data?.temp_job || {}), job_create_mode: mode };
+        if (mode === 'ai') {
+            await this.setSession(session, { state: BotState.AI_JOB_INPUT, data: { ...session.data, temp_job: baseJob, clean_inputs: false } });
+            await this.sendPrompt(chatId, session, lang === 'ru'
+                ? 'Пришлите текст вакансии или перешлите пост с подписью. Бот подготовит черновик для @ishdasiz. Проверьте его перед публикацией.\n\nУкажите должность, компанию, регион, зарплату, график, требования и контакты. Можно писать на русском или узбекском.'
+                : 'Vakansiya matnini yoki izohli postni yuboring. Bot @ishdasiz uchun qoralama tayyorlaydi. E’lon qilishdan oldin tekshiring.\n\nLavozim, kompaniya, hudud, maosh, ish vaqti, talablar va aloqalarni kiriting. Ruscha yoki o‘zbekcha yozish mumkin.',
+                { replyMarkup: keyboards.aiJobInputKeyboard(lang) });
+            return;
+        }
+        // A manual edit must not reuse an older AI channel card.
+        if (baseJob.raw_source_json) {
+            baseJob.raw_source_json = { ...baseJob.raw_source_json };
+            delete baseJob.raw_source_json.vacancy_template;
+        }
         await this.setSession(session, {
             state: BotState.POSTING_JOB_TITLE,
             data: { ...session.data, temp_job: baseJob }
@@ -3342,6 +3369,62 @@ export class TelegramBot {
         await this.sendPrompt(chatId, session, botTexts.postJobTitle[lang], {
             replyMarkup: keyboards.backKeyboard(lang, 'employer_menu')
         });
+    }
+
+    private async showAiJobDraft(chatId: number, session: TelegramSession): Promise<void> {
+        const job = session.data?.temp_job;
+        const template = job?.raw_source_json?.vacancy_template;
+        if (!template) return;
+        await this.setSession(session, { state: BotState.POSTING_JOB_CONFIRM });
+        const label = session.lang === 'ru'
+            ? '<b>Черновик для @ishdasiz</b>\nПроверьте все данные. Если регион не указан, выберите его кнопкой ниже.\n\n'
+            : '<b>@ishdasiz uchun qoralama</b>\nMa’lumotlarni tekshiring. Hudud belgilanmagan bo‘lsa, quyidagi tugmadan tanlang.\n\n';
+        // The formatter leaves enough room for this heading under Telegram's limit.
+        await this.sendPrompt(chatId, session, label + formatVacancyTemplate(template, session.lang), {
+            parseMode: 'HTML', replyMarkup: keyboards.aiJobConfirmKeyboard(session.lang)
+        });
+    }
+
+    private async handleAiJobAction(chatId: number, action: string, session: TelegramSession): Promise<void> {
+        if (!session.user_id || this.getSessionCurrentRole(session) !== 'employer' || session.state !== BotState.POSTING_JOB_CONFIRM || session.data?.temp_job?.job_create_mode !== 'ai') return;
+        if (action === 'rewrite') { await this.handleJobCreateMode(chatId, 'ai', session); return; }
+        if (action === 'region') {
+            const regions = await this.getRegions();
+            await this.setSession(session, { state: BotState.POSTING_JOB_REGION });
+            await this.sendPrompt(chatId, session, botTexts.askRegion[session.lang], { replyMarkup: keyboards.regionKeyboard(session.lang, regions, 'employer_menu') });
+        }
+    }
+
+    private async handleAiJobInput(chatId: number, text: string, session: TelegramSession): Promise<void> {
+        if (!session.user_id || this.getSessionCurrentRole(session) !== 'employer') return;
+        const ru = session.lang === 'ru';
+        if (text.length < 20 || text.length > 12000) {
+            await this.sendPrompt(chatId, session, ru ? 'Отправьте текст вакансии длиной от 20 до 12 000 символов.' : '20 dan 12 000 belgigacha vakansiya matnini yuboring.', { replyMarkup: keyboards.aiJobInputKeyboard(session.lang) });
+            return;
+        }
+        // Save before calling the provider. Neither a quota failure nor an AI
+        // outage should discard a long employer-written vacancy.
+        await this.setSession(session, { data: { ...session.data, clean_inputs: false, temp_job: { ...session.data.temp_job, ai_input: text } } });
+        try {
+            if (!vacancyAIConfigured()) throw new VacancyDraftError('configuration');
+            const quota = await this.supabase.rpc('ishdasiz_reserve_vacancy_ai', { p_user_id: session.user_id, p_session_version: session.data.account_session_version || 0 }).abortSignal(AbortSignal.timeout(15000));
+            if (quota.error || !Number.isInteger(quota.data) || quota.data < -1 || quota.data > 2) throw new VacancyDraftError('unavailable');
+            if (quota.data === -1) {
+                await this.sendPrompt(chatId, session, ru ? 'Лимит: 3 запроса ИИ в час. Текст сохранён; можно заполнить вручную.' : 'Limit: soatiga 3 ta AI so‘rovi. Matn saqlandi; qo‘lda to‘ldirish mumkin.', { replyMarkup: keyboards.aiJobInputKeyboard(session.lang) });
+                return;
+            }
+            const draft = await extractVacancyDraft(text);
+            const job = vacancyDraftToJob(draft, session.data.temp_job);
+            await this.setSession(session, { data: { ...session.data, temp_job: job } });
+            await this.showAiJobDraft(chatId, session);
+        } catch (error) {
+            await this.setSession(session, { state: BotState.AI_JOB_INPUT });
+            const invalid = error instanceof VacancyDraftError && error.kind === 'invalid';
+            await this.sendPrompt(chatId, session, invalid
+                ? (ru ? 'Не удалось разобрать вакансию. Добавьте должность и условия или заполните вручную. Исходный текст сохранён.' : 'Vakansiyani ajratib bo‘lmadi. Lavozim va shartlarni qo‘shing yoki qo‘lda to‘ldiring. Asl matn saqlandi.')
+                : (ru ? 'ИИ сейчас недоступен. Исходный текст сохранён. Повторите позже или заполните вручную.' : 'AI hozir mavjud emas. Asl matn saqlandi. Keyinroq urinib ko‘ring yoki qo‘lda to‘ldiring.'),
+                { replyMarkup: keyboards.aiJobInputKeyboard(session.lang) });
+        }
     }
 
     private async setFlowCancelKeyboard(
@@ -4222,6 +4305,16 @@ export class TelegramBot {
         }
 
         if (session.state === BotState.POSTING_JOB_REGION) {
+            if (session.data?.temp_job?.job_create_mode === 'ai') {
+                const name = lang === 'uz' ? regionName?.name_uz : regionName?.name_ru;
+                const job = session.data.temp_job;
+                await this.setSession(session, { data: { ...session.data, temp_job: {
+                    ...job, region_id: regionIdNum, region_name: name,
+                    raw_source_json: { ...job.raw_source_json, vacancy_template: { ...job.raw_source_json.vacancy_template, region: name } }
+                } } });
+                await this.showAiJobDraft(chatId, session);
+                return;
+            }
             const { data: districtsRaw } = await this.supabase
                 .from('districts')
                 .select('id, name_uz, name_ru')
@@ -6498,7 +6591,7 @@ export class TelegramBot {
                 data: { ...session.data, temp_job: updatedJob }
             });
             const jobSummary = this.buildJobConfirmText(lang, updatedJob);
-            const channelUsername = await this.getRegionChannelUsernameById(updatedJob?.region_id);
+            const channelUsername = '@ishdasiz';
             const channelHint = channelUsername ? `\n\n${this.buildJobChannelNotice(lang, channelUsername, 'pending')}` : '';
             await this.sendPrompt(chatId, session, `${jobSummary}${channelHint}`, { replyMarkup: keyboards.jobConfirmKeyboard(lang) });
             return;
@@ -6945,52 +7038,15 @@ export class TelegramBot {
             return;
         }
 
-        // AI JOB CREATION
+        // AI drafts use the shared account quota and retain the source on failure.
         if (state === BotState.AI_JOB_INPUT) {
-            try {
-                await this.sendTransientMessage(
-                    chatId,
-                    lang === 'uz' ? "🤖 AI ma'lumotlarni tayyorlamoqda..." : '🤖 AI обрабатывает вакансию...',
-                    800,
-                    '__transient_ai'
-                );
-                const result = await extractVacancyData(text);
-                const aiDescription = this.buildJobDescriptionFromSections(result.sections);
-                const meta = result.meta || {};
-                const updatedJob = {
-                    ...session.data?.temp_job,
-                    ai_input: text,
-                    ai_meta: meta,
-                    ai_sections: result.sections,
-                    description: aiDescription || null,
-                    gender: meta.gender || null,
-                    education_level: meta.education_level || null,
-                    experience: this.mapAiExperienceValue(meta.experience) || null,
-                    work_mode: meta.work_mode || null,
-                    employment_type: meta.employment_type || null,
-                    working_hours: meta.working_hours || null,
-                    working_days: meta.working_days || null,
-                    age_min: meta.age_min || null,
-                    age_max: meta.age_max || null,
-                    languages: Array.isArray(result.sections?.tillar) ? result.sections.tillar : [],
-                    benefits: Array.isArray(result.sections?.qulayliklar) ? result.sections.qulayliklar.join(', ') : null
-                };
-                await this.updateSession(session.telegram_user_id, {
-                    state: BotState.POSTING_JOB_TITLE,
-                    data: { ...session.data, temp_job: updatedJob }
-                });
-                await this.sendPrompt(chatId, session, botTexts.postJobTitle[lang], {
-                    replyMarkup: keyboards.cancelReplyKeyboard(lang)
-                });
-            } catch (err) {
-                console.error('AI job parse error:', err);
-                await this.sendPrompt(chatId, session, botTexts.error[lang], {
-                    replyMarkup: keyboards.cancelReplyKeyboard(lang)
-                });
-            }
+            await this.handleAiJobInput(chatId, text, session);
             return;
         }
-
+        if (state === BotState.POSTING_JOB_MODE) {
+            await this.sendPrompt(chatId, session, lang === 'ru' ? 'Выберите способ создания вакансии для @ishdasiz.' : '@ishdasiz uchun vakansiya yaratish usulini tanlang.', { replyMarkup: keyboards.jobCreateModeKeyboard(lang) });
+            return;
+        }
 
         // Fallback - Handle reply keyboard button texts
         // These must match the actual button texts in mainMenuKeyboard / employerMainMenuKeyboard
@@ -11696,6 +11752,7 @@ export class TelegramBot {
         const lang = session.lang;
         if(action==='dashboard'){await this.showEmployerDashboard(chatId,session);return;}
         if (action === 'post_job') {
+            if (!session.user_id || this.getSessionCurrentRole(session) !== 'employer') return;
             await this.setFlowCancelKeyboard(chatId, session);
             const { data: employer } = await this.supabase
                 .from('employer_profiles')
@@ -11704,6 +11761,7 @@ export class TelegramBot {
                 .maybeSingle();
             const hasHrFromProfile = String(employer?.director_name || '').trim().length >= 3;
             const baseJob = {
+                publication_id: randomUUID(),
                 company_name: employer?.company_name || null,
                 contact_phone: employer?.phone || session.phone || null,
                 hr_name: employer?.director_name || null,
@@ -11711,13 +11769,13 @@ export class TelegramBot {
                 language_keys: [],
                 benefit_keys: []
             };
-            const updatedData = { ...session.data, temp_job: baseJob, clean_inputs: true };
+            const updatedData = { ...session.data, temp_job: baseJob, clean_inputs: false };
             await this.setSession(session, {
-                state: BotState.POSTING_JOB_TITLE,
+                state: BotState.POSTING_JOB_MODE,
                 data: updatedData
             });
-            await this.sendPrompt(chatId, session, botTexts.postJobTitle[lang], {
-                replyMarkup: keyboards.backKeyboard(lang, 'employer_menu')
+            await this.sendPrompt(chatId, session, lang === 'ru' ? 'Как создать вакансию для @ishdasiz?' : '@ishdasiz uchun vakansiyani qanday yaratasiz?', {
+                replyMarkup: keyboards.jobCreateModeKeyboard(lang)
             });
             return;
         }
@@ -12696,7 +12754,18 @@ export class TelegramBot {
 
     private async handleJobPublish(chatId: number, session: TelegramSession): Promise<void> {
         const lang = session.lang;
-        const jobData = session.data?.temp_job;
+        let jobData = session.data?.temp_job;
+        if (!session.user_id || this.getSessionCurrentRole(session) !== 'employer' || session.state !== BotState.POSTING_JOB_CONFIRM || !jobData?.title || !jobData?.description) return;
+        if (!await this.checkAccountSession(chatId, session)) return;
+        if (jobData.job_create_mode === 'ai' && !jobData.region_id) {
+            await this.handleAiJobAction(chatId, 'region', session);
+            return;
+        }
+        // A stable ID makes a retried confirmation safe after a lost response.
+        if (!resumeUuid(jobData.publication_id)) {
+            jobData = { ...jobData, publication_id: randomUUID() };
+            await this.setSession(session, { data: { ...session.data, temp_job: jobData } });
+        }
         const { data: employer } = await this.supabase
             .from('employer_profiles')
             .select('id, company_name, director_name, phone, region_id, district_id, address, default_address')
@@ -12808,6 +12877,7 @@ export class TelegramBot {
         };
 
         const payload: Record<string, any> = {
+            id: jobData.publication_id,
             employer_id: employerId,
             user_id: session.user_id,
             created_by: session.user_id,
@@ -12871,6 +12941,11 @@ export class TelegramBot {
                 .single();
             createdJob = result.data || null;
             insertError = result.error || null;
+            if (insertError?.code === '23505') {
+                const existing = await this.supabase.from('jobs').select('*').eq('id', jobData.publication_id).eq('created_by', session.user_id).maybeSingle();
+                if (!existing.error && existing.data) { createdJob = existing.data; insertError = null; }
+                break;
+            }
             if (!insertError) break;
             const missingColumn = this.extractMissingColumn(insertError);
             if (missingColumn && Object.prototype.hasOwnProperty.call(insertPayload, missingColumn)) {
@@ -12959,8 +13034,7 @@ export class TelegramBot {
         }
 
         await this.sendSeriousSticker(chatId, 'success');
-        const fallbackChannelUsername =
-            await this.getRegionChannelUsernameById(createdJob?.region_id || payload?.region_id || jobData?.region_id);
+        const fallbackChannelUsername = '@ishdasiz';
         const channelUsername = channelPublish.channelUsername || fallbackChannelUsername;
         const postUrl = channelPublish.postUrl || this.buildChannelPostUrl(channelUsername, channelPublish.messageId);
         const publishedText = channelUsername
@@ -13590,7 +13664,7 @@ export class TelegramBot {
                 data: { ...session.data, temp_job: updatedJob, ai_job_description_suggestion: null }
             });
             const jobSummary = this.buildJobConfirmText(lang, updatedJob);
-            const channelUsername = await this.getRegionChannelUsernameById(updatedJob?.region_id);
+            const channelUsername = '@ishdasiz';
             const channelHint = channelUsername ? `\n\n${this.buildJobChannelNotice(lang, channelUsername, 'pending')}` : '';
             await this.sendPrompt(chatId, session, `${jobSummary}${channelHint}`, { replyMarkup: keyboards.jobConfirmKeyboard(lang) });
             return;

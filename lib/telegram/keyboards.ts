@@ -1354,7 +1354,25 @@ export function jobDescriptionKeyboard(lang: BotLang): object {
 
 export function jobCreateModeKeyboard(lang: BotLang): object {
     return createInlineKeyboard([
-        [{ text: lang === 'uz' ? "✍️ O'zim kiritaman" : '✍️ Заполню сам', callback_data: 'jobmode:manual' }]
+        [{ text: lang === 'uz' ? '🤖 Matndan yaratish' : '🤖 Создать из текста', callback_data: 'jobmode:ai' }],
+        [{ text: lang === 'uz' ? "✍️ O'zim kiritaman" : '✍️ Заполню сам', callback_data: 'jobmode:manual' }],
+        [{ text: lang === 'uz' ? '⬅️ Menyu' : '⬅️ Меню', callback_data: 'menu:main' }]
+    ]);
+}
+
+export function aiJobInputKeyboard(lang: BotLang): object {
+    return createInlineKeyboard([
+        [{ text: lang === 'ru' ? '✍️ Заполнить вручную' : '✍️ Qo‘lda to‘ldirish', callback_data: 'jobmode:manual' }],
+        [{ text: lang === 'ru' ? '🏠 Меню' : '🏠 Menyu', callback_data: 'menu:main' }]
+    ]);
+}
+
+export function aiJobConfirmKeyboard(lang: BotLang): object {
+    return createInlineKeyboard([
+        [{ text: lang === 'ru' ? '✅ Опубликовать в @ishdasiz' : '✅ @ishdasiz kanalida e’lon qilish', callback_data: 'job:publish' }],
+        [{ text: lang === 'ru' ? '📍 Выбрать регион' : '📍 Hududni tanlash', callback_data: 'jobai:region' }],
+        [{ text: lang === 'ru' ? '✏️ Изменить текст' : '✏️ Matnni o‘zgartirish', callback_data: 'jobai:rewrite' }],
+        [{ text: lang === 'ru' ? '🏠 Меню' : '🏠 Menyu', callback_data: 'menu:main' }]
     ]);
 }
 

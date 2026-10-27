@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { resumeUuid } from './owned-resumes';
-import { isJobActiveForChannel, isResumeActiveForChannel, REGION_CHANNEL_BY_SLUG } from './channel-sync';
+import { isJobActiveForChannel, isResumeActiveForChannel, REGION_CHANNEL_BY_SLUG, MAIN_JOB_CHANNEL } from './channel-sync';
 export type ChannelSnapshot = { available: boolean; entity: any | null; region_slug: string | null };
 export async function readChannelSnapshot(client: SupabaseClient, type: 'job' | 'resume', id: string): Promise<ChannelSnapshot> {
   if (!['job','resume'].includes(type) || !resumeUuid(id)) throw new Error('Channel entity unavailable');
@@ -17,7 +17,7 @@ export const CHANNEL_REDACTED_TEXT = 'Объявление недоступно.
 /** Never swallow Telegram failure or call a non-existent chat a deleted post. */
 export async function removeChannelMessage(call: TelegramCall, channel: string, messageId: number): Promise<'deleted'|'redacted'> {
   if (!/^@[a-z0-9_]{5,32}$/i.test(channel) || !Number.isSafeInteger(messageId) || messageId < 1) throw new Error('Invalid channel message');
-  if (!Object.values(REGION_CHANNEL_BY_SLUG).includes(channel.toLowerCase())) throw new Error('Channel is not configured');
+  if (![MAIN_JOB_CHANNEL, ...Object.values(REGION_CHANNEL_BY_SLUG)].includes(channel.toLowerCase())) throw new Error('Channel is not configured');
   try {
     if (await call('deleteMessage', { chat_id: channel, message_id: messageId }) !== true) throw new Error('Deletion unconfirmed');
     return 'deleted';
